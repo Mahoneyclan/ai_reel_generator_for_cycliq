@@ -38,8 +38,7 @@ class Config:
     YOLO_BATCH_SIZE: int = 4  # M1 8GB safe batch size
     MIN_DETECT_SCORE: float = 0.10  # Lower threshold
     MIN_SPEED_PENALTY: float = 2.0  # Lower to keep slower moments
-
-  
+    SCENE_COMPARISON_WINDOW_S: float = 5.0  # Compare frames N seconds apart (not just adjacent),  Higher = detects major scene changes (e.g., 10s = new location) while Lower = detects quick action (e.g., 3s = passing cyclist)
 
     # --- Candidate selection (NEW - add this) ---
     CANDIDATE_FRACTION: float = 2  # Select top 1.5x target clips as candidates for final selection

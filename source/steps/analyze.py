@@ -9,7 +9,8 @@ import csv
 import numpy as np
 import cv2
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
+from collections import deque
 from collections import defaultdict
 from tqdm import tqdm
 
@@ -186,22 +187,33 @@ def _compute_scores(rows: List[Dict]) -> List[Dict]:
 
 class SceneDetector:
     """
-    Scene change detector using temporal frame differencing.
-    Identifies interesting visual transitions (action, camera movement, new scenes).
+    Scene change detector with temporal window.
+    Compares frames across a time window (e.g., 5-10 seconds) instead of just adjacent frames.
+    Better for detecting significant scene changes vs. gradual camera movement.
     """
     
-    def __init__(self):
-        self.prev_thumbnails: Dict[str, np.ndarray] = {}
-        self.frame_counts: Dict[str, int] = defaultdict(int)
-        self.scene_scores: Dict[str, List[float]] = defaultdict(list)
+    def __init__(self, comparison_window_s: float = 5.0, fps: float = 1.0):
+        """
+        Args:
+            comparison_window_s: How many seconds back to compare (default 5s)
+            fps: Frame rate of extracted frames (default 1.0 from EXTRACT_FPS)
+        """
+        self.comparison_window_s = comparison_window_s
+        self.fps = fps
+        self.max_frames_to_keep = max(1, int(comparison_window_s * fps))
+        
+        # Store frame history per camera (circular buffer)
+        self.frame_history: Dict[str, deque] = {}
+        self.frame_counts: Dict[str, int] = {}
+        self.scene_scores: Dict[str, list] = {}
         
     def compute_scene_score(self, frame: np.ndarray, camera: str) -> float:
         """
-        Compute scene change score from RGB frame.
+        Compute scene change score by comparing current frame to frame from N seconds ago.
         
         Returns:
-            0.0 = static/no change (boring)
-            1.0 = complete scene change (interesting!)
+            0.0 = no change (static scene)
+            1.0 = complete scene change (new environment/action)
         """
         if frame is None:
             return 0.0
@@ -210,34 +222,50 @@ class SceneDetector:
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         thumbnail = cv2.resize(gray, (64, 64), interpolation=cv2.INTER_AREA)
         
-        prev = self.prev_thumbnails.get(camera)
+        # Initialize history for this camera
+        if camera not in self.frame_history:
+            self.frame_history[camera] = deque(maxlen=self.max_frames_to_keep)
+            self.frame_counts[camera] = 0
+            self.scene_scores[camera] = []
         
-        if prev is None:
-            # First frame - baseline, no comparison
-            self.prev_thumbnails[camera] = thumbnail
+        history = self.frame_history[camera]
+        
+        # First frame - baseline
+        if len(history) == 0:
+            history.append(thumbnail)
             self.frame_counts[camera] += 1
             return 0.0
         
+        # Not enough history yet - compare to oldest available frame
+        comparison_frame = history[0]  # Oldest frame in buffer
+        
         # Compute pixel-level difference
-        diff = np.mean(np.abs(prev.astype(np.float32) - thumbnail.astype(np.float32)))
+        diff = np.mean(np.abs(comparison_frame.astype(np.float32) - thumbnail.astype(np.float32)))
         score = float(diff / 255.0)
         
-        # Update state
-        self.prev_thumbnails[camera] = thumbnail
+        # Add current frame to history (will auto-evict oldest when full)
+        history.append(thumbnail)
         self.frame_counts[camera] += 1
         self.scene_scores[camera].append(score)
         
-        # Log high scene changes (potential highlights)
-        if score > 0.5:
-            log.debug(f"[scene] High change detected: {camera} frame {self.frame_counts[camera]}, score={score:.3f}")
+        # Log significant changes
+        if score > 0.4:  # Lowered threshold since we're comparing across longer time
+            from source.utils.log import setup_logger
+            log = setup_logger("steps.analyze")
+            log.debug(
+                f"[scene] High change detected: {camera} frame {self.frame_counts[camera]}, "
+                f"score={score:.3f} (comparing to {len(history)} frames / "
+                f"{len(history) / self.fps:.1f}s ago)"
+            )
         
         return score
     
     def get_stats(self) -> Dict:
         """Return processing statistics."""
         stats = {
-            "cameras_processed": len(self.prev_thumbnails),
-            "frame_counts": dict(self.frame_counts)
+            "cameras_processed": len(self.frame_history),
+            "frame_counts": dict(self.frame_counts),
+            "comparison_window_s": self.comparison_window_s,
         }
         
         # Add score statistics per camera
@@ -245,23 +273,31 @@ class SceneDetector:
             if scores:
                 stats[f"{camera}_mean_scene"] = f"{np.mean(scores):.3f}"
                 stats[f"{camera}_max_scene"] = f"{np.max(scores):.3f}"
+                stats[f"{camera}_median_scene"] = f"{np.median(scores):.3f}"
+                # Count high-change frames (adjusted threshold for longer window)
                 high_change_count = sum(1 for s in scores if s > 0.3)
                 stats[f"{camera}_high_changes"] = high_change_count
+                stats[f"{camera}_high_change_pct"] = f"{(high_change_count / len(scores) * 100):.1f}%"
         
         return stats
     
     def cleanup(self):
         """Release cached data."""
-        self.prev_thumbnails.clear()
+        self.frame_history.clear()
         self.frame_counts.clear()
         self.scene_scores.clear()
 
 class FrameAnalyzer:
     """Frame analysis: detection + scene scoring in one pass."""
     
-    def __init__(self):
+    def __init__(self, scene_comparison_window_s: float = 5.0):
         self.model = _get_model()
-        self.scene_detector = SceneDetector()
+        # Use configurable comparison window (default 5 seconds)
+        from source.config import DEFAULT_CONFIG as CFG
+        self.scene_detector = SceneDetector(
+            comparison_window_s=scene_comparison_window_s,
+            fps=CFG.EXTRACT_FPS
+        )
         self.frames_processed = 0
 
     def analyze_frame(self, video_path: Path, frame_number: int, camera: str) -> Dict[str, float]:
@@ -420,12 +456,15 @@ def run() -> Path:
     log.info("[analyze] Sorting frames by camera and timestamp...")
     rows.sort(key=lambda r: (r.get("camera", ""), float(r.get("abs_time_epoch", 0) or 0.0)))
 
-    # Initialize
+    # Initialize with configurable scene detection window
     gpx_index = _load_gpx_index()
-    analyzer = FrameAnalyzer()
+    analyzer = FrameAnalyzer(scene_comparison_window_s=CFG.SCENE_COMPARISON_WINDOW_S)
     enriched_rows: List[Dict] = []
     matched_gps = 0
     matched_partners = 0
+
+    log.info(f"[analyze] Scene detection: comparing frames {CFG.SCENE_COMPARISON_WINDOW_S}s apart")
+
 
     try:
         pbar = tqdm(rows, desc="[analyze] Processing frames", unit="frame", ncols=80)

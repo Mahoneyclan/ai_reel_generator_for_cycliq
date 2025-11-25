@@ -1,4 +1,8 @@
 # source/gui/manual_selection_window.py
+"""
+Manual review dialog for clip selection.
+Displays PAIRED clips (primary + partner side-by-side) instead of individual frames.
+"""
 
 import csv
 from pathlib import Path
@@ -6,7 +10,7 @@ from typing import List, Dict
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QWidget, QGridLayout, QMessageBox
+    QScrollArea, QWidget, QGridLayout, QMessageBox, QFrame
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap
@@ -20,12 +24,11 @@ log = setup_logger("gui.manual_selection_window")
 
 class ManualSelectionWindow(QDialog):
     """
-    Manual review dialog for clip selection.
-    - Consumes select.csv directly (source of truth from select step)
-    - Displays candidate rows chronologically with frame thumbnails
-    - Highlights AI recommendations, allows toggling
-    - Persists updated recommended flags back to select.csv
-    - Enforces clip gaps only on pre-selected recommendations (non-destructive)
+    Manual review dialog for paired clip selection.
+    - Shows primary + partner frames side-by-side
+    - Groups clips by their pair relationship
+    - Highlights AI recommendations
+    - Allows toggling entire pairs
     """
 
     def __init__(self, project_dir: Path, parent=None):
@@ -38,7 +41,7 @@ class ManualSelectionWindow(QDialog):
         self.target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
 
         self.setWindowTitle("Review & Refine Clip Selection")
-        self.resize(1400, 900)
+        self.resize(1600, 900)
         self.setModal(True)
 
         self._setup_ui()
@@ -59,7 +62,7 @@ class ManualSelectionWindow(QDialog):
         except Exception as e:
             self.log(f"Error saving selection on accept: {e}", "error")
             QMessageBox.critical(self, "Save Error", f"Failed to save selection: {e}")
-            return  # prevent dialog from closing
+            return
         super().accept()
 
     def _setup_ui(self):
@@ -88,15 +91,15 @@ class ManualSelectionWindow(QDialog):
 
         self.grid_widget = QWidget()
         self.grid_layout = QGridLayout(self.grid_widget)
-        self.grid_layout.setSpacing(10)
+        self.grid_layout.setSpacing(15)
         self.grid_layout.setContentsMargins(10, 10, 10, 10)
 
         scroll.setWidget(self.grid_widget)
         layout.addWidget(scroll)
 
         instructions = QLabel(
-            "💡 Click any tile to toggle selection. Blue-highlighted tiles are AI recommendations.\n"
-            "Pre-selected tiles will create your target video length. Add more for longer videos or deselect for shorter."
+            "💡 Click any pair to toggle selection. Blue-highlighted pairs are AI recommendations.\n"
+            "Primary (front) and partner (rear) cameras are shown side-by-side for each moment."
         )
         instructions.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
         instructions.setAlignment(Qt.AlignCenter)
@@ -186,85 +189,157 @@ class ManualSelectionWindow(QDialog):
         QTimer.singleShot(100, self._populate_grid)
 
     def _populate_grid(self):
-        """Populate the grid with frame image tiles, 3 columns, chronological order."""
+        """Populate grid with paired clip tiles (primary + partner side-by-side)."""
         if self.grid_layout.count() > 0:
             return
 
+        # Display 2 pairs per row (2 columns, each containing a pair)
+        pairs_per_row = 2
+
         for idx, candidate in enumerate(self.candidates):
-            row = idx // 3
-            col = idx % 3
+            row = idx // pairs_per_row
+            col = idx % pairs_per_row
 
-            # Create a container widget for the tile
-            tile_widget = QWidget()
-            tile_layout = QVBoxLayout(tile_widget)
-            tile_layout.setContentsMargins(0, 0, 0, 0)
-            tile_layout.setSpacing(5)
-
-            # Try to load the frame image
-            frame_idx = candidate.get('index', '')
-            frame_path = self.extract_dir / f"{frame_idx}_Primary.jpg"
+            # Create pair container
+            pair_widget = self._create_pair_widget(candidate)
             
-            if frame_path.exists():
-                pixmap = QPixmap(str(frame_path))
-                if not pixmap.isNull():
-                    # Scale image to reasonable thumbnail size
-                    pixmap = pixmap.scaled(300, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    image_label = QLabel()
-                    image_label.setPixmap(pixmap)
-                    image_label.setAlignment(Qt.AlignCenter)
-                    tile_layout.addWidget(image_label)
-                else:
-                    # Fallback to text if image can't be loaded
-                    text_label = QLabel(f"{frame_idx}\n[Image load error]")
-                    text_label.setAlignment(Qt.AlignCenter)
-                    tile_layout.addWidget(text_label)
+            self.grid_layout.addWidget(pair_widget, row, col)
+
+    def _create_pair_widget(self, candidate: Dict) -> QWidget:
+        """Create a widget displaying primary + partner frames side-by-side."""
+        pair_container = QFrame()
+        pair_container.setFrameShape(QFrame.Box)
+        pair_layout = QVBoxLayout(pair_container)
+        pair_layout.setContentsMargins(8, 8, 8, 8)
+        pair_layout.setSpacing(8)
+
+        # Frames container (horizontal layout for side-by-side)
+        frames_container = QWidget()
+        frames_layout = QHBoxLayout(frames_container)
+        frames_layout.setContentsMargins(0, 0, 0, 0)
+        frames_layout.setSpacing(8)
+
+        idx = candidate.get('index', '')
+        
+        # Primary frame (left)
+        primary_frame = self._create_frame_widget(idx, "Primary", candidate)
+        frames_layout.addWidget(primary_frame)
+
+        # Partner frame (right)
+        partner_frame = self._create_frame_widget(idx, "Partner", candidate)
+        frames_layout.addWidget(partner_frame)
+
+        pair_layout.addWidget(frames_container)
+
+        # Metadata footer - use best available time field from CSV
+        # Priority: adjusted_start_time (local) > abs_time_iso (UTC)
+        time_str = candidate.get('adjusted_start_time') or candidate.get('abs_time_iso', 'N/A')
+        if time_str != 'N/A' and 'T' in time_str:
+            try:
+                from datetime import datetime
+                # Parse ISO format and convert to local time if needed
+                dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
+                time_str = dt.astimezone().strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                pass  # Keep original if parsing fails
+        
+        metadata = QLabel(
+            f"Time: {time_str}\n"
+            f"Speed: {candidate.get('speed_kmh', 'N/A')} km/h | "
+            f"Detection: {candidate.get('detect_score', 'N/A')}"
+        )
+        metadata.setAlignment(Qt.AlignCenter)
+        metadata.setStyleSheet("font-size: 10px; color: #666;")
+        pair_layout.addWidget(metadata)
+
+        # Style based on selection state
+        self._apply_pair_style(pair_container, candidate)
+
+        # Make entire pair clickable
+        pair_container.mousePressEvent = self._make_pair_toggle_handler(candidate, pair_container)
+
+        return pair_container
+
+    def _create_frame_widget(self, idx: str, frame_type: str, candidate: Dict) -> QWidget:
+        """Create widget for a single frame (Primary or Partner)."""
+        frame_widget = QWidget()
+        frame_layout = QVBoxLayout(frame_widget)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.setSpacing(4)
+
+        # Camera label
+        camera = candidate.get('camera', 'Unknown') if frame_type == "Primary" else candidate.get('partner_camera', 'Unknown')
+        label = QLabel(f"{frame_type} ({camera})")
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        frame_layout.addWidget(label)
+
+        # Frame image
+        frame_path = self.extract_dir / f"{idx}_{frame_type}.jpg"
+        
+        if frame_path.exists():
+            pixmap = QPixmap(str(frame_path))
+            if not pixmap.isNull():
+                # Scale to reasonable thumbnail size
+                pixmap = pixmap.scaled(340, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                image_label = QLabel()
+                image_label.setPixmap(pixmap)
+                image_label.setAlignment(Qt.AlignCenter)
+                frame_layout.addWidget(image_label)
             else:
-                # Fallback to text if image doesn't exist
-                text_label = QLabel(f"{frame_idx}\n[No image]")
-                text_label.setAlignment(Qt.AlignCenter)
-                tile_layout.addWidget(text_label)
+                fallback = QLabel(f"[{frame_type} load error]")
+                fallback.setAlignment(Qt.AlignCenter)
+                fallback.setMinimumSize(340, 240)
+                frame_layout.addWidget(fallback)
+        else:
+            fallback = QLabel(f"[No {frame_type.lower()} camera]" if frame_type == "Partner" else f"[No image]")
+            fallback.setAlignment(Qt.AlignCenter)
+            fallback.setMinimumSize(340, 240)
+            fallback.setStyleSheet("color: #999; background-color: #f0f0f0;")
+            frame_layout.addWidget(fallback)
 
-            # Add timestamp label below image
-            time_label = QLabel(candidate.get('abs_time_iso', candidate.get('abs_time_epoch', '')))
-            time_label.setAlignment(Qt.AlignCenter)
-            time_label.setStyleSheet("font-size: 10px; color: #666;")
-            tile_layout.addWidget(time_label)
+        return frame_widget
 
-            # Style the tile based on selection state
-            if candidate.get("recommended", "false") == "true":
-                tile_widget.setStyleSheet(
-                    "QWidget { background-color: #BBDEFB; border: 2px solid #1976D2; border-radius: 6px; padding: 8px; }"
-                )
-            else:
-                tile_widget.setStyleSheet(
-                    "QWidget { background-color: #F5F5F5; border: 1px solid #CCC; border-radius: 6px; padding: 8px; }"
-                )
+    def _apply_pair_style(self, widget: QWidget, candidate: Dict):
+        """Apply visual styling based on selection state."""
+        is_selected = candidate.get("recommended", "false") == "true"
+        
+        if is_selected:
+            widget.setStyleSheet("""
+                QFrame {
+                    background-color: #BBDEFB;
+                    border: 3px solid #1976D2;
+                    border-radius: 8px;
+                }
+            """)
+        else:
+            widget.setStyleSheet("""
+                QFrame {
+                    background-color: #FAFAFA;
+                    border: 2px solid #DDDDDD;
+                    border-radius: 8px;
+                }
+            """)
 
-            # Make the entire tile clickable
-            tile_widget.mousePressEvent = self._make_tile_toggle_handler(candidate, tile_widget)
-            
-            self.grid_layout.addWidget(tile_widget, row, col)
-
-    def _make_tile_toggle_handler(self, candidate: Dict[str, str], tile_widget: QWidget):
-        """Create a click handler for toggling selection."""
+    def _make_pair_toggle_handler(self, candidate: Dict, widget: QWidget):
+        """Create click handler for toggling pair selection."""
         def handler(event):
             currently_selected = candidate.get("recommended", "false") == "true"
             new_selected = not currently_selected
             candidate["recommended"] = "true" if new_selected else "false"
 
+            # Update visual styling
+            self._apply_pair_style(widget, candidate)
+
+            # Update counters
             if new_selected:
-                tile_widget.setStyleSheet(
-                    "QWidget { background-color: #BBDEFB; border: 2px solid #1976D2; border-radius: 6px; padding: 8px; }"
-                )
                 self.selected_count += 1
             else:
-                tile_widget.setStyleSheet(
-                    "QWidget { background-color: #F5F5F5; border: 1px solid #CCC; border-radius: 6px; padding: 8px; }"
-                )
                 self.selected_count -= 1
 
             self.counter_label.setText(f"✓ Selected: {self.selected_count} clips")
             self.ok_btn.setText(f"✓ Use {self.selected_count} Clips & Continue")
+
         return handler
 
     def get_selected_indices(self) -> List[str]:
@@ -276,13 +351,11 @@ class ManualSelectionWindow(QDialog):
         csv_path = select_path()
 
         if not self.candidates:
-            # Write minimal header to avoid breaking downstream checks
             with csv_path.open('w', newline='') as f:
                 csv.writer(f).writerow(["index"])
             self.log("[manual] No candidates to save; wrote minimal header", "warning")
             return
 
-        # Ensure chronological order before writing
         rows = sorted(self.candidates, key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
         selected_count = sum(1 for r in rows if r.get("recommended", "false") == "true")
 
@@ -291,7 +364,6 @@ class ManualSelectionWindow(QDialog):
         log.info(message)
 
         try:
-            # Write using all existing columns from first row to avoid schema drift
             fieldnames = list(rows[0].keys())
             with csv_path.open('w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
