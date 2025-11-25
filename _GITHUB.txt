@@ -1,0 +1,19 @@
+# Before You Start Coding Each Day:
+
+# Get any changes from GitHub (if you work on another computer)
+git pull          
+
+# Check what files you changed (they'll appear in red)
+git status
+
+# Add the specific file you changed (e.g., main_window.py)
+git add highlights/gui/main_window.py
+
+# OR add ALL changed files at once
+git add .
+
+# Commit with a descriptive message
+git commit -m "enter a comment"
+
+# Push to GitHub
+git push origin main

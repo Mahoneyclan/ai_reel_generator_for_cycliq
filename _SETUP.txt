@@ -1,0 +1,36 @@
+# ============================================
+# HIGHLIGHTS APP - MAC SETUP QUICK START
+# ============================================
+
+# 1. Make sure you’re in your project root
+cd /Volumes/GDrive/Github/velo_highlights
+
+# 2. Remove any old venv if it exists
+rm -rf .venv
+
+# 3. Create a new venv with your current Python
+python3 -m venv .venv
+
+# 4. Activate it
+source .venv/bin/activate
+
+# 5. Upgrade pip inside the venv
+python -m pip install --upgrade pip
+
+# 6. Install your requirements
+python -m pip install -r requirements.txt
+
+
+# 7. Run the package
+python run_gui.py
+
+# 8. deactivate the venv
+deactivate
+
+
+# To delete the environment :
+deactivate
+rm -rf venv
+
+
+

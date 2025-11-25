@@ -1,0 +1,29 @@
+# gitignore
+# Exclude assets (images, audio, etc.)
+assets/
+
+# Exclude YOLO model weights
+*.pt
+
+# Exclude py_txt folder (text artifacts)
+source/py_txt/
+
+# Exclude Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude virtual environments
+venv/
+.venv/
+
+# Exclude macOS system files
+.DS_Store
+
+# Exclude logs or temp files
+*.log
+*.tmp
+
+# Ignore specific root scripts
+copy_rename.py
