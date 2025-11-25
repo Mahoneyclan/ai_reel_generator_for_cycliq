@@ -29,8 +29,15 @@ class Config:
     CLIP_PRE_ROLL_S: float = 0.2
     CLIP_OUT_LEN_S: float = 2.8
 
-    MIN_GAP_BETWEEN_CLIPS: float = 60.0  # Reduced for denser clips
-    SCENE_COMPARISON_WINDOW_S: float = 5.0  # Compare frames N seconds apart (not just adjacent),  Higher = detects major scene changes (e.g., 10s = new location) while Lower = detects quick action (e.g., 3s = passing cyclist)
+    MIN_GAP_BETWEEN_CLIPS: float = 45.0  # Reduced for denser clips
+
+    # --- Scene-aware selection ---
+    SCENE_PRIORITY_MODE: bool = True  # Enable scene-based gap filtering
+    SCENE_HIGH_THRESHOLD: float = 0.50  # "Significant" scene change
+    SCENE_MAJOR_THRESHOLD: float = 0.70  # "Major" scene change
+    SCENE_MAJOR_GAP_MULTIPLIER: float = 0.5  # Major scenes can be 50% closer
+    SCENE_HIGH_GAP_MULTIPLIER: float = 0.75  # High scenes can be 75% closer
+    SCENE_COMPARISON_WINDOW_S: float = 8.0  # Compare frames N seconds apart (not just adjacent),  Higher = detects major scene changes (e.g., 10s = new location) while Lower = detects quick action (e.g., 3s = passing cyclist)
 
     # --- Detection settings ---
     YOLO_DETECT_CLASSES: list = field(default_factory=lambda: [1])  # 1=bicycle
@@ -58,12 +65,13 @@ class Config:
         "Fly6Pro": 1.0,
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
-        "detect_score": 0.35,
-        "speed_kmh": 0.25,
-        "gradient": 0.10,
-        "bbox_area": 0.10,
-        "scene_boost": 0.20,  
+        "detect_score": 0.20,    # Reduce from 0.35 (most frames already pass)
+        "scene_boost": 0.35,     # INCREASE from 0.20 (this is your differentiator)
+        "speed_kmh": 0.25,       # Keep same
+        "gradient": 0.10,        # Keep same
+        "bbox_area": 0.10,       # Keep same
     })
+
 
     # --- M1 hardware acceleration ---
     USE_MPS: bool = True

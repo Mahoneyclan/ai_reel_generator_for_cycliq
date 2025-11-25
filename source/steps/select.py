@@ -34,19 +34,43 @@ def _sf(v, d=0.0) -> float:
 
 
 def apply_gap_filter(candidates: List[Dict], min_gap_s: int, target_clips: int) -> List[Dict]:
-    """Select top clips with spacing by bucketing timeline into min_gap_s windows."""
+    """
+    Select top clips with adaptive spacing based on scene boost.
+    High scene-change clips get priority and can be closer together.
+    """
     filtered: List[Dict] = []
     used_windows = set()
-
+    
+    # Define scene boost thresholds for adaptive gaps
+    HIGH_SCENE_THRESHOLD = 0.50  # "Significant" scene change
+    MAJOR_SCENE_THRESHOLD = 0.70  # "Major" scene change
+    
     for c in candidates:
         t = int(_sf(c.get("abs_time_epoch")))
-        window = t // min_gap_s
+        scene_boost = _sf(c.get("scene_boost", 0))
+        
+        # Adaptive gap based on scene quality
+        if scene_boost >= MAJOR_SCENE_THRESHOLD:
+            # Major scene changes: allow 30s gaps (very close)
+            effective_gap = min_gap_s // 2
+        elif scene_boost >= HIGH_SCENE_THRESHOLD:
+            # Significant scene changes: allow 45s gaps (closer)
+            effective_gap = int(min_gap_s * 0.75)
+        else:
+            # Normal clips: use full gap
+            effective_gap = min_gap_s
+        
+        window = t // effective_gap
+        
         if window not in used_windows:
             filtered.append(c)
-            used_windows.add(window)
+            # Mark adjacent windows as used to maintain minimum spacing
+            for offset in range(-1, 2):  # Block ±1 window
+                used_windows.add(window + offset)
+        
         if len(filtered) >= target_clips:
             break
-
+    
     return filtered
 
 
@@ -173,6 +197,22 @@ def run() -> Path:
 
     # Sort by ranking signal (descending)
     valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
+
+    # Boost high scene-change clips in ranking
+    if CFG.SCENE_PRIORITY_MODE:
+        for r in valid:
+            scene_boost = _sf(r.get("scene_boost"))
+            current_score = _sf(r.get("score_weighted"))
+            
+            # Apply scene priority multiplier
+            if scene_boost >= CFG.SCENE_MAJOR_THRESHOLD:
+                r["score_weighted"] = f"{current_score * 1.3:.3f}"  # 30% boost
+            elif scene_boost >= CFG.SCENE_HIGH_THRESHOLD:
+                r["score_weighted"] = f"{current_score * 1.15:.3f}"  # 15% boost
+        
+        # Re-sort after boosting
+        valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
+
 
     # Targets
     target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
