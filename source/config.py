@@ -30,6 +30,7 @@ class Config:
     CLIP_OUT_LEN_S: float = 2.8
 
     MIN_GAP_BETWEEN_CLIPS: float = 60.0  # Reduced for denser clips
+    SCENE_COMPARISON_WINDOW_S: float = 5.0  # Compare frames N seconds apart (not just adjacent),  Higher = detects major scene changes (e.g., 10s = new location) while Lower = detects quick action (e.g., 3s = passing cyclist)
 
     # --- Detection settings ---
     YOLO_DETECT_CLASSES: list = field(default_factory=lambda: [1])  # 1=bicycle
@@ -38,19 +39,18 @@ class Config:
     YOLO_BATCH_SIZE: int = 4  # M1 8GB safe batch size
     MIN_DETECT_SCORE: float = 0.10  # Lower threshold
     MIN_SPEED_PENALTY: float = 2.0  # Lower to keep slower moments
-    SCENE_COMPARISON_WINDOW_S: float = 5.0  # Compare frames N seconds apart (not just adjacent),  Higher = detects major scene changes (e.g., 10s = new location) while Lower = detects quick action (e.g., 3s = passing cyclist)
 
     # --- Candidate selection (NEW - add this) ---
     CANDIDATE_FRACTION: float = 2  # Select top 1.5x target clips as candidates for final selection
     REQUIRE_GPS_FOR_SELECTION: bool = False  # If True, only select frames with valid GPS data  
     # --- Zone filtering ---
-    START_ZONE_DURATION_S: float = 600.0
+    START_ZONE_DURATION_S: float = 1200.0
     START_ZONE_PENALTY: float = 0.5
     MAX_START_ZONE_FRAC: float = 0.10 
     
-    END_ZONE_DURATION_S: float = 600.0
-    END_ZONE_PENALTY: float = 0.5
-    MAX_END_ZONE_FRAC: float = 0.20  
+    END_ZONE_DURATION_S: float = 1200.0
+    END_ZONE_PENALTY: float = 1.0
+    MAX_END_ZONE_FRAC: float = 0.10  
 
     # --- Scoring weights (streaming-optimized) ---
     CAMERA_WEIGHTS: dict = field(default_factory=lambda: {

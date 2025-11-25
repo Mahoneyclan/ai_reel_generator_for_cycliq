@@ -16,6 +16,7 @@ from source.core.pipeline_executor import PipelineExecutor
 from source.gui.import_window import ImportRideWindow
 from source.gui.preferences_window import PreferencesWindow  # Import PreferencesWindow
 from source.utils.log import reconfigure_loggers
+from source.gui.analysis_dialog import AnalysisDialog
 
 
 class MainWindow(QMainWindow):
@@ -71,14 +72,21 @@ class MainWindow(QMainWindow):
         self.btn_import_clips = QPushButton("📹 Import Clips")
         self.btn_import_clips.clicked.connect(self.open_import_clips)
 
+        self.btn_analyze_selection = QPushButton("📊 Analyze Selection")
+        self.btn_analyze_selection.clicked.connect(self.open_analysis)
+        self.btn_analyze_selection.setToolTip(
+            "Analyze why clips were selected or rejected\n"
+            "Shows detection scores, bottlenecks, and recommendations"
+        )
+
         self.btn_preferences = QPushButton("⚙️ Preferences")
         self.btn_preferences.clicked.connect(self.open_preferences)
 
         action_layout.addWidget(self.btn_import_clips)
         action_layout.addWidget(self.btn_create_project)
+        action_layout.addWidget(self.btn_analyze_selection)
         action_layout.addWidget(self.btn_preferences)
         left_layout.addWidget(action_panel)
-
         # Right panel: pipeline steps
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -341,6 +349,39 @@ class MainWindow(QMainWindow):
             # User clicked Cancel
             self.log("Preferences changes cancelled", "info")
             self.statusBar().showMessage("Preferences not changed")
+
+    def open_analysis(self):
+        """Open selection analysis dialog."""
+        if not self.current_project:
+            QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select or create a project before analyzing selection."
+            )
+            return
+        
+        # Check if analyze step has been run
+        from source.io_paths import enrich_path
+        if not enrich_path().exists():
+            QMessageBox.warning(
+                self,
+                "No Analysis Data",
+                "Please run the 'Analyze Frames' step first.\n\n"
+                "The analysis tool needs enriched.csv to identify bottlenecks."
+            )
+            return
+        
+        # Open analysis dialog
+        try:
+            dialog = AnalysisDialog(self.current_project, self)
+            dialog.exec()
+        except Exception as e:
+            self.log(f"Failed to open analysis: {e}", "error")
+            QMessageBox.critical(
+                self,
+                "Analysis Error",
+                f"Failed to run analysis:\n\n{str(e)}"
+            )
 
     def run_step_group(self, group_name: str):
         """Run a pipeline action via executor."""

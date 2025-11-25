@@ -93,13 +93,18 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
         self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
         self._add_doublespinbox(self.core_form, "Min Gap Between Clips (s)", "MIN_GAP_BETWEEN_CLIPS", CFG.MIN_GAP_BETWEEN_CLIPS, 30, 300, 10)
+        self._add_doublespinbox(self.core_form, "Scene Comparison Window (s)", "SCENE_COMPARISON_WINDOW_S", CFG.SCENE_COMPARISON_WINDOW_S, 1.0, 15.0, 0.5)
+        self._add_doublespinbox(self.core_form, "Start Zone Duration (s)", "START_ZONE_DURATION_S", CFG.START_ZONE_DURATION_S, 0, 1800, 60)
+        self._add_doublespinbox(self.core_form, "Max Start Zone Fraction", "MAX_START_ZONE_FRAC", CFG.MAX_START_ZONE_FRAC, 0, 1, 0.05)
+        self._add_doublespinbox(self.core_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
+        self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
 
     def _create_video_settings(self):
         self._add_line_edit(self.video_form, "Video Codec", "VIDEO_CODEC", CFG.VIDEO_CODEC)
         self._add_line_edit(self.video_form, "Bitrate", "BITRATE", CFG.BITRATE)
         self._add_line_edit(self.video_form, "Max Rate", "MAXRATE", CFG.MAXRATE)
         self._add_line_edit(self.video_form, "Buffer Size", "BUFSIZE", CFG.BUFSIZE)
-        self._add_doublespinbox(self.video_form, "Musuc Volume", "MUSIC_VOLUME", CFG.MUSIC_VOLUME, 0, 1, 0.1)
+        self._add_doublespinbox(self.video_form, "Music Volume", "MUSIC_VOLUME", CFG.MUSIC_VOLUME, 0, 1, 0.1)
         self._add_doublespinbox(self.video_form, "Raw Audio Volume", "RAW_AUDIO_VOLUME", CFG.RAW_AUDIO_VOLUME, 0, 1, 0.1)
         self._add_doublespinbox(self.video_form, "PiP Scale Ratio", "PIP_SCALE_RATIO", CFG.PIP_SCALE_RATIO, 0, 1, 0.05)
         self._add_spinbox(self.video_form, "PiP Margin", "PIP_MARGIN", CFG.PIP_MARGIN, 0, 100)
@@ -107,18 +112,14 @@ class PreferencesWindow(QDialog):
         self._add_spinbox(self.video_form, "Minimap Margin", "MINIMAP_MARGIN", CFG.MINIMAP_MARGIN, 0, 100)
 
     def _create_detection_settings(self):
-        self._add_spinbox(self.detect_form, "YOLO Image Size", "YOLO_IMAGE_SIZE", CFG.YOLO_IMAGE_SIZE, 320, 1280)
-        self._add_doublespinbox(self.detect_form, "YOLO Min Confidence", "YOLO_MIN_CONFIDENCE", CFG.YOLO_MIN_CONFIDENCE, 0, 1, 0.05)
         self._add_doublespinbox(self.detect_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
         self._add_doublespinbox(self.detect_form, "Min Speed Penalty", "MIN_SPEED_PENALTY", CFG.MIN_SPEED_PENALTY, 0, 20, 1)
-        self._add_doublespinbox(self.detect_form, "Start Zone Duration (s)", "START_ZONE_DURATION_S", CFG.START_ZONE_DURATION_S, 0, 1800, 60)
         self._add_doublespinbox(self.detect_form, "Start Zone Penalty", "START_ZONE_PENALTY", CFG.START_ZONE_PENALTY, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "Max Start Zone Fraction", "MAX_START_ZONE_FRAC", CFG.MAX_START_ZONE_FRAC, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
         self._add_doublespinbox(self.detect_form, "End Zone Penalty", "END_ZONE_PENALTY", CFG.END_ZONE_PENALTY, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
         self._add_doublespinbox(self.detect_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
         self._add_doublespinbox(self.detect_form, "Partner Time Tolerance (s)", "PARTNER_TIME_TOLERANCE_S", CFG.PARTNER_TIME_TOLERANCE_S, 0, 10, 0.5)
+        self._add_doublespinbox(self.detect_form, "YOLO Min Confidence", "YOLO_MIN_CONFIDENCE", CFG.YOLO_MIN_CONFIDENCE, 0, 1, 0.05)
+        self._add_spinbox(self.detect_form, "YOLO Image Size", "YOLO_IMAGE_SIZE", CFG.YOLO_IMAGE_SIZE, 320, 1280)
 
     def _create_m1_settings(self):
         note = QLabel("M1-specific settings for hardware acceleration")
@@ -163,4 +164,3 @@ class PreferencesWindow(QDialog):
             elif isinstance(widget, QCheckBox):
                 overrides[attr] = widget.isChecked()
         return overrides
-
