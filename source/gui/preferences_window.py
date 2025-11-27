@@ -8,13 +8,25 @@ from __future__ import annotations
 from typing import Dict, Any
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget, QWidget, QFormLayout,
     QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
-    QPushButton, QHBoxLayout, QLabel
+    QPushButton, QHBoxLayout, QLabel, QSizePolicy
 )
 
 from ..config import DEFAULT_CONFIG as CFG
+
+
+FIELD_MIN_WIDTH = 220  # baseline width for all input widgets
+
+
+def _fix_size(widget):
+    """Apply consistent sizing policy to all input widgets."""
+    widget.setMinimumWidth(FIELD_MIN_WIDTH)
+    widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+    return widget
+
 
 class PreferencesWindow(QDialog):
     def __init__(self, parent=None):
@@ -24,28 +36,19 @@ class PreferencesWindow(QDialog):
         self.setModal(True)
 
         self.overrides: Dict[str, Any] = {}
-        
+
         layout = QVBoxLayout(self)
-        
+
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
 
-        self.core_tab = QWidget()
-        self.core_form = QFormLayout(self.core_tab)
-        self.tabs.addTab(self.core_tab, "Core")
+        # Tabs with form layouts
+        self.core_tab, self.core_form = self._make_tab("Core")
+        self.video_tab, self.video_form = self._make_tab("Video")
+        self.detect_tab, self.detect_form = self._make_tab("Detection")
+        self.m1_tab, self.m1_form = self._make_tab("M1 Performance")
 
-        self.video_tab = QWidget()
-        self.video_form = QFormLayout(self.video_tab)
-        self.tabs.addTab(self.video_tab, "Video")
-
-        self.detect_tab = QWidget()
-        self.detect_form = QFormLayout(self.detect_tab)
-        self.tabs.addTab(self.detect_tab, "Detection")
-        
-        self.m1_tab = QWidget()
-        self.m1_form = QFormLayout(self.m1_tab)
-        self.tabs.addTab(self.m1_tab, "M1 Performance")
-
+        # Buttons
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self.accept)
@@ -55,26 +58,41 @@ class PreferencesWindow(QDialog):
         btn_layout.addWidget(save_btn)
         layout.addLayout(btn_layout)
 
+        # Populate tabs
         self._create_core_settings()
         self._create_video_settings()
         self._create_detection_settings()
         self._create_m1_settings()
         self.load_current_values()
 
+        # Global polish: label alignment and growth
+        for form in (self.core_form, self.video_form, self.detect_form, self.m1_form):
+            form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            form.setSpacing(8)
+
+    def _make_tab(self, name: str):
+        """Create a tab with a form layout and add it to the tab widget."""
+        tab = QWidget()
+        form = QFormLayout(tab)
+        self.tabs.addTab(tab, name)
+        return tab, form
+
+    # --- Helper methods for adding fields ---
     def _add_line_edit(self, form, label, attr, value):
-        widget = QLineEdit(value)
+        widget = _fix_size(QLineEdit(str(value)))
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
     def _add_spinbox(self, form, label, attr, value, min_val, max_val):
-        widget = QSpinBox()
+        widget = _fix_size(QSpinBox())
         widget.setRange(min_val, max_val)
         widget.setValue(value)
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
     def _add_doublespinbox(self, form, label, attr, value, min_val, max_val, step):
-        widget = QDoubleSpinBox()
+        widget = _fix_size(QDoubleSpinBox())
         widget.setRange(min_val, max_val)
         widget.setSingleStep(step)
         widget.setValue(value)
@@ -82,11 +100,12 @@ class PreferencesWindow(QDialog):
         self.overrides[attr] = widget
 
     def _add_checkbox(self, form, label, attr, value):
-        widget = QCheckBox()
+        widget = _fix_size(QCheckBox())
         widget.setChecked(value)
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
+    # --- Settings population ---
     def _create_core_settings(self):
         self._add_doublespinbox(self.core_form, "Extract FPS", "EXTRACT_FPS", CFG.EXTRACT_FPS, 0.5, 10.0, 0.5)
         self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
@@ -125,13 +144,14 @@ class PreferencesWindow(QDialog):
         note = QLabel("M1-specific settings for hardware acceleration")
         note.setStyleSheet("font-style: italic; color: #666;")
         self.m1_form.addRow(note)
-        
+
         self._add_checkbox(self.m1_form, "Use M1 GPU (MPS)", "USE_MPS", CFG.USE_MPS)
         self._add_spinbox(self.m1_form, "YOLO Batch Size (RAM limit)", "YOLO_BATCH_SIZE", CFG.YOLO_BATCH_SIZE, 1, 16)
         self._add_line_edit(self.m1_form, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
 
+    # --- Value loading and overrides ---
     def load_current_values(self):
-        """Load values from DEFAULT_CONFIG."""
+        """Load values from DEFAULT_CONFIG into widgets."""
         cfg = CFG
         for attr, widget in self.overrides.items():
             val = getattr(cfg, attr, None)

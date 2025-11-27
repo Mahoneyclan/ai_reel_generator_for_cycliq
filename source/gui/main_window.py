@@ -62,7 +62,12 @@ class MainWindow(QMainWindow):
         """Set up the main UI layout."""
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
+        main_layout = QVBoxLayout(central)
+        
+        # Top section with panels side-by-side
+        top_widget = QWidget()
+        top_layout = QHBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
         
         # Create left and right panels
         left_panel = self._create_left_panel()
@@ -74,7 +79,13 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
-        main_layout.addWidget(splitter)
+        top_layout.addWidget(splitter)
+        
+        main_layout.addWidget(top_widget)
+        
+        # Bottom section - full width activity log
+        bottom_panel = self._create_bottom_panel()
+        main_layout.addWidget(bottom_panel)
         
         # Status bar
         self.statusBar().showMessage("Ready")
@@ -89,58 +100,79 @@ class MainWindow(QMainWindow):
         header = self.ui_builder.create_section_label("Ride Projects")
         layout.addWidget(header)
         
-        # Project list
+        # Project list (takes most of the space)
         self.project_list = QListWidget()
         self.project_list.itemClicked.connect(self._on_project_clicked)
         self.project_list.itemDoubleClicked.connect(self._on_project_double_clicked)
         layout.addWidget(self.project_list)
         
-        # Action buttons
+        # Action buttons at bottom
         action_panel = self._create_action_buttons()
         layout.addWidget(action_panel)
         
         return panel
     
     def _create_action_buttons(self) -> QWidget:
-        """Create bottom action button panel."""
+        """Create bottom action button panel - single row."""
         panel = QWidget()
         layout = QHBoxLayout(panel)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
         
-        btn_import = self.ui_builder.create_action_button(
-            "📹 Import Clips",
-            "Import new ride footage from cameras"
-        )
+        btn_import = QPushButton("Import Clips")
         btn_import.clicked.connect(self._open_import_clips)
+        btn_import.setStyleSheet(self._get_action_button_style())
         
-        btn_create = self.ui_builder.create_action_button(
-            "➕ Create New Project",
-            "Create project from a folder with video files"
-        )
+        btn_strava = QPushButton("Get Strava GPX")
+        btn_strava.clicked.connect(lambda: self.log("Strava GPX import coming soon", "info"))
+        btn_strava.setStyleSheet(self._get_action_button_style())
+        
+        btn_create = QPushButton("Create New Project")
         btn_create.clicked.connect(self._create_new_project)
+        btn_create.setStyleSheet(self._get_action_button_style())
         
-        btn_analyze = self.ui_builder.create_action_button(
-            "📊 Analyze Selection",
-            "Analyze why clips were selected or rejected"
-        )
+        btn_analyze = QPushButton("Analyze Selection")
         btn_analyze.clicked.connect(self._open_analysis)
+        btn_analyze.setStyleSheet(self._get_action_button_style())
         
-        btn_prefs = self.ui_builder.create_action_button(
-            "⚙️ Preferences",
-            "Configure pipeline settings"
-        )
+        btn_music = QPushButton("Add Music")
+        btn_music.clicked.connect(lambda: self.log("Music management coming soon", "info"))
+        btn_music.setStyleSheet(self._get_action_button_style())
+        
+        btn_prefs = QPushButton("Preferences")
         btn_prefs.clicked.connect(self._open_preferences)
+        btn_prefs.setStyleSheet(self._get_action_button_style())
         
         layout.addWidget(btn_import)
+        layout.addWidget(btn_strava)
         layout.addWidget(btn_create)
         layout.addWidget(btn_analyze)
+        layout.addWidget(btn_music)
         layout.addWidget(btn_prefs)
         
         return panel
     
+    def _get_action_button_style(self) -> str:
+        """Get stylesheet for action buttons."""
+        return """
+            QPushButton {
+                background-color: #F5F5F5;
+                color: #333333;
+                padding: 8px 12px;
+                font-size: 12px;
+                border: 1px solid #DDDDDD;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #E8E8E8;
+            }
+            QPushButton:pressed {
+                background-color: #DDDDDD;
+            }
+        """
+    
     def _create_right_panel(self) -> QWidget:
-        """Create right panel with pipeline steps and log."""
+        """Create right panel with pipeline steps and project info."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         
@@ -156,31 +188,31 @@ class MainWindow(QMainWindow):
         steps_label = self.ui_builder.create_section_label("Pipeline Steps", 14)
         layout.addWidget(steps_label)
         
-        # Step buttons
-        self.btn_prepare = self.ui_builder.create_step_button(
-            "1️⃣ Prepare Data",
-            "Validate inputs, parse GPX, and align camera timestamps\nRuns: Preflight → Flatten → Align",
+        # Step buttons - keep original blue styling
+        self.btn_prepare = self._create_pipeline_button(
+            "Prepare",
+            "Validate inputs, parse GPX, and align camera timestamps",
             lambda: self._run_step_group("prepare")
         )
         layout.addWidget(self.btn_prepare)
         
-        self.btn_analyze = self.ui_builder.create_step_button(
-            "2️⃣ Analyze Frames",
-            "Extract frame metadata and detect bikes with AI\nRuns: Extract → Analyze",
+        self.btn_analyze = self._create_pipeline_button(
+            "Analyze",
+            "Extract frame metadata and detect bikes with AI",
             lambda: self._run_step_group("analyze")
         )
         layout.addWidget(self.btn_analyze)
         
-        self.btn_select = self.ui_builder.create_step_button(
-            "3️⃣ Select Clips",
-            "AI recommends clips, then you review and finalize selection\nOpens manual review interface",
+        self.btn_select = self._create_pipeline_button(
+            "Select",
+            "AI recommends clips, then you review and finalize selection",
             self._run_select_with_review
         )
         layout.addWidget(self.btn_select)
         
-        self.btn_finalize = self.ui_builder.create_step_button(
-            "4️⃣ Build Final Video",
-            "Render clips with overlays, create intro/outro, and assemble final video\nRuns: Build → Splash → Concat",
+        self.btn_finalize = self._create_pipeline_button(
+            "Build",
+            "Render clips with overlays, create intro/outro, and assemble final video",
             lambda: self._run_step_group("finalize")
         )
         layout.addWidget(self.btn_finalize)
@@ -191,11 +223,47 @@ class MainWindow(QMainWindow):
         self.progress_bar = self.ui_builder.create_progress_bar()
         layout.addWidget(self.progress_bar)
         
-        # Log view
-        log_label = self.ui_builder.create_section_label("Activity Log", 14)
+        return panel
+    
+    def _create_pipeline_button(self, text: str, tooltip: str, callback) -> QPushButton:
+        """Create a pipeline step button with original blue styling."""
+        btn = QPushButton(text)
+        btn.clicked.connect(callback)
+        btn.setMinimumHeight(50)
+        btn.setToolTip(tooltip)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: #007AFF;
+                color: white;
+                font-size: 16px;
+                font-weight: bold;
+                border-radius: 8px;
+                text-align: center;
+            }
+            QPushButton:hover {
+                background-color: #0051D5;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #888888;
+            }
+        """)
+        return btn
+    
+    def _create_bottom_panel(self) -> QWidget:
+        """Create full-width bottom panel with activity log."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Activity Log label
+        log_label = QLabel("Activity Log")
+        log_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         layout.addWidget(log_label)
         
+        # Log view
         self.log_view = self.ui_builder.create_log_view()
+        self.log_view.setMinimumHeight(120)
         layout.addWidget(self.log_view)
         
         return panel
