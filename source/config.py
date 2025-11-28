@@ -39,6 +39,29 @@ class Config:
     SCENE_HIGH_GAP_MULTIPLIER: float = 0.75  # High scenes can be 75% closer
     SCENE_COMPARISON_WINDOW_S: float = 8.0  # Compare frames N seconds apart (not just adjacent),  Higher = detects major scene changes (e.g., 10s = new location) while Lower = detects quick action (e.g., 3s = passing cyclist)
 
+
+    # --- YOLO settings ---
+    YOLO_CLASS_MAP = {
+        "person": 0,
+        "bicycle": 1,
+        "car": 2,
+        "motorcycle": 3,
+        "truck": 7,
+        "traffic light": 9,
+        "stop sign": 11
+    }
+
+    # Available class names for UI selection
+    YOLO_AVAILABLE_CLASSES = [
+        "person",
+        "bicycle", 
+        "car",
+        "motorcycle",
+        "truck",
+        "traffic light",
+        "stop sign"
+    ]
+    
     # --- Detection settings ---
     YOLO_DETECT_CLASSES: list = field(default_factory=lambda: [1])  # 1=bicycle
     YOLO_IMAGE_SIZE: int = 640

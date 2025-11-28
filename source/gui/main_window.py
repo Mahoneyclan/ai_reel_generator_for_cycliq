@@ -181,20 +181,23 @@ class MainWindow(QMainWindow):
         """Create right panel with pipeline steps and project info."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(12)
         
         # Project info
         self.project_name_label = QLabel("No project loaded")
-        self.project_name_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.project_name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a;")
         layout.addWidget(self.project_name_label)
         
         self.project_info_label = self.ui_builder.create_info_label()
         layout.addWidget(self.project_info_label)
         
-        # Pipeline steps
+        # Pipeline steps header
         steps_label = self.ui_builder.create_section_label("Pipeline Steps", 14)
+        steps_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #666; padding: 10px 0 5px 0;")
         layout.addWidget(steps_label)
         
-        # Step buttons with completion indicators
+        # Step buttons with updated styling
         self.btn_prepare = self._create_pipeline_button(
             "Prepare",
             "Validate inputs, parse GPX, and align camera timestamps",
@@ -368,72 +371,81 @@ class MainWindow(QMainWindow):
         
         try:
             project_path = self.project_controller.current_project
+            working_dir = project_path / "working"
             
             if step_name == "prepare":
-                # Check if aligned.csv exists in project directory
-                aligned_file = project_path / "aligned.csv"
-                return aligned_file.exists()
+                # Check if camera_offsets.json exists
+                offsets_file = working_dir / "camera_offsets.json"
+                return offsets_file.exists()
             elif step_name == "analyze":
                 # Check if enriched.csv exists
-                return enrich_path().exists()
+                enriched_file = working_dir / "enriched.csv"
+                return enriched_file.exists()
             elif step_name == "select":
-                # Check if clips.csv exists in project directory
-                clips_file = project_path / "clips.csv"
-                return clips_file.exists()
+                # Check if select.csv exists
+                select_file = working_dir / "select.csv"
+                return select_file.exists()
             elif step_name == "finalize":
-                # Check if final video exists in project directory
-                final_video = project_path / "final_video.mp4"
+                # Check if final video exists - look for the actual project name
+                final_video = project_path / f"{project_path.name}.mp4"
                 return final_video.exists()
-        except Exception:
+        except Exception as e:
+            self.log(f"Error checking step completion for {step_name}: {e}", "error")
             return False
         
         return False
     
     def _update_button_completion_indicator(self, button: QPushButton, step_name: str):
-        """Update button text to show completion status."""
+        """Update button styling to show completion status with clean visual design."""
         original_text = button.property("original_text")
         is_completed = self._check_step_completed(step_name)
         
         if is_completed:
-            # Add checkmark to indicate completion
-            button.setText(f"✓ {original_text}")
+            # Completed: Minimal checkmark, muted green background
+            button.setText(f"✓  {original_text}")
             button.setStyleSheet("""
                 QPushButton {
-                    background-color: #00C853;
-                    color: white;
+                    background-color: #F0F9F4;
+                    color: #2D7A4F;
                     font-size: 16px;
-                    font-weight: bold;
+                    font-weight: 600;
+                    border: 2px solid #6EBF8B;
                     border-radius: 8px;
                     text-align: left;
                     padding-left: 15px;
                 }
                 QPushButton:hover {
-                    background-color: #00A843;
+                    background-color: #E5F4EC;
+                    border-color: #5CAF7B;
                 }
                 QPushButton:disabled {
-                    background-color: #88E4A8;
-                    color: #FFFFFF;
+                    background-color: #F5F5F5;
+                    color: #AAAAAA;
+                    border-color: #DDDDDD;
                 }
             """)
         else:
-            # Reset to original state
+            # Not completed: Clean slate gray
             button.setText(original_text)
             button.setStyleSheet("""
                 QPushButton {
-                    background-color: #007AFF;
-                    color: white;
+                    background-color: #FFFFFF;
+                    color: #333333;
                     font-size: 16px;
-                    font-weight: bold;
+                    font-weight: 600;
+                    border: 2px solid #DDDDDD;
                     border-radius: 8px;
                     text-align: left;
                     padding-left: 15px;
                 }
                 QPushButton:hover {
-                    background-color: #0051D5;
+                    background-color: #F8F9FA;
+                    border-color: #007AFF;
                 }
                 QPushButton:disabled {
-                    background-color: #CCCCCC;
-                    color: #888888;
+                    background-color: #F5F5F5;
+                    color: #AAAAAA;
+                    border-color: #E5E5E5;
                 }
             """)
     
@@ -474,6 +486,10 @@ class MainWindow(QMainWindow):
         self.log(f"✓ {step_name} completed", "success")
         self.statusBar().showMessage(f"Completed: {step_name}")
         self._update_step_buttons()
+        
+        # Special handling for Build completion - offer to open final video
+        if step_name == "finalize":
+            self._on_build_completed()
     
     def on_error(self, step_name: str, error_message: str):
         """Callback when pipeline step fails."""
@@ -481,6 +497,55 @@ class MainWindow(QMainWindow):
         self.log(f"✗ {step_name} failed: {error_message}", "error")
     
     # --- Dialogs ---
+    
+    def _on_build_completed(self):
+        """Handle Build step completion - offer to open final video."""
+        if not self.project_controller.current_project:
+            return
+        
+        project_path = self.project_controller.current_project
+        final_video = project_path / f"{project_path.name}.mp4"
+        
+        if not final_video.exists():
+            self.log("Build completed but final video not found", "warning")
+            return
+        
+        # Show success dialog with option to open video
+        reply = QMessageBox.question(
+            self,
+            "Build Complete! 🎉",
+            f"Your highlight reel has been created successfully!\n\n"
+            f"Location: {final_video}\n\n"
+            f"Would you like to open the video now?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        
+        if reply == QMessageBox.Yes:
+            self._open_final_video(final_video)
+    
+    def _open_final_video(self, video_path: Path):
+        """Open final video in default system player."""
+        import subprocess
+        import sys
+        
+        try:
+            if sys.platform == 'darwin':  # macOS
+                subprocess.run(['open', str(video_path)], check=True)
+            elif sys.platform == 'win32':  # Windows
+                subprocess.run(['start', str(video_path)], shell=True, check=True)
+            else:  # Linux
+                subprocess.run(['xdg-open', str(video_path)], check=True)
+            
+            self.log(f"Opened video: {video_path.name}", "success")
+        except Exception as e:
+            self.log(f"Failed to open video: {e}", "error")
+            QMessageBox.warning(
+                self,
+                "Cannot Open Video",
+                f"Could not open video automatically.\n\n"
+                f"Please open manually:\n{video_path}"
+            )
     
     def _open_import_clips(self):
         """Open import clips dialog."""

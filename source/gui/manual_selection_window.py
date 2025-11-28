@@ -2,6 +2,7 @@
 """
 Manual review dialog for clip selection.
 Displays PAIRED clips (primary + partner side-by-side) instead of individual frames.
+UPDATED: Clean, understated visual theme.
 """
 
 import csv
@@ -25,10 +26,7 @@ log = setup_logger("gui.manual_selection_window")
 class ManualSelectionWindow(QDialog):
     """
     Manual review dialog for paired clip selection.
-    - Shows primary + partner frames side-by-side
-    - Groups clips by their pair relationship
-    - Highlights AI recommendations
-    - Allows toggling entire pairs
+    Clean, understated visual design.
     """
 
     def __init__(self, project_dir: Path, parent=None):
@@ -68,26 +66,42 @@ class ManualSelectionWindow(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
 
+        # Title - clean typography
         title = QLabel("Review & Refine Clip Selection")
-        title.setStyleSheet("font-size: 22px; font-weight: bold; margin-bottom: 10px;")
+        title.setStyleSheet(
+            "font-size: 22px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px;"
+        )
         layout.addWidget(title, alignment=Qt.AlignCenter)
 
+        # Status label - understated
         self.status_label = QLabel("Loading candidate clips...")
-        self.status_label.setStyleSheet("font-size: 14px; color: #666; margin-bottom: 15px;")
+        self.status_label.setStyleSheet(
+            "font-size: 13px; color: #666; margin-bottom: 10px;"
+        )
         layout.addWidget(self.status_label, alignment=Qt.AlignCenter)
 
-        self.counter_label = QLabel(f"✓ Selected: {self.selected_count} clips")
+        # Counter - subtle highlight
+        self.counter_label = QLabel(f"Selected: {self.selected_count} clips")
         self.counter_label.setStyleSheet(
-            "font-size: 18px; font-weight: bold; padding: 12px; "
-            "background-color: #E3F2FD; border-radius: 6px; margin-bottom: 15px;"
+            "font-size: 16px; font-weight: 600; color: #2D7A4F; "
+            "padding: 10px 20px; background-color: #F0F9F4; "
+            "border: 2px solid #6EBF8B; border-radius: 6px; margin-bottom: 10px;"
         )
         self.counter_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.counter_label)
 
+        # Scroll area - clean border
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: #F5F5F5; }")
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #E5E5E5;
+                background: #FAFAFA;
+                border-radius: 4px;
+            }
+        """)
 
         self.grid_widget = QWidget()
         self.grid_layout = QGridLayout(self.grid_widget)
@@ -97,35 +111,54 @@ class ManualSelectionWindow(QDialog):
         scroll.setWidget(self.grid_widget)
         layout.addWidget(scroll)
 
+        # Instructions - subtle info
         instructions = QLabel(
-            "💡 Click any pair to toggle selection. Blue-highlighted pairs are AI recommendations.\n"
-            "Primary (front) and partner (rear) cameras are shown side-by-side for each moment."
+            "💡 Click any pair to toggle selection. Selected pairs show with green borders."
         )
-        instructions.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
+        instructions.setStyleSheet(
+            "color: #666; font-size: 12px; font-style: italic; padding: 10px;"
+        )
         instructions.setAlignment(Qt.AlignCenter)
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
 
+        # Button bar - clean styling
         btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(15)
+        btn_layout.setSpacing(12)
 
-        cancel_btn = QPushButton("Cancel & Stop Pipeline")
+        cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setStyleSheet("padding: 12px 24px; font-size: 14px;")
-
-        self.ok_btn = QPushButton(f"✓ Use {self.selected_count} Clips & Continue")
-        self.ok_btn.clicked.connect(lambda: self.accept())
-        self.ok_btn.setStyleSheet("""
+        cancel_btn.setStyleSheet("""
             QPushButton {
-                background-color: #007AFF;
-                color: white;
-                padding: 12px 24px;
+                background-color: #FFFFFF;
+                color: #333333;
+                padding: 10px 24px;
                 font-size: 14px;
-                font-weight: bold;
+                font-weight: 600;
+                border: 2px solid #DDDDDD;
                 border-radius: 6px;
             }
             QPushButton:hover {
-                background-color: #0051D5;
+                background-color: #F8F9FA;
+                border-color: #CCCCCC;
+            }
+        """)
+
+        self.ok_btn = QPushButton(f"Use {self.selected_count} Clips & Continue")
+        self.ok_btn.clicked.connect(lambda: self.accept())
+        self.ok_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D7A4F;
+                color: white;
+                padding: 10px 24px;
+                font-size: 14px;
+                font-weight: 600;
+                border: 2px solid #2D7A4F;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #246840;
+                border-color: #246840;
             }
         """)
 
@@ -170,12 +203,12 @@ class ManualSelectionWindow(QDialog):
             self.candidates = rows
             self.selected_count = sum(1 for c in self.candidates if c.get("recommended", "false") == "true")
 
-            self.counter_label.setText(f"✓ Selected: {self.selected_count} clips")
-            self.ok_btn.setText(f"✓ Use {self.selected_count} Clips & Continue")
+            self.counter_label.setText(f"Selected: {self.selected_count} clips")
+            self.ok_btn.setText(f"Use {self.selected_count} Clips & Continue")
 
             status_text = (
-                f"AI provided {len(self.candidates)} candidate clips | "
-                f"Pre-selected: {self.selected_count}/{self.target_clips} target"
+                f"Found {len(self.candidates)} candidate clips  •  "
+                f"Pre-selected: {self.selected_count} / {self.target_clips} target"
             )
             self.status_label.setText(status_text)
 
@@ -193,14 +226,12 @@ class ManualSelectionWindow(QDialog):
         if self.grid_layout.count() > 0:
             return
 
-        # Display 2 pairs per row (2 columns, each containing a pair)
         pairs_per_row = 2
 
         for idx, candidate in enumerate(self.candidates):
             row = idx // pairs_per_row
             col = idx % pairs_per_row
 
-            # Create pair container
             pair_widget = self._create_pair_widget(candidate)
             
             self.grid_layout.addWidget(pair_widget, row, col)
@@ -213,7 +244,6 @@ class ManualSelectionWindow(QDialog):
         pair_layout.setContentsMargins(8, 8, 8, 8)
         pair_layout.setSpacing(8)
 
-        # Frames container (horizontal layout for side-by-side)
         frames_container = QWidget()
         frames_layout = QHBoxLayout(frames_container)
         frames_layout.setContentsMargins(0, 0, 0, 0)
@@ -221,41 +251,34 @@ class ManualSelectionWindow(QDialog):
 
         idx = candidate.get('index', '')
         
-        # Primary frame (left)
         primary_frame = self._create_frame_widget(idx, "Primary", candidate)
         frames_layout.addWidget(primary_frame)
 
-        # Partner frame (right)
         partner_frame = self._create_frame_widget(idx, "Partner", candidate)
         frames_layout.addWidget(partner_frame)
 
         pair_layout.addWidget(frames_container)
 
-        # Metadata footer - use best available time field from CSV
-        # Priority: adjusted_start_time (local) > abs_time_iso (UTC)
         time_str = candidate.get('adjusted_start_time') or candidate.get('abs_time_iso', 'N/A')
         if time_str != 'N/A' and 'T' in time_str:
             try:
                 from datetime import datetime
-                # Parse ISO format and convert to local time if needed
                 dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
                 time_str = dt.astimezone().strftime('%Y-%m-%d %H:%M:%S')
             except Exception:
-                pass  # Keep original if parsing fails
+                pass
         
         metadata = QLabel(
             f"Time: {time_str}\n"
-            f"Speed: {candidate.get('speed_kmh', 'N/A')} km/h | "
+            f"Speed: {candidate.get('speed_kmh', 'N/A')} km/h  •  "
             f"Detection: {candidate.get('detect_score', 'N/A')}"
         )
         metadata.setAlignment(Qt.AlignCenter)
-        metadata.setStyleSheet("font-size: 10px; color: #666;")
+        metadata.setStyleSheet("font-size: 11px; color: #666;")
         pair_layout.addWidget(metadata)
 
-        # Style based on selection state
         self._apply_pair_style(pair_container, candidate)
 
-        # Make entire pair clickable
         pair_container.mousePressEvent = self._make_pair_toggle_handler(candidate, pair_container)
 
         return pair_container
@@ -267,20 +290,17 @@ class ManualSelectionWindow(QDialog):
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(4)
 
-        # Camera label
         camera = candidate.get('camera', 'Unknown') if frame_type == "Primary" else candidate.get('partner_camera', 'Unknown')
         label = QLabel(f"{frame_type} ({camera})")
         label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        label.setStyleSheet("font-weight: 600; font-size: 11px; color: #333;")
         frame_layout.addWidget(label)
 
-        # Frame image
         frame_path = self.extract_dir / f"{idx}_{frame_type}.jpg"
         
         if frame_path.exists():
             pixmap = QPixmap(str(frame_path))
             if not pixmap.isNull():
-                # Scale to reasonable thumbnail size
                 pixmap = pixmap.scaled(340, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 image_label = QLabel()
                 image_label.setPixmap(pixmap)
@@ -295,29 +315,34 @@ class ManualSelectionWindow(QDialog):
             fallback = QLabel(f"[No {frame_type.lower()} camera]" if frame_type == "Partner" else f"[No image]")
             fallback.setAlignment(Qt.AlignCenter)
             fallback.setMinimumSize(340, 240)
-            fallback.setStyleSheet("color: #999; background-color: #f0f0f0;")
+            fallback.setStyleSheet("color: #999; background-color: #f5f5f5;")
             frame_layout.addWidget(fallback)
 
         return frame_widget
 
     def _apply_pair_style(self, widget: QWidget, candidate: Dict):
-        """Apply visual styling based on selection state."""
+        """Apply clean visual styling based on selection state."""
         is_selected = candidate.get("recommended", "false") == "true"
         
         if is_selected:
+            # Selected: Soft green border and tint
             widget.setStyleSheet("""
                 QFrame {
-                    background-color: #BBDEFB;
-                    border: 3px solid #1976D2;
+                    background-color: #F0F9F4;
+                    border: 3px solid #6EBF8B;
                     border-radius: 8px;
                 }
             """)
         else:
+            # Unselected: Clean white with subtle border
             widget.setStyleSheet("""
                 QFrame {
-                    background-color: #FAFAFA;
-                    border: 2px solid #DDDDDD;
+                    background-color: #FFFFFF;
+                    border: 2px solid #E5E5E5;
                     border-radius: 8px;
+                }
+                QFrame:hover {
+                    border-color: #CCCCCC;
                 }
             """)
 
@@ -328,17 +353,15 @@ class ManualSelectionWindow(QDialog):
             new_selected = not currently_selected
             candidate["recommended"] = "true" if new_selected else "false"
 
-            # Update visual styling
             self._apply_pair_style(widget, candidate)
 
-            # Update counters
             if new_selected:
                 self.selected_count += 1
             else:
                 self.selected_count -= 1
 
-            self.counter_label.setText(f"✓ Selected: {self.selected_count} clips")
-            self.ok_btn.setText(f"✓ Use {self.selected_count} Clips & Continue")
+            self.counter_label.setText(f"Selected: {self.selected_count} clips")
+            self.ok_btn.setText(f"Use {self.selected_count} Clips & Continue")
 
         return handler
 

@@ -1,8 +1,7 @@
 # source/gui/view_log_window.py
 """
 View Log Window - displays logs for selected ride project.
-Left panel: list of log files
-Right panel: content of selected log file
+UPDATED: Clean, understated visual theme.
 """
 
 from pathlib import Path
@@ -16,7 +15,7 @@ from PySide6.QtCore import Qt
 
 
 class ViewLogWindow(QDialog):
-    """Window to view log files for a ride project."""
+    """Window to view log files for a ride project with clean styling."""
     
     def __init__(self, project_dir: Path, parent=None):
         super().__init__(parent)
@@ -37,9 +36,10 @@ class ViewLogWindow(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        # Main splitter - no header, just panels
+        # Main splitter
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(1)
+        splitter.setStyleSheet("QSplitter::handle { background-color: #E5E5E5; }")
         
         # Left panel
         left_panel = self._create_left_panel()
@@ -58,36 +58,35 @@ class ViewLogWindow(QDialog):
     def _create_left_panel(self) -> QWidget:
         """Create left panel with log file list."""
         panel = QWidget()
+        panel.setStyleSheet("background-color: #FAFAFA;")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(5)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         
         # Header with refresh button
         header_layout = QHBoxLayout()
         header = QLabel("Available Logs")
-        header.setStyleSheet("""
-            font-size: 12px;
-            font-weight: bold;
-            color: #333;
-            padding: 2px;
-        """)
+        header.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #333; padding: 2px;"
+        )
         header_layout.addWidget(header)
         header_layout.addStretch()
         
         # Refresh button
         self.refresh_btn = QPushButton("🔄")
         self.refresh_btn.clicked.connect(self._load_log_files)
-        self.refresh_btn.setFixedSize(24, 24)
+        self.refresh_btn.setFixedSize(28, 28)
         self.refresh_btn.setStyleSheet("""
             QPushButton {
                 padding: 2px;
                 font-size: 12px;
-                border: 1px solid #CCCCCC;
-                border-radius: 3px;
-                background-color: #F5F5F5;
+                border: 2px solid #E5E5E5;
+                border-radius: 4px;
+                background-color: #FFFFFF;
             }
             QPushButton:hover {
-                background-color: #E8E8E8;
+                background-color: #F8F9FA;
+                border-color: #CCCCCC;
             }
         """)
         header_layout.addWidget(self.refresh_btn)
@@ -99,44 +98,43 @@ class ViewLogWindow(QDialog):
         self.log_list.itemClicked.connect(self._on_log_selected)
         self.log_list.setStyleSheet("""
             QListWidget {
-                border: 1px solid #DDDDDD;
+                border: 1px solid #E5E5E5;
                 background-color: #FFFFFF;
                 font-size: 11px;
                 outline: none;
+                border-radius: 4px;
             }
             QListWidget::item {
-                padding: 6px 8px;
-                border-bottom: 1px solid #F0F0F0;
+                padding: 8px;
+                border-bottom: 1px solid #F5F5F5;
             }
             QListWidget::item:selected {
-                background-color: #007AFF;
-                color: white;
+                background-color: #F0F9F4;
+                color: #2D7A4F;
+                border-left: 3px solid #6EBF8B;
             }
             QListWidget::item:hover:!selected {
-                background-color: #F5F5F5;
+                background-color: #F8F9FA;
             }
         """)
         layout.addWidget(self.log_list)
         
-        panel.setStyleSheet("background-color: #FAFAFA;")
         return panel
     
     def _create_right_panel(self) -> QWidget:
         """Create right panel with log content."""
         panel = QWidget()
+        panel.setStyleSheet("background-color: #FFFFFF;")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(5)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         
         # Header with close button
         header_layout = QHBoxLayout()
         self.content_label = QLabel("Select a log file to view")
-        self.content_label.setStyleSheet("""
-            font-size: 12px;
-            font-weight: bold;
-            color: #333;
-            padding: 2px;
-        """)
+        self.content_label.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #333; padding: 2px;"
+        )
         header_layout.addWidget(self.content_label)
         header_layout.addStretch()
         
@@ -145,15 +143,17 @@ class ViewLogWindow(QDialog):
         close_btn.clicked.connect(self.accept)
         close_btn.setStyleSheet("""
             QPushButton {
-                padding: 4px 12px;
-                font-size: 11px;
-                border: 1px solid #007AFF;
-                border-radius: 3px;
-                background-color: #007AFF;
-                color: white;
+                padding: 6px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                border: 2px solid #E5E5E5;
+                border-radius: 4px;
+                background-color: #FFFFFF;
+                color: #333333;
             }
             QPushButton:hover {
-                background-color: #0051D5;
+                background-color: #F8F9FA;
+                border-color: #CCCCCC;
             }
         """)
         header_layout.addWidget(close_btn)
@@ -165,18 +165,18 @@ class ViewLogWindow(QDialog):
         self.log_content.setReadOnly(True)
         self.log_content.setStyleSheet("""
             QTextEdit {
-                background-color: #FFFFFF;
-                border: 1px solid #DDDDDD;
+                background-color: #FAFAFA;
+                border: 1px solid #E5E5E5;
+                border-radius: 4px;
                 font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
                 font-size: 10px;
-                line-height: 1.4;
+                line-height: 1.5;
+                padding: 8px;
             }
         """)
         layout.addWidget(self.log_content)
         
-        panel.setStyleSheet("background-color: #FFFFFF;")
         return panel
-    
 
     def _load_log_files(self):
         """Load list of log files from logs directory."""
@@ -206,9 +206,9 @@ class ViewLogWindow(QDialog):
                 size_kb = stat.st_size / 1024
                 mod_time = datetime.fromtimestamp(stat.st_mtime)
                 
-                # Clean display: filename on top, metadata below
+                # Clean display
                 display_name = f"📄 {log_file.name}"
-                subtitle = f"    {size_kb:.1f} KB • Modified: {mod_time.strftime('%Y-%m-%d %H:%M')}"
+                subtitle = f"    {size_kb:.1f} KB • {mod_time.strftime('%Y-%m-%d %H:%M')}"
                 
                 item = QListWidgetItem(f"{display_name}\n{subtitle}")
                 item.setData(Qt.UserRole, str(log_file))
@@ -245,22 +245,22 @@ class ViewLogWindow(QDialog):
             self.log_content.setPlainText(f"Error reading log:\n{str(e)}")
     
     def _format_log_content(self, content: str) -> str:
-        """Format log content with color coding."""
+        """Format log content with subtle color coding."""
         lines = content.split('\n')
         formatted = []
         
         for line in lines:
-            # Determine color based on log level
+            # Determine color based on log level - understated palette
             if '| ERROR |' in line or '| CRITICAL |' in line:
                 color = '#D32F2F'
             elif '| WARNING |' in line:
                 color = '#F57C00'
             elif '| INFO |' in line:
-                color = '#1976D2'
-            elif '| DEBUG |' in line:
-                color = '#757575'
-            else:
                 color = '#333333'
+            elif '| DEBUG |' in line:
+                color = '#999999'
+            else:
+                color = '#666666'
             
             # Escape HTML
             escaped = (line
