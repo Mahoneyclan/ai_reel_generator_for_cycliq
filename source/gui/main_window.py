@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QSplitter, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 
 from ..config import DEFAULT_CONFIG as CFG
 from .import_window import ImportRideWindow
@@ -44,7 +45,6 @@ class MainWindow(QMainWindow):
         self.ui_builder = UIBuilder()
         
         # UI components (will be initialized in _setup_ui)
-        self.progress_bar = None
         self.log_view = None
         self.project_list = None
         self.project_name_label = None
@@ -84,6 +84,10 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(top_widget)
         
+        # Action buttons - NOW FULL WIDTH between panels and log
+        action_panel = self._create_action_buttons()
+        main_layout.addWidget(action_panel)
+        
         # Bottom section - full width activity log
         bottom_panel = self._create_bottom_panel()
         main_layout.addWidget(bottom_panel)
@@ -92,7 +96,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
     
     def _create_left_panel(self) -> QWidget:
-        """Create left panel with project list and action buttons."""
+        """Create left panel with project list."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -101,20 +105,16 @@ class MainWindow(QMainWindow):
         header = self.ui_builder.create_section_label("Ride Projects")
         layout.addWidget(header)
         
-        # Project list (takes most of the space)
+        # Project list (takes all remaining space)
         self.project_list = QListWidget()
         self.project_list.itemClicked.connect(self._on_project_clicked)
         self.project_list.itemDoubleClicked.connect(self._on_project_double_clicked)
         layout.addWidget(self.project_list)
         
-        # Action buttons at bottom
-        action_panel = self._create_action_buttons()
-        layout.addWidget(action_panel)
-        
         return panel
     
     def _create_action_buttons(self) -> QWidget:
-        """Create bottom action button panel - single row."""
+        """Create action button panel - spans full width."""
         panel = QWidget()
         layout = QHBoxLayout(panel)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -194,7 +194,7 @@ class MainWindow(QMainWindow):
         steps_label = self.ui_builder.create_section_label("Pipeline Steps", 14)
         layout.addWidget(steps_label)
         
-        # Step buttons - keep original blue styling
+        # Step buttons with completion indicators
         self.btn_prepare = self._create_pipeline_button(
             "Prepare",
             "Validate inputs, parse GPX, and align camera timestamps",
@@ -225,18 +225,18 @@ class MainWindow(QMainWindow):
         
         layout.addStretch()
         
-        # Progress bar
-        self.progress_bar = self.ui_builder.create_progress_bar()
-        layout.addWidget(self.progress_bar)
-        
         return panel
     
     def _create_pipeline_button(self, text: str, tooltip: str, callback) -> QPushButton:
-        """Create a pipeline step button with original blue styling."""
+        """Create a pipeline step button with completion indicator support."""
         btn = QPushButton(text)
         btn.clicked.connect(callback)
         btn.setMinimumHeight(50)
         btn.setToolTip(tooltip)
+        
+        # Store original text for later use
+        btn.setProperty("original_text", text)
+        
         btn.setStyleSheet("""
             QPushButton {
                 background-color: #007AFF;
@@ -244,7 +244,8 @@ class MainWindow(QMainWindow):
                 font-size: 16px;
                 font-weight: bold;
                 border-radius: 8px;
-                text-align: center;
+                text-align: left;
+                padding-left: 15px;
             }
             QPushButton:hover {
                 background-color: #0051D5;
@@ -302,7 +303,7 @@ class MainWindow(QMainWindow):
             self.project_name_label.setText(project_path.name)
             self.project_info_label.setText(str(project_path))
             
-            # Update button states
+            # Update button states and completion indicators
             self._update_step_buttons()
     
     def _on_project_double_clicked(self, item):
@@ -360,14 +361,96 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.on_error("select", str(e))
     
+    def _check_step_completed(self, step_name: str) -> bool:
+        """Check if a pipeline step has been completed based on artifact files."""
+        if not self.project_controller.current_project:
+            return False
+        
+        try:
+            project_path = self.project_controller.current_project
+            
+            if step_name == "prepare":
+                # Check if aligned.csv exists in project directory
+                aligned_file = project_path / "aligned.csv"
+                return aligned_file.exists()
+            elif step_name == "analyze":
+                # Check if enriched.csv exists
+                return enrich_path().exists()
+            elif step_name == "select":
+                # Check if clips.csv exists in project directory
+                clips_file = project_path / "clips.csv"
+                return clips_file.exists()
+            elif step_name == "finalize":
+                # Check if final video exists in project directory
+                final_video = project_path / "final_video.mp4"
+                return final_video.exists()
+        except Exception:
+            return False
+        
+        return False
+    
+    def _update_button_completion_indicator(self, button: QPushButton, step_name: str):
+        """Update button text to show completion status."""
+        original_text = button.property("original_text")
+        is_completed = self._check_step_completed(step_name)
+        
+        if is_completed:
+            # Add checkmark to indicate completion
+            button.setText(f"✓ {original_text}")
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #00C853;
+                    color: white;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    text-align: left;
+                    padding-left: 15px;
+                }
+                QPushButton:hover {
+                    background-color: #00A843;
+                }
+                QPushButton:disabled {
+                    background-color: #88E4A8;
+                    color: #FFFFFF;
+                }
+            """)
+        else:
+            # Reset to original state
+            button.setText(original_text)
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #007AFF;
+                    color: white;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border-radius: 8px;
+                    text-align: left;
+                    padding-left: 15px;
+                }
+                QPushButton:hover {
+                    background-color: #0051D5;
+                }
+                QPushButton:disabled {
+                    background-color: #CCCCCC;
+                    color: #888888;
+                }
+            """)
+    
     def _update_step_buttons(self):
-        """Update step button enabled/disabled state based on pipeline progress."""
+        """Update step button enabled/disabled state and completion indicators."""
         if not self.project_controller.current_project:
             self.btn_prepare.setEnabled(False)
             self.btn_analyze.setEnabled(False)
             self.btn_select.setEnabled(False)
             self.btn_finalize.setEnabled(False)
             return
+        
+        # Update completion indicators for all steps
+        self._update_button_completion_indicator(self.btn_prepare, "prepare")
+        self._update_button_completion_indicator(self.btn_analyze, "analyze")
+        self._update_button_completion_indicator(self.btn_select, "select")
+        self._update_button_completion_indicator(self.btn_finalize, "finalize")
         
         # Enable buttons based on completion status
         self.btn_prepare.setEnabled(True)
@@ -381,13 +464,9 @@ class MainWindow(QMainWindow):
         """Callback when pipeline step starts."""
         self.log(f"▶ Starting {step_name}...", "info")
         self.statusBar().showMessage(f"Running: {step_name}")
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
     
     def on_step_progress(self, step_name: str, progress: int, status: str):
         """Callback for pipeline step progress updates."""
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(progress)
         self.statusBar().showMessage(f"{step_name}: {status}")
     
     def on_step_completed(self, step_name: str, result):
@@ -395,12 +474,9 @@ class MainWindow(QMainWindow):
         self.log(f"✓ {step_name} completed", "success")
         self.statusBar().showMessage(f"Completed: {step_name}")
         self._update_step_buttons()
-        current = self.progress_bar.value()
-        self.progress_bar.setValue(min(current + 10, 100))
     
     def on_error(self, step_name: str, error_message: str):
         """Callback when pipeline step fails."""
-        self.progress_bar.setVisible(False)
         self.statusBar().showMessage("Pipeline failed")
         self.log(f"✗ {step_name} failed: {error_message}", "error")
     
