@@ -17,6 +17,7 @@ from ..config import DEFAULT_CONFIG as CFG
 from .import_window import ImportRideWindow
 from .preferences_window import PreferencesWindow
 from .analysis_dialog import AnalysisDialog
+from .view_log_window import ViewLogWindow
 
 # Import controllers
 from .controllers import ProjectController, PipelineController, UIBuilder
@@ -135,6 +136,10 @@ class MainWindow(QMainWindow):
         btn_analyze.clicked.connect(self._open_analysis)
         btn_analyze.setStyleSheet(self._get_action_button_style())
         
+        btn_log = QPushButton("View Log")
+        btn_log.clicked.connect(self._open_log_viewer)
+        btn_log.setStyleSheet(self._get_action_button_style())
+        
         btn_music = QPushButton("Add Music")
         btn_music.clicked.connect(lambda: self.log("Music management coming soon", "info"))
         btn_music.setStyleSheet(self._get_action_button_style())
@@ -147,6 +152,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(btn_strava)
         layout.addWidget(btn_create)
         layout.addWidget(btn_analyze)
+        layout.addWidget(btn_log)
         layout.addWidget(btn_music)
         layout.addWidget(btn_prefs)
         
@@ -477,6 +483,27 @@ class MainWindow(QMainWindow):
                 self,
                 "Analysis Error",
                 f"Failed to run analysis:\n\n{str(e)}"
+            )
+    
+    def _open_log_viewer(self):
+        """Open log viewer window."""
+        if not self.project_controller.current_project:
+            QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select or create a project before viewing logs."
+            )
+            return
+        
+        try:
+            log_window = ViewLogWindow(self.project_controller.current_project, self)
+            log_window.exec()
+        except Exception as e:
+            self.log(f"Failed to open log viewer: {e}", "error")
+            QMessageBox.critical(
+                self,
+                "Log Viewer Error",
+                f"Failed to open log viewer:\n\n{str(e)}"
             )
     
     # --- Logging ---

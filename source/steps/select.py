@@ -16,7 +16,7 @@ import csv
 import subprocess
 from pathlib import Path
 from typing import List, Dict
-from tqdm import tqdm
+from source.utils.progress_reporter import progress_iter
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import enrich_path, select_path, frames_dir, _mk
@@ -84,7 +84,7 @@ def extract_frames_for_candidates(pool: List[Dict]) -> None:
     
     extraction_count = 0
     
-    for candidate in tqdm(pool, desc="[select] Extracting frames", unit="frame", ncols=80):
+    for candidate in progress_iter(pool, desc="[select] Extracting frames", unit="frame"):
         try:
             idx = candidate.get("index", "")
             source_file = candidate.get("source", "")

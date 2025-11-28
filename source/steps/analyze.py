@@ -10,7 +10,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Dict, List
-from tqdm import tqdm
+from source.utils.progress_reporter import progress_iter
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import extract_path, enrich_path, _mk
@@ -170,10 +170,10 @@ def run() -> Path:
     
     try:
         # Process all frames
-        pbar = tqdm(rows, desc="[analyze] Processing frames", unit="frame", ncols=80)
+        pbar = progress_iter(rows, desc="[analyze] Processing frames", unit="frame")
         for idx, r in enumerate(pbar):
             progress_pct = int((idx / len(rows)) * 100)
-            pbar.set_postfix_str(f"{idx}/{len(rows)} ({progress_pct}%)")
+            #pbar.set_postfix_str(f"{idx}/{len(rows)} ({progress_pct}%)")
             
             # Extract frame info
             video_path = Path(r["video_path"])

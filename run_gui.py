@@ -5,7 +5,6 @@ Run with: python3 run_gui.py
 """
 
 import os
-
 # --- CRITICAL: must be FIRST, before any other imports ---
 os.environ['MPLBACKEND'] = 'Agg'   # Force matplotlib backend
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -14,11 +13,24 @@ os.environ['QT_MAC_WANTS_LAYER'] = '1'
 
 import sys
 from pathlib import Path
+import logging 
+from source.config import Config # Import your config class
 
 # Add project root to path
 project_root = Path(__file__).parent.resolve()
 sys.path.insert(0, str(project_root))
 
+CONSOLE_LOG_LEVEL = logging.WARNING
+logging.basicConfig(
+    level=Config.LOG_LEVEL, 
+    format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+)
+
+for handler in logging.root.handlers:
+    if isinstance(handler, logging.StreamHandler):
+        handler.setLevel(CONSOLE_LOG_LEVEL)
+
+        
 # High DPI policy must be set before QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
