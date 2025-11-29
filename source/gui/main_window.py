@@ -477,9 +477,18 @@ class MainWindow(QMainWindow):
         self.log(f"▶ Starting {step_name}...", "info")
         self.statusBar().showMessage(f"Running: {step_name}")
     
-    def on_step_progress(self, step_name: str, progress: int, status: str):
-        """Callback for pipeline step progress updates."""
-        self.statusBar().showMessage(f"{step_name}: {status}")
+    def on_step_progress(self, step_name: str, current: int, total: int):
+        """Callback for pipeline step progress updates.
+        
+        Args:
+            step_name: Name of the current step
+            current: Current progress value (e.g., frame 42)
+            total: Total items to process (e.g., 100 frames)
+        """
+        if total > 0:
+            pct = int((current / total) * 100)
+            status = f"{step_name}: {current}/{total} ({pct}%)"
+            self.statusBar().showMessage(status)
     
     def on_step_completed(self, step_name: str, result):
         """Callback when pipeline step completes."""
@@ -487,17 +496,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Completed: {step_name}")
         self._update_step_buttons()
         
-        # Special handling for Build completion - offer to open final video
-        if step_name == "finalize":
+        # Special handling for concat completion (final step of build group)
+        # The concat step is the last one, so we show the popup after it finishes
+        if step_name == "concat":
             self._on_build_completed()
     
     def on_error(self, step_name: str, error_message: str):
         """Callback when pipeline step fails."""
         self.statusBar().showMessage("Pipeline failed")
         self.log(f"✗ {step_name} failed: {error_message}", "error")
-    
+
     # --- Dialogs ---
-    
     def _on_build_completed(self):
         """Handle Build step completion - offer to open final video."""
         if not self.project_controller.current_project:

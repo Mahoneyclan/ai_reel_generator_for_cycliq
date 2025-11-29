@@ -47,7 +47,7 @@ def _prerender_minimaps(rows: list[dict], gpx_points: list[GpxPoint], out_dir: P
     log.info(f"[build] Pre-rendering {len(rows)} minimaps...")
     minimap_paths: Dict[int, Path] = {}
     
-    for idx, r in enumerate(progress_iter(rows, desc="[build] minimaps", unit="map"), start=1):
+    for idx, r in enumerate(progress_iter(rows, desc="Rendering minimaps", unit="map"), start=1):
         try:
             gpx_epoch = r.get("gpx_epoch")
             if not gpx_epoch:
@@ -143,7 +143,8 @@ def run() -> Path:
     # Build individual clips
     individual_clips = []
     
-    for idx, r in enumerate(progress_iter(rows, desc="[build] clips", unit="clip"), start=1):
+    # Use progress_iter with better description
+    for idx, r in enumerate(progress_iter(rows, desc="Encoding clips", unit="clip"), start=1):
         try:
             main_video = CFG.INPUT_VIDEOS_DIR / r["source"]
             partner_video = (CFG.INPUT_VIDEOS_DIR / r["partner_source"]) if r.get("partner_source") else None
