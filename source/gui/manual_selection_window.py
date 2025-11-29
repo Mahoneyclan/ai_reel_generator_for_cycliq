@@ -1,13 +1,15 @@
 # source/gui/manual_selection_window.py
 """
 Manual review dialog for clip selection.
-Displays PAIRED clips (primary + partner side-by-side) instead of individual frames.
-UPDATED: Clean, understated visual theme.
+Displays PAIRED clips with reciprocal pairing support.
+- Each moment shows 2 widgets: Fly12Sport primary + Fly6Pro primary
+- Clicking either widget selects that camera angle as the primary
+- Auto-deselects the reciprocal pair
 """
 
 import csv
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -24,10 +26,7 @@ log = setup_logger("gui.manual_selection_window")
 
 
 class ManualSelectionWindow(QDialog):
-    """
-    Manual review dialog for paired clip selection.
-    Clean, understated visual design.
-    """
+    """Manual review dialog with reciprocal pairing support."""
 
     def __init__(self, project_dir: Path, parent=None):
         super().__init__(parent)
@@ -38,8 +37,11 @@ class ManualSelectionWindow(QDialog):
         self.selected_count = 0
         self.target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
 
-        self.timestamp_widget_map = {} 
-        self.timestamp_widgets = {}
+        # Map index → row for fast lookup
+        self.index_to_row: Dict[str, Dict] = {}
+        
+        # Map index → widget for reciprocal updates
+        self.index_to_widget: Dict[str, QWidget] = {}
 
         self.setWindowTitle("Review & Refine Clip Selection")
         self.resize(1600, 900)
@@ -71,21 +73,21 @@ class ManualSelectionWindow(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        # Title - clean typography
+        # Title
         title = QLabel("Review & Refine Clip Selection")
         title.setStyleSheet(
             "font-size: 22px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px;"
         )
         layout.addWidget(title, alignment=Qt.AlignCenter)
 
-        # Status label - understated
+        # Status label
         self.status_label = QLabel("Loading candidate clips...")
         self.status_label.setStyleSheet(
             "font-size: 13px; color: #666; margin-bottom: 10px;"
         )
         layout.addWidget(self.status_label, alignment=Qt.AlignCenter)
 
-        # Counter - subtle highlight
+        # Counter
         self.counter_label = QLabel(f"Selected: {self.selected_count} clips")
         self.counter_label.setStyleSheet(
             "font-size: 16px; font-weight: 600; color: #2D7A4F; "
@@ -95,7 +97,7 @@ class ManualSelectionWindow(QDialog):
         self.counter_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.counter_label)
 
-        # Scroll area - clean border
+        # Scroll area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("""
@@ -114,9 +116,10 @@ class ManualSelectionWindow(QDialog):
         scroll.setWidget(self.grid_widget)
         layout.addWidget(scroll)
 
-        # Instructions - subtle info
+        # Instructions
         instructions = QLabel(
-            "💡 Click any pair to toggle selection. Selected pairs show with green borders."
+            "💡 Click any pair to select that camera angle. Selected pairs show with green borders.\n"
+            "Reciprocal pairs (same moment, different camera) are automatically managed."
         )
         instructions.setStyleSheet(
             "color: #666; font-size: 12px; font-style: italic; padding: 10px;"
@@ -125,7 +128,7 @@ class ManualSelectionWindow(QDialog):
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
 
-        # Button bar - clean styling
+        # Button bar
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(12)
 
@@ -169,21 +172,8 @@ class ManualSelectionWindow(QDialog):
         btn_layout.addWidget(self.ok_btn)
         layout.addLayout(btn_layout)
 
-    def _apply_gap_recommendations(self, rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Ensure recommended clips comply with minimum gap spacing."""
-        last_time = None
-        min_gap_s = int(getattr(CFG, "MIN_GAP_BETWEEN_CLIPS", 90))
-        for row in rows:
-            ts = float(row.get("abs_time_epoch", 0) or 0.0)
-            if row.get("recommended", "false") == "true":
-                if last_time is None or (ts - last_time) >= min_gap_s:
-                    last_time = ts
-                else:
-                    row["recommended"] = "false"
-        return rows
-
     def _load_candidates(self):
-        """Load candidates directly from select.csv."""
+        """Load candidates from select.csv and build index."""
         select_csv = select_path()
 
         if not select_csv.exists():
@@ -201,9 +191,12 @@ class ManualSelectionWindow(QDialog):
                 return
 
             rows.sort(key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
-            rows = self._apply_gap_recommendations(rows)
-
             self.candidates = rows
+            
+            # Build index lookup
+            for row in rows:
+                self.index_to_row[row["index"]] = row
+            
             self.selected_count = sum(1 for c in self.candidates if c.get("recommended", "false") == "true")
 
             self.counter_label.setText(f"Selected: {self.selected_count} clips")
@@ -225,50 +218,36 @@ class ManualSelectionWindow(QDialog):
         QTimer.singleShot(100, self._populate_grid)
 
     def _populate_grid(self):
-        """Populate grid with exactly 2 widgets per reciprocal pair."""
+        """Populate grid showing each frame with its partner."""
         if self.grid_layout.count() > 0:
             return
-
-        from collections import defaultdict
-        
-        timestamp_groups = defaultdict(list)
-        for candidate in self.candidates:
-            ts = candidate.get('abs_time_epoch', '0')
-            timestamp_groups[ts].append(candidate)
-        
-        self.timestamp_widgets = {}
         
         widget_idx = 0
-        for ts, rows in timestamp_groups.items():
-            if len(rows) == 2:  # Reciprocal pair found
-                fly12_row = next((r for r in rows if r.get('camera') == 'Fly12Sport'), None)
-                fly6_row = next((r for r in rows if r.get('camera') == 'Fly6Pro'), None)
+        for row in self.candidates:
+            try:
+                widget = self._create_frame_widget(row)
+                self.grid_layout.addWidget(widget, widget_idx // 2, widget_idx % 2)
                 
-                if fly12_row and fly6_row:
-                    # Widget 1: Fly12Sport on LEFT, Fly6Pro on RIGHT
-                    widget1 = self._create_pair_widget(fly12_row, fly6_row, ts, 0)
-                    self.grid_layout.addWidget(widget1, widget_idx // 2, 0)
-                    
-                    # Widget 2: Fly6Pro on LEFT, Fly12Sport on RIGHT
-                    widget2 = self._create_pair_widget(fly6_row, fly12_row, ts, 1)
-                    self.grid_layout.addWidget(widget2, widget_idx // 2, 1)
-                    
-                    # Store for cross-reference
-                    self.timestamp_widgets[ts] = [widget1, widget2]
-                    widget_idx += 2
+                # Store widget reference for reciprocal updates
+                self.index_to_widget[row["index"]] = widget
+                
+                widget_idx += 1
+            except Exception as e:
+                self.log(f"Failed to create widget for {row.get('index')}: {e}", "error")
 
-    def _create_pair_widget(self, primary_row: Dict, secondary_row: Dict, ts: str, position: int) -> QWidget:
-        """Create widget showing primary_row's camera on left, secondary_row's on right."""
-        pair_container = QFrame()
-        pair_container.timestamp = ts
-        pair_container.position = position
-        pair_layout = QVBoxLayout(pair_container)
-        pair_layout.setContentsMargins(8, 8, 8, 8)
-        pair_layout.setSpacing(8)
+    def _create_frame_widget(self, row: Dict) -> QWidget:
+        """Create widget showing primary frame with partner (if available)."""
+        container = QFrame()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
 
-        # Store references for toggle handler
-        pair_container.primary_row = primary_row
-        pair_container.secondary_row = secondary_row
+        # Store reference for toggle handler
+        container.row_data = row
+
+        # Get partner info
+        partner_index = row.get("partner_index", "")
+        partner_row = self.index_to_row.get(partner_index) if partner_index else None
 
         # Frames container
         frames_container = QWidget()
@@ -276,20 +255,35 @@ class ManualSelectionWindow(QDialog):
         frames_layout.setContentsMargins(0, 0, 0, 0)
         frames_layout.setSpacing(8)
 
-        # LEFT: Primary camera frame
-        primary_idx = primary_row['index']
-        primary_frame = self._create_frame_widget(primary_idx, "Primary", primary_row)
+        # LEFT: Primary frame
+        primary_frame = self._create_single_frame(
+            row["index"], 
+            f"Primary ({row.get('camera', 'Unknown')})"
+        )
         frames_layout.addWidget(primary_frame)
 
-        # RIGHT: Partner camera frame (load from secondary row)
-        secondary_idx = secondary_row['index']
-        partner_frame = self._create_frame_widget(secondary_idx, "Partner", secondary_row)
-        frames_layout.addWidget(partner_frame)
+        # RIGHT: Partner frame (if exists)
+        if partner_row:
+            partner_frame = self._create_single_frame(
+                partner_row["index"],
+                f"Partner ({partner_row.get('camera', 'Unknown')})"
+            )
+            frames_layout.addWidget(partner_frame)
+        else:
+            # Show placeholder for unpaired
+            placeholder = QLabel("⚠️ No Partner\nCamera")
+            placeholder.setAlignment(Qt.AlignCenter)
+            placeholder.setMinimumSize(340, 240)
+            placeholder.setStyleSheet(
+                "color: #999; background-color: #f0f0f0; "
+                "border: 2px dashed #ddd; border-radius: 4px;"
+            )
+            frames_layout.addWidget(placeholder)
 
-        pair_layout.addWidget(frames_container)
+        layout.addWidget(frames_container)
 
-        # FIXED: Define time_str before using it
-        time_str = primary_row.get('adjusted_start_time') or primary_row.get('abs_time_iso', 'N/A')
+        # Metadata
+        time_str = row.get('adjusted_start_time') or row.get('abs_time_iso', 'N/A')
         if time_str != 'N/A' and 'T' in time_str:
             try:
                 from datetime import datetime
@@ -298,43 +292,49 @@ class ManualSelectionWindow(QDialog):
             except Exception:
                 pass
 
-        # Metadata - now time_str is defined
-        metadata = QLabel(
-            f"Time: {time_str}\n"
-            f"Front: {primary_row.get('speed_kmh', 'N/A')} km/h | "
-            f"Detection: {primary_row.get('detect_score', 'N/A')} | "
-            f"Area: {primary_row.get('bbox_area', 'N/A')}\n"
-            f"Rear: {secondary_row.get('speed_kmh', 'N/A')} km/h | "
-            f"Detection: {secondary_row.get('detect_score', 'N/A')} | "
-            f"Area: {secondary_row.get('bbox_area', 'N/A')}"
+        metadata_lines = [f"Time: {time_str}"]
+        
+        # Primary camera info
+        metadata_lines.append(
+            f"Primary: {row.get('speed_kmh', 'N/A')} km/h | "
+            f"Detection: {row.get('detect_score', 'N/A')} | "
+            f"Scene: {row.get('scene_boost', 'N/A')}"
         )
+        
+        # Partner camera info (if exists)
+        if partner_row:
+            metadata_lines.append(
+                f"Partner: {partner_row.get('speed_kmh', 'N/A')} km/h | "
+                f"Detection: {partner_row.get('detect_score', 'N/A')} | "
+                f"Scene: {partner_row.get('scene_boost', 'N/A')}"
+            )
+
+        metadata = QLabel("\n".join(metadata_lines))
         metadata.setAlignment(Qt.AlignCenter)
         metadata.setStyleSheet("font-size: 10px; color: #666;")
         metadata.setWordWrap(True)
-        pair_layout.addWidget(metadata)
+        layout.addWidget(metadata)
 
         # Style and click handler
-        self._apply_pair_style(pair_container, primary_row)
-        pair_container.mousePressEvent = self._make_pair_toggle_handler(pair_container)
+        self._apply_style(container, row)
+        container.mousePressEvent = self._make_toggle_handler(container)
         
-        return pair_container
+        return container
 
-
-    def _create_frame_widget(self, idx: str, frame_type: str, candidate: Dict) -> QWidget:
-        """Create single frame widget - always loads the PRIMARY frame for that camera."""
+    def _create_single_frame(self, idx: str, label_text: str) -> QWidget:
+        """Create single frame image widget."""
         frame_widget = QWidget()
         frame_layout = QVBoxLayout(frame_widget)
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(4)
 
-        # Camera label
-        camera = candidate.get('camera', 'Unknown')
-        label = QLabel(f"{frame_type} ({camera})")
+        # Label
+        label = QLabel(label_text)
         label.setAlignment(Qt.AlignCenter)
         label.setStyleSheet("font-weight: bold; font-size: 11px;")
         frame_layout.addWidget(label)
 
-        # FIXED: Always load the PRIMARY frame for this camera
+        # Image
         frame_path = self.extract_dir / f"{idx}_Primary.jpg"
         
         if frame_path.exists():
@@ -346,13 +346,12 @@ class ManualSelectionWindow(QDialog):
                 image_label.setAlignment(Qt.AlignCenter)
                 frame_layout.addWidget(image_label)
             else:
-                fallback = QLabel(f"[Error loading {Path(idx).name}]")
+                fallback = QLabel(f"[Error loading image]")
                 fallback.setAlignment(Qt.AlignCenter)
                 fallback.setMinimumSize(340, 240)
                 frame_layout.addWidget(fallback)
         else:
-            # Show which frame is missing for debugging
-            fallback = QLabel(f"[Missing: {Path(idx).name}]")
+            fallback = QLabel(f"[Missing: {frame_path.name}]")
             fallback.setAlignment(Qt.AlignCenter)
             fallback.setMinimumSize(340, 240)
             fallback.setStyleSheet("color: #999; background-color: #f0f0f0;")
@@ -360,73 +359,64 @@ class ManualSelectionWindow(QDialog):
 
         return frame_widget
 
-
-    def _apply_pair_style(self, widget: QWidget, primary_row: Dict):
-        """Apply style based on whether THIS WIDGET'S PRIMARY row is selected."""
-        is_selected = primary_row.get("recommended", "false") == "true"
+    def _apply_style(self, widget: QWidget, row: Dict):
+        """Apply style based on selection state."""
+        is_selected = row.get("recommended", "false") == "true"
         
         widget.setStyleSheet(f"""
             QFrame {{
-                background-color: {'#BBDEFB' if is_selected else '#FAFAFA'};
-                border: {'3' if is_selected else '2'}px solid {'#1976D2' if is_selected else '#DDDDDD'};
+                background-color: {'#E8F5E9' if is_selected else '#FAFAFA'};
+                border: {'3' if is_selected else '2'}px solid {'#4CAF50' if is_selected else '#DDDDDD'};
                 border-radius: 8px;
             }}
         """)
 
-    def _make_pair_toggle_handler(self, widget: QWidget):
-        """Toggle selection - properly identifies the clicked widget."""
+    def _make_toggle_handler(self, widget: QWidget):
+        """Create toggle handler with reciprocal pair logic."""
         def handler(event):
-            ts = widget.timestamp
+            row = widget.row_data
+            current_index = row["index"]
+            partner_index = row.get("partner_index", "")
             
-            # Get both widgets for this timestamp
-            if ts not in self.timestamp_widgets:
-                return
+            # Get current state
+            is_currently_selected = row.get("recommended", "false") == "true"
             
-            widgets = self.timestamp_widgets[ts]
-            
-            # CORRECT: Identify which widget was ACTUALLY clicked
-            # widget is the one that received the click event
-            clicked_widget = widget
-            other_widget = widgets[0] if widget is widgets[1] else widgets[1]
-            
-            # Toggle logic
-            if clicked_widget.primary_row["recommended"] == "true":
-                # Deselect - remove recommendation from both rows
-                clicked_widget.primary_row["recommended"] = "false"
-                other_widget.primary_row["recommended"] = "false"
+            if is_currently_selected:
+                # Deselect this frame
+                row["recommended"] = "false"
+                self._apply_style(widget, row)
             else:
-                # Select clicked widget - ONLY its primary row gets recommended
-                clicked_widget.primary_row["recommended"] = "true"
-                other_widget.primary_row["recommended"] = "false"
+                # Select this frame
+                row["recommended"] = "true"
+                self._apply_style(widget, row)
+                
+                # RECIPROCAL LOGIC: If partner exists and is also selected, deselect it
+                if partner_index:
+                    partner_row = self.index_to_row.get(partner_index)
+                    if partner_row and partner_row.get("recommended", "false") == "true":
+                        # Partner is the reciprocal pair - deselect it
+                        partner_row["recommended"] = "false"
+                        
+                        # Update partner widget if it exists
+                        partner_widget = self.index_to_widget.get(partner_index)
+                        if partner_widget:
+                            self._apply_style(partner_widget, partner_row)
+                            self.log(
+                                f"Auto-deselected reciprocal: {partner_row.get('camera')} "
+                                f"(selected {row.get('camera')} instead)",
+                                "info"
+                            )
             
-            # Update BOTH widget styles
-            self._apply_pair_style(widgets[0], widgets[0].primary_row)
-            self._apply_pair_style(widgets[1], widgets[1].primary_row)
-            
-            # Update counter (unique timestamps with any selection)
+            # Update counter
             self.selected_count = sum(
-                1 for w1, w2 in self.timestamp_widgets.values()
-                if w1.primary_row["recommended"] == "true" or w2.primary_row["recommended"] == "true"
+                1 for c in self.candidates 
+                if c.get("recommended", "false") == "true"
             )
             self.counter_label.setText(f"✓ Selected: {self.selected_count} clips")
             self.ok_btn.setText(f"✓ Use {self.selected_count} Clips & Continue")
         
         return handler
- 
-    def get_selected_indices(self) -> List[str]:
-        """Return ONE index per selected moment (preferring Fly12Sport)."""
-        selected_indices = []
-        
-        for ts, (w1, w2) in self.timestamp_widgets.items():
-            if w1.primary_row["recommended"] == "true":
-                # Widget 1 stores Fly12Sport in primary_row
-                selected_indices.append(w1.primary_row["index"])
-            elif w2.primary_row["recommended"] == "true":
-                # Widget 2 stores Fly6Pro in primary_row - but we want Fly12Sport
-                # Fly12Sport is in w2.secondary_row
-                selected_indices.append(w2.secondary_row["index"])
-        
-        return sorted(selected_indices)
+
     def save_selection(self):
         """Save final selection to select.csv, preserving schema."""
         csv_path = select_path()

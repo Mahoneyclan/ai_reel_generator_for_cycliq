@@ -1,0 +1,24 @@
+# source/steps/build_helpers/__init__.py
+"""
+Build step helper modules for clip rendering and composition.
+
+This package contains focused modules for different build tasks:
+- clip_renderer: Individual clip encoding with overlays
+- minimap_prerenderer: Batch minimap generation
+- gauge_renderer: Telemetry gauge creation
+- segment_concatenator: Multi-segment video assembly
+"""
+
+from .clip_renderer import ClipRenderer
+from .minimap_prerenderer import MinimapPrerenderer
+from .gauge_renderer import GaugeRenderer
+from .segment_concatenator import SegmentConcatenator
+from .cleanup import cleanup_temp_files
+
+__all__ = [
+    "ClipRenderer",
+    "MinimapPrerenderer",
+    "GaugeRenderer",
+    "SegmentConcatenator",
+    "cleanup_temp_files",
+]
