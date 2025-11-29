@@ -138,6 +138,44 @@ python -m source.gui.main_window
 | Splash     | Generate splash map                              |
 | Concat     | Assemble final MP4 reel                          |
 
+
+## 🚴 Pipeline Flow Overview
+
+The pipeline is structured into **four high‑level actions** (Prepare → Analyze → Select → Build), each composed of steps:
+
+### 1. **Prepare**
+- **preflight**: sanity checks (project structure, source videos, GPX availability).
+- **flatten**: unify multi‑camera inputs into a consistent timeline.
+- **align**: synchronize cameras and GPX tracks (time offsets, tolerances).
+
+👉 Output: aligned datasets with consistent timestamps.
+
+---
+
+### 2. **Analyze**
+- **extract**: sample frames at configured FPS, run YOLO detection, compute metrics (speed, gradient, HR, etc.).
+- **analyze**: enrich frames with detection scores, scene boosts, composite scoring.
+
+👉 Output: `enriched.csv` — every frame row with detection, scene, GPS, and partner info.  
+⚠️ At this stage, **pairs are informational only** (front knows its rear partner, rear knows its front partner). 
+
+---
+
+### 3. **Select**
+- **select**: rank candidates by `score_weighted`, pool ~2× target clips, apply gap filter, mark recommended, and extract frames for manual review.
+- **manual_selection_window**: GUI for human curation, reading `select.csv` and showing candidate tiles.
+
+👉 Output: `select.csv` — the shortlist for manual review.  
+
+---
+
+### 4. **Build**
+- **build**: cut clips from source videos based on selected indices.
+- **splash**: generate intro/outro overlays, maps, gauges.
+- **concat**: stitch everything into the final reel.
+
+👉 Output: final MP4 highlight reel.
+
 ---
 
 ## 🛠️ Development Notes
