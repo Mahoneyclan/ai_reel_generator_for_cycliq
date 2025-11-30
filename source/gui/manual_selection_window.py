@@ -218,22 +218,32 @@ class ManualSelectionWindow(QDialog):
         QTimer.singleShot(100, self._populate_grid)
 
     def _populate_grid(self):
-        """Populate grid showing each frame with its partner."""
+        """Populate grid with one widget per row in select.csv, showing index + partner_index frames."""
         if self.grid_layout.count() > 0:
             return
-        
+
+        # Sort rows by time for stable order
+        rows = sorted(self.candidates, key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
+
         widget_idx = 0
-        for row in self.candidates:
+        for row in rows:
             try:
                 widget = self._create_frame_widget(row)
                 self.grid_layout.addWidget(widget, widget_idx // 2, widget_idx % 2)
-                
-                # Store widget reference for reciprocal updates
+
+                # Map this row’s index to its widget
                 self.index_to_widget[row["index"]] = widget
-                
+
                 widget_idx += 1
             except Exception as e:
                 self.log(f"Failed to create widget for {row.get('index')}: {e}", "error")
+
+        # Update counter based on row-level recommended
+        self.selected_count = sum(1 for r in self.candidates if r.get("recommended", "false") == "true")
+        self.counter_label.setText(f"Selected: {self.selected_count} clips")
+        self.ok_btn.setText(f"Use {self.selected_count} Clips & Continue")
+
+
 
     def _create_frame_widget(self, row: Dict) -> QWidget:
         """Create widget showing primary frame with partner (if available)."""

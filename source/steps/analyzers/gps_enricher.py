@@ -1,87 +1,106 @@
 # source/steps/analyzers/gps_enricher.py
 """
 GPX telemetry enrichment for frame metadata.
-Matches frames to GPS trackpoints and adds speed, elevation, HR, cadence, gradient.
+Uses flatten.csv as authoritative source for HR, cadence, speed, gradient, elevation.
 """
 
 from __future__ import annotations
-from typing import Dict
+import csv
+from typing import Dict, List
+from bisect import bisect_left
 
 from ...config import DEFAULT_CONFIG as CFG
-from ...utils.gpx import GPXIndex, load_gpx
+from ...io_paths import flatten_path
 from ...utils.log import setup_logger
 
 log = setup_logger("steps.analyzers.gps_enricher")
 
 
 class GPSEnricher:
-    """Enriches frame metadata with GPX telemetry data."""
-    
+    """Enriches frame metadata using flatten.csv timeline."""
+
     def __init__(self):
-        self.gpx_index = self._load_gpx_index()
+        self.points = self._load_flatten_points()
+        self.epochs = [p["gpx_epoch"] for p in self.points]
         self.matches = 0
         self.misses = 0
-    
-    def _load_gpx_index(self) -> GPXIndex:
-        """Load GPX data and build index for fast lookups."""
+
+    def _load_flatten_points(self) -> List[Dict]:
+        """Load flatten.csv and parse telemetry rows."""
+        fp = flatten_path()
+        if not fp.exists():
+            log.warning("[gps_enricher] flatten.csv missing; telemetry will be empty")
+            return []
+
+        points = []
         try:
-            gpx_path = CFG.INPUT_GPX_FILE
-            if not gpx_path.exists():
-                log.warning("[gps_enricher] No GPX file found, skipping GPS enrichment")
-                return GPXIndex([])
-            
-            points = load_gpx(str(gpx_path))
-            if not points:
-                log.warning("[gps_enricher] GPX file loaded but contains no points")
-                return GPXIndex([])
-            
-            log.info(f"[gps_enricher] Loaded {len(points)} GPX points")
-            return GPXIndex(points)
-            
+            with fp.open() as f:
+                reader = csv.DictReader(f)
+                for r in reader:
+                    try:
+                        epoch = float(r.get("gpx_epoch") or 0.0)
+                        points.append({
+                            "gpx_epoch": epoch,
+                            "gpx_time_utc": r.get("gpx_time_utc", ""),
+                            "lat": r.get("lat", ""),
+                            "lon": r.get("lon", ""),
+                            "elevation": r.get("elevation", ""),
+                            "hr_bpm": r.get("hr_bpm", ""),
+                            "cadence_rpm": r.get("cadence_rpm", ""),
+                            "speed_kmh": r.get("speed_kmh", ""),
+                            "gradient_pct": r.get("gradient_pct", "")
+                        })
+                    except Exception:
+                        continue
+            log.info(f"[gps_enricher] Loaded {len(points)} telemetry points from flatten.csv")
         except Exception as e:
-            log.error(f"[gps_enricher] Failed to load GPX: {e}")
-            return GPXIndex([])
-    
+            log.error(f"[gps_enricher] Failed to read flatten.csv: {e}")
+        return sorted(points, key=lambda p: p["gpx_epoch"])
+
     def enrich(self, row: Dict) -> Dict:
-        """
-        Add GPX telemetry to frame metadata.
-        
-        Args:
-            row: Frame metadata dict with abs_time_epoch
-            
-        Returns:
-            Updated row with GPX fields added
-        """
+        """Attach telemetry fields to frame row based on timestamp match."""
         epoch = float(row.get("abs_time_epoch", 0))
-        pt = self.gpx_index.find_within_tolerance(epoch, CFG.GPX_TOLERANCE)
-        
-        if pt:
+        idx = bisect_left(self.epochs, epoch)
+
+        best = None
+        best_dt = float("inf")
+
+        # Check idx and neighbors for closest match within tolerance
+        for offset in [-1, 0, 1]:
+            i = idx + offset
+            if 0 <= i < len(self.points):
+                pt = self.points[i]
+                dt = abs(pt["gpx_epoch"] - epoch)
+                if dt <= CFG.GPX_TOLERANCE and dt < best_dt:
+                    best = pt
+                    best_dt = dt
+
+        if best:
             self.matches += 1
             row["gpx_missing"] = "false"
-            row["gpx_dt_s"] = f"{abs(pt.timestamp_epoch - epoch):.3f}"
-            row["gpx_epoch"] = f"{pt.timestamp_epoch:.3f}"
-            row["gpx_time_utc"] = pt.when.isoformat()
-            row["lat"] = f"{pt.lat:.6f}"
-            row["lon"] = f"{pt.lon:.6f}"
-            row["elevation"] = f"{pt.ele:.1f}"
-            row["hr_bpm"] = str(pt.hr) if pt.hr else ""
-            row["cadence_rpm"] = str(pt.cadence) if pt.cadence else ""
-            row["speed_kmh"] = f"{pt.speed_kmh:.1f}" if pt.speed_kmh else ""
-            row["gradient_pct"] = f"{pt.gradient:.1f}" if pt.gradient else ""
+            row["gpx_dt_s"] = f"{best_dt:.3f}"
+            row["gpx_epoch"] = f"{best['gpx_epoch']:.3f}"
+            row["gpx_time_utc"] = best["gpx_time_utc"]
+            row["lat"] = best["lat"]
+            row["lon"] = best["lon"]
+            row["elevation"] = best["elevation"]
+            row["hr_bpm"] = best["hr_bpm"]
+            row["cadence_rpm"] = best["cadence_rpm"]
+            row["speed_kmh"] = best["speed_kmh"]
+            row["gradient_pct"] = best["gradient_pct"]
         else:
             self.misses += 1
             row["gpx_missing"] = "true"
-            for key in ["gpx_dt_s", "gpx_epoch", "gpx_time_utc", "lat", "lon", 
-                        "elevation", "hr_bpm", "cadence_rpm", "speed_kmh", "gradient_pct"]:
-                row[key] = ""
-        
+            for k in ["gpx_dt_s", "gpx_epoch", "gpx_time_utc", "lat", "lon",
+                      "elevation", "hr_bpm", "cadence_rpm", "speed_kmh", "gradient_pct"]:
+                row[k] = ""
+
         return row
-    
+
     def get_stats(self) -> Dict:
         """Return enrichment statistics."""
         total = self.matches + self.misses
         match_pct = (self.matches / total * 100) if total > 0 else 0
-        
         return {
             "gps_matches": self.matches,
             "gps_misses": self.misses,
