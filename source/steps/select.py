@@ -4,8 +4,9 @@ Select step:
 - Loads enriched.csv (authoritative dataset from Analyze)
 - Filters to valid frames (paired_ok, bike_detected, optional GPS)
 - Ranks by score_weighted
-- Builds a pool capped at 2× target clips
-- Marks top target clips as recommended = "true", enforcing min_gap_between_clips
+- Applies gap spacing at the timeslot (moment) level
+- Expands selected moments to ALWAYS include both reciprocal clips
+- Builds a pool capped at 2× target moments (pairs), with one side marked recommended="true"
 - Writes select.csv including full enriched fields + recommended
 - Extracts frame images for all candidates to frames directory
 - Ensures output is chronological for GUI consumption
@@ -37,6 +38,9 @@ def apply_gap_filter(candidates: List[Dict], min_gap_s: int, target_clips: int) 
     """
     Select top clips with adaptive spacing based on scene boost.
     High scene-change clips get priority and can be closer together.
+
+    Note: This function expects "representative" rows (one per moment/timeslot),
+    each with 'abs_time_epoch' and 'scene_boost' fields present.
     """
     filtered: List[Dict] = []
     used_windows = set()
@@ -51,21 +55,21 @@ def apply_gap_filter(candidates: List[Dict], min_gap_s: int, target_clips: int) 
         
         # Adaptive gap based on scene quality
         if scene_boost >= MAJOR_SCENE_THRESHOLD:
-            # Major scene changes: allow 30s gaps (very close)
-            effective_gap = min_gap_s // 2
+            # Major scene changes: allow closer spacing
+            effective_gap = max(1, min_gap_s // 2)
         elif scene_boost >= HIGH_SCENE_THRESHOLD:
-            # Significant scene changes: allow 45s gaps (closer)
-            effective_gap = int(min_gap_s * 0.75)
+            # Significant scene changes: allow moderately closer spacing
+            effective_gap = max(1, int(min_gap_s * 0.75))
         else:
             # Normal clips: use full gap
-            effective_gap = min_gap_s
+            effective_gap = max(1, min_gap_s)
         
         window = t // effective_gap
         
         if window not in used_windows:
             filtered.append(c)
-            # Mark adjacent windows as used to maintain minimum spacing
-            for offset in range(-1, 2):  # Block ±1 window
+            # Block ±1 window to maintain minimum spacing around each selection
+            for offset in range(-1, 2):
                 used_windows.add(window + offset)
         
         if len(filtered) >= target_clips:
@@ -154,8 +158,16 @@ def extract_frames_for_candidates(pool: List[Dict]) -> None:
     log.info(f"[select] Extracted {extraction_count} new frame images to {frames_path}")
 
 
+def _timeslot_key(abs_time_epoch: str) -> int:
+    """Bucket absolute time into timeslots aligned to CLIP_OUT_LEN_S."""
+    t = int(_sf(abs_time_epoch))
+    # Avoid division by zero; CLIP_OUT_LEN_S is config-defined > 0 in normal operation
+    slot_len = max(1, int(CFG.CLIP_OUT_LEN_S))
+    return t // slot_len
+
+
 def run() -> Path:
-    """Select top candidates, preselect recommendations, extract frames, and output a 2× pool."""
+    """Select top candidates, apply timeslot gap filter, expand to reciprocal pairs, and output."""
     src = enrich_path()
     dst = _mk(select_path())
 
@@ -175,8 +187,11 @@ def run() -> Path:
         return dst
 
     log.info("=" * 60)
-    log.info(f"SELECT STEP: Rank, Pool ({CFG.CANDIDATE_FRACTION}×), Preselect w/ gap filter")
+    log.info(f"SELECT STEP: Rank by score, Timeslot gap filter, Expand to reciprocal pairs")
     log.info("=" * 60)
+
+    # Build an index over all enriched rows (authoritative)
+    index_all: Dict[str, Dict] = {r.get("index", ""): r for r in rows if r.get("index")}
 
     # Filter validity (paired_ok + bike_detected); GPS requirement optional
     valid: List[Dict] = []
@@ -198,53 +213,90 @@ def run() -> Path:
     # Sort by ranking signal (descending)
     valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
 
-    # Boost high scene-change clips in ranking
+    # Optional scene priority boost, then re-sort
     if CFG.SCENE_PRIORITY_MODE:
         for r in valid:
             scene_boost = _sf(r.get("scene_boost"))
             current_score = _sf(r.get("score_weighted"))
-            
-            # Apply scene priority multiplier
             if scene_boost >= CFG.SCENE_MAJOR_THRESHOLD:
                 r["score_weighted"] = f"{current_score * 1.3:.3f}"  # 30% boost
             elif scene_boost >= CFG.SCENE_HIGH_THRESHOLD:
                 r["score_weighted"] = f"{current_score * 1.15:.3f}"  # 15% boost
-        
-        # Re-sort after boosting
         valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
 
+    # Group valid rows into timeslots, pick representative (best score) per slot
+    timeslot_map: Dict[int, List[Dict]] = {}
+    for r in valid:
+        slot = _timeslot_key(r.get("abs_time_epoch"))
+        timeslot_map.setdefault(slot, []).append(r)
 
-    # Targets
+    representatives: List[Dict] = []
+    for slot, rows_in_slot in timeslot_map.items():
+        # Pick the highest 'score_weighted' row as the representative of the moment
+        best = max(rows_in_slot, key=lambda r: _sf(r.get("score_weighted")))
+        # Attach slot for later expansion
+        best["_slot_key"] = slot
+        representatives.append(best)
+
+    # Determine pool size based on timeslot representatives
     target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
-    pool_size = min(len(valid), int(target_clips * CFG.CANDIDATE_FRACTION))
+    pool_slots = min(len(representatives), int(target_clips * CFG.CANDIDATE_FRACTION))
 
-    pool = valid[:pool_size]
+    # Take top representatives into the candidate pool (pre-gap-filter)
+    reps_pool = representatives[:pool_slots]
 
-    # Apply min gap filter to preselection
-    preselected = apply_gap_filter(pool, CFG.MIN_GAP_BETWEEN_CLIPS, target_clips)
+    # Apply min gap filter across timeslot representatives
+    preselected_reps = apply_gap_filter(reps_pool, CFG.MIN_GAP_BETWEEN_CLIPS, target_clips)
 
-    # Mark recommendations
-    pre_ids = {r["index"] for r in preselected}
-    for r in pool:
-        r["recommended"] = "true" if r["index"] in pre_ids else "false"
+    # Expand each selected representative into BOTH reciprocal rows
+    final_pool: List[Dict] = []
+    for rep in preselected_reps:
+        slot = rep["_slot_key"]
+        rows_in_slot = timeslot_map.get(slot, [])
+        partner_idx = rep.get("partner_index", "")
+        partner_row = None
+
+        # Prefer partner from the same timeslot group if present
+        if partner_idx:
+            for r in rows_in_slot:
+                if r.get("index") == partner_idx:
+                    partner_row = r
+                    break
+
+            # Fallback to authoritative full index (enriched) if needed
+            if partner_row is None:
+                partner_row = index_all.get(partner_idx)
+
+        # Mark recommendation flags: representative TRUE, partner FALSE
+        rep["recommended"] = "true"
+        final_pool.append(rep)
+
+        if partner_row:
+            # Ensure partner row has consistent types/fields; copy to avoid mutating index_all
+            partner_copy = dict(partner_row)
+            partner_copy["recommended"] = "false"
+            final_pool.append(partner_copy)
+        else:
+            log.warning(f"[select] Missing partner row for representative {rep.get('index')} -> {partner_idx}")
 
     # Chronological ordering for GUI (after recommendation marking)
-    pool.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
+    final_pool.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
 
     # Write full rows (retain all fields for downstream consumers)
     with dst.open("w", newline="") as f:
-        fieldnames = list(pool[0].keys())
+        fieldnames = list(final_pool[0].keys())
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(pool)
+        writer.writerows(final_pool)
 
-    rec_count = sum(1 for r in pool if r.get("recommended") == "true")
+    # Count recommended (one per selected moment)
+    rec_count = sum(1 for r in final_pool if r.get("recommended") == "true")
     log.info("=" * 60)
-    log.info(f"SELECT COMPLETE | Pool: {len(pool)} | Preselected: {rec_count} (gap‑filtered)")
+    log.info(f"SELECT COMPLETE | Moments: {len(preselected_reps)} | Pool rows: {len(final_pool)} | Preselected: {rec_count} (gap‑filtered)")
     log.info("=" * 60)
     
     # Extract frames for all candidates in the pool
-    extract_frames_for_candidates(pool)
+    extract_frames_for_candidates(final_pool)
     
     log.info("Ready for manual review")
 
