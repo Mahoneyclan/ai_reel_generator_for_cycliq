@@ -1,4 +1,4 @@
-# source/steps/splash_builders/video_encoder.py
+# source/steps/splash_helpers/video_encoder.py
 """
 FFmpeg video encoding utilities for splash sequences.
 Handles clip creation, music overlay, and concatenation.
@@ -13,7 +13,7 @@ from typing import List
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.splash_builders.video_encoder")
+log = setup_logger("steps.splash_helpers.video_encoder")
 
 AUDIO_SAMPLE_RATE = "48000"
 

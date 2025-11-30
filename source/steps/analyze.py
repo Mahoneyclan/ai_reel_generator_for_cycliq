@@ -3,7 +3,7 @@
 Frame analysis orchestrator.
 Coordinates bike detection, scene detection, GPS enrichment, partner matching, and scoring.
 
-This is a thin orchestration layer - actual analysis logic is in analyzers/ submodules.
+This is a thin orchestration layer - actual analysis logic is in analyze_helpers/ submodules.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from ..utils.video_utils import extract_frame_safe
 from ..utils.log import setup_logger
 
 # Import analysis components
-from .analyzers import (
-    BikeDetector,
+from .analyze_helpers import (
+    ObjectDetector,
     SceneDetector,
     GPSEnricher,
     PartnerMatcher,
@@ -43,7 +43,7 @@ class FrameAnalyzer:
         Args:
             scene_comparison_window_s: Time window for scene change detection
         """
-        self.bike_detector = BikeDetector()
+        self.object_detector = ObjectDetector()
         self.scene_detector = SceneDetector(
             comparison_window_s=scene_comparison_window_s,
             fps=CFG.EXTRACT_FPS
@@ -72,7 +72,7 @@ class FrameAnalyzer:
             return self._empty_result()
         
         # Run detection and scene analysis on same frame
-        detect_result = self.bike_detector.detect(frame)
+        detect_result = self.object_detector.detect(frame)
         scene_score = self.scene_detector.compute_scene_score(frame, camera)
         
         self.frames_processed += 1
@@ -108,7 +108,7 @@ class FrameAnalyzer:
         """Aggregate statistics from all components."""
         return {
             "frames_processed": self.frames_processed,
-            **self.bike_detector.get_stats(),
+            **self.object_detector.get_stats(),
             **self.scene_detector.get_stats(),
             **self.gps_enricher.get_stats(),
             **self.partner_matcher.get_stats(),

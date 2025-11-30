@@ -14,7 +14,7 @@ from typing import Tuple, List
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import select_path, frames_dir, splash_assets_dir, _mk
 from ..utils.log import setup_logger
-from .splash_builders import (
+from .splash_helpers import (
     CollageBuilder,
     IntroBuilder,
     OutroBuilder

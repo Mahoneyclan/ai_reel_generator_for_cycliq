@@ -1,4 +1,4 @@
-# source/steps/analyzers/bike_detector.py
+# source/steps/analyze_helpers/object_detector.py
 """
 YOLO-based bicycle detection for frame analysis.
 Handles model loading, caching, and cleanup.
@@ -11,7 +11,7 @@ from typing import Dict, Optional
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyzers.bike_detector")
+log = setup_logger("steps.analyze_helpers.object_detector")
 
 # Module-level cache for YOLO model
 _model_instance = None
@@ -39,7 +39,7 @@ def get_model():
         from ultralytics import YOLO
         torch = _get_torch()
         device = 'mps' if CFG.USE_MPS and torch.backends.mps.is_available() else 'cpu'
-        log.info(f"[bike_detector] Loading YOLOv8n on {device}...")
+        log.info(f"[object_detector] Loading YOLOv8n on {device}...")
         _model_instance = YOLO('yolov8n.pt').to(device)
     return _model_instance
 
@@ -51,23 +51,23 @@ def cleanup_model():
         try:
             del _model_instance
             _model_instance = None
-            log.debug("[bike_detector] Released YOLO model")
+            log.debug("[object_detector] Released YOLO model")
         except Exception as e:
-            log.warning(f"[bike_detector] Model cleanup warning: {e}")
+            log.warning(f"[object_detector] Model cleanup warning: {e}")
 
     torch = _get_torch()
     if CFG.USE_MPS and torch.backends.mps.is_available():
         try:
             torch.mps.empty_cache()
-            log.debug("[bike_detector] Cleared MPS cache")
+            log.debug("[object_detector] Cleared MPS cache")
         except Exception as e:
-            log.warning(f"[bike_detector] MPS cache clear warning: {e}")
+            log.warning(f"[object_detector] MPS cache clear warning: {e}")
 
     import gc
     gc.collect()
 
 
-class BikeDetector:
+class ObjectDetector:
     """YOLO-based bicycle detector."""
     
     def __init__(self):
@@ -124,7 +124,7 @@ class BikeDetector:
             }
             
         except Exception as e:
-            log.error(f"[bike_detector] Detection failed: {e}")
+            log.error(f"[object_detector] Detection failed: {e}")
             return self._empty_result()
     
     def _empty_result(self) -> Dict[str, float]:

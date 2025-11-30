@@ -1,4 +1,4 @@
-# source/steps/splash_builders/__init__.py
+# source/steps/splash_helpers/__init__.py
 """
 Splash video builders package.
 

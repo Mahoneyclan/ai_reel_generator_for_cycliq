@@ -1,4 +1,4 @@
-# source/steps/splash_builders/collage_builder.py
+# source/steps/splash_helpers/collage_builder.py
 """
 Collage image builder for splash sequences.
 Handles grid layout calculation and tile composition.
@@ -12,7 +12,7 @@ from PIL import Image
 
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.splash_builders.collage_builder")
+log = setup_logger("steps.splash_helpers.collage_builder")
 
 
 class CollageBuilder:

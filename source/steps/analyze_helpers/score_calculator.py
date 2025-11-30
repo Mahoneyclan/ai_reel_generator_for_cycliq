@@ -1,4 +1,4 @@
-# source/steps/analyzers/score_calculator.py
+# source/steps/analyze_helpers/score_calculator.py
 """
 Composite scoring for frame ranking.
 Combines detection, scene change, speed, gradient, and bbox area into final scores.
@@ -10,7 +10,7 @@ from typing import Dict, List
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyzers.score_calculator")
+log = setup_logger("steps.analyze_helpers.score_calculator")
 
 
 def _sf(v, d=0.0) -> float:

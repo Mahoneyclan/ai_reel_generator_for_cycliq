@@ -1,4 +1,4 @@
-# source/steps/splash_builders/outro_builder.py
+# source/steps/splash_helpers/outro_builder.py
 """
 Outro sequence builder: collage → text → logo → black.
 """
@@ -13,7 +13,7 @@ from ...utils.log import setup_logger
 from .collage_builder import CollageBuilder
 from .video_encoder import VideoEncoder
 
-log = setup_logger("steps.splash_builders.outro_builder")
+log = setup_logger("steps.splash_helpers.outro_builder")
 
 # Canvas constants
 OUT_W, OUT_H = 2560, 1440

@@ -1,4 +1,4 @@
-# source/steps/analyzers/gps_enricher.py
+# source/steps/analyze_helpers/gps_enricher.py
 """
 GPX telemetry enrichment for frame metadata.
 Uses flatten.csv as authoritative source for HR, cadence, speed, gradient, elevation.
@@ -13,7 +13,7 @@ from ...config import DEFAULT_CONFIG as CFG
 from ...io_paths import flatten_path
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyzers.gps_enricher")
+log = setup_logger("steps.analyze_helpers.gps_enricher")
 
 
 class GPSEnricher:

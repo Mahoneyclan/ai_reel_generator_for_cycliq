@@ -1,4 +1,4 @@
-# source/steps/splash_builders/intro_builder.py
+# source/steps/splash_helpers/intro_builder.py
 """
 Intro sequence builder: logo → map → flip → collage.
 """
@@ -16,7 +16,7 @@ from .collage_builder import CollageBuilder
 from .video_encoder import VideoEncoder
 from .animation_renderer import AnimationRenderer
 
-log = setup_logger("steps.splash_builders.intro_builder")
+log = setup_logger("steps.splash_helpers.intro_builder")
 
 # Canvas constants
 OUT_W, OUT_H = 2560, 1440

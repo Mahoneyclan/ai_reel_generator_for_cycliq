@@ -1,4 +1,4 @@
-# source/steps/splash_builders/animation_renderer.py
+# source/steps/splash_helpers/animation_renderer.py
 """
 Flip animation renderer for splash intro sequence.
 Creates smooth tile-flip transitions from map to collage.
@@ -12,7 +12,7 @@ from PIL import Image
 
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.splash_builders.animation_renderer")
+log = setup_logger("steps.splash_helpers.animation_renderer")
 
 
 class AnimationRenderer:

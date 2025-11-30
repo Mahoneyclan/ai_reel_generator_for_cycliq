@@ -1,4 +1,4 @@
-# source/steps/analyzers/partner_matcher.py
+# source/steps/analyze_helpers/partner_matcher.py
 """
 Partner camera matching for dual-camera setups.
 Finds closest-in-time opposite camera frame for PiP video creation.
@@ -11,7 +11,7 @@ from typing import Dict, List
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyzers.partner_matcher")
+log = setup_logger("steps.analyze_helpers.partner_matcher")
 
 
 class PartnerMatcher:

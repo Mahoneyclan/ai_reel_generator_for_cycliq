@@ -1,4 +1,4 @@
-# source/steps/analyzers/scene_detector.py
+# source/steps/analyze_helpers/scene_detector.py
 """
 Scene change detection using temporal frame differencing.
 Identifies interesting visual transitions (action, camera movement, new scenes).
@@ -13,7 +13,7 @@ from collections import deque
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyzers.scene_detector")
+log = setup_logger("steps.analyze_helpers.scene_detector")
 
 
 class SceneDetector:
