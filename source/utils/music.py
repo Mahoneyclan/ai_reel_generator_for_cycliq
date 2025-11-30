@@ -2,16 +2,16 @@
 from pathlib import Path
 from typing import Optional
 import logging
+import random
 
 log = logging.getLogger(__name__)
 
 class MusicTrackManager:
-    """Automatically discovers and cycles through .mp3 tracks in MUSIC_DIR."""
+    """Automatically discovers and selects .mp3 tracks in MUSIC_DIR."""
 
     def __init__(self, music_dir: Path):
         self.music_dir = Path(music_dir)
         self.available_tracks = self._discover_tracks()
-        self._cycle_index = 0
 
     def _discover_tracks(self) -> list[str]:
         """Return all .mp3 filenames in music_dir."""
@@ -26,11 +26,11 @@ class MusicTrackManager:
         return tracks
 
     def get_track_path(self) -> Optional[Path]:
-        """Return the next track path, cycling through available tracks."""
+        """Return a random track path from available tracks."""
         if not self.available_tracks:
             return None
-        track = self.available_tracks[self._cycle_index % len(self.available_tracks)]
-        self._cycle_index += 1
+        track = random.choice(self.available_tracks)
+        log.info(f"[music] Selected random track: {track}")
         return self.music_dir / track
 
     def list_available_tracks(self) -> list[str]:
