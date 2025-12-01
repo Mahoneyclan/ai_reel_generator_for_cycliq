@@ -3,7 +3,7 @@
 # ============================================
 
 # 1. Make sure you’re in your project root
-cd /Volumes/GDrive/Github/velo_highlights
+cd /Volumes/GDrive/Github/ai_reel_generator_for_cycliq
 
 # 2. Remove any old venv if it exists
 rm -rf .venv

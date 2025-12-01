@@ -2,6 +2,8 @@
 """
 Individual clip rendering with overlays.
 Handles PiP, minimap, gauges, and audio muxing.
+
+FIXED: Proper final stream name extraction from filter chain.
 """
 
 from __future__ import annotations
@@ -13,7 +15,6 @@ from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
 from ...io_paths import _mk
-from ...utils.progress_reporter import progress_iter
 from .gauge_renderer import GaugeRenderer
 
 log = setup_logger("steps.build_helpers.clip_renderer")
@@ -59,7 +60,7 @@ class ClipRenderer:
         output_path = self.output_dir / f"clip_{clip_idx:04d}.mp4"
         
         # Build ffmpeg command
-        inputs, filter_complex = self._build_ffmpeg_inputs_and_filters(
+        inputs, filter_complex, final_stream = self._build_ffmpeg_inputs_and_filters(
             main_video=main_video,
             partner_video=partner_video,
             minimap_path=minimap_path,
@@ -71,7 +72,7 @@ class ClipRenderer:
         )
         
         # Encode video with overlays
-        cmd = self._build_encode_command(inputs, filter_complex, output_path)
+        cmd = self._build_encode_command(inputs, filter_complex, final_stream, output_path)
         
         try:
             subprocess.run(cmd, check=True)
@@ -93,12 +94,12 @@ class ClipRenderer:
         row: Dict,
         clip_idx: int,
         gauge_renderer: GaugeRenderer
-    ) -> tuple[List[str], List[str]]:
+    ) -> tuple[List[str], List[str], str]:
         """
         Build ffmpeg inputs and filter_complex for all overlays.
         
         Returns:
-            (inputs_list, filters_list)
+            (inputs_list, filters_list, final_stream_name)
         """
         inputs: List[str] = [
             "-ss", f"{t_start:.3f}",
@@ -134,7 +135,7 @@ class ClipRenderer:
             filters, inputs, current_stream, row, clip_idx, duration, gauge_renderer
         )
         
-        return inputs, filters
+        return inputs, filters, current_stream
     
     def _add_gauge_overlays(
         self,
@@ -170,6 +171,7 @@ class ClipRenderer:
         self,
         inputs: List[str],
         filters: List[str],
+        final_stream: str,
         output_path: Path
     ) -> List[str]:
         """Build complete ffmpeg encoding command."""
@@ -177,9 +179,8 @@ class ClipRenderer:
         
         if filters:
             filter_str = ";".join(filters)
-            # Extract final stream name
-            final_stream = filters[-1].split("]")[1].split("[")[0] if filters else "[0:v]"
-            cmd.extend(["-filter_complex", filter_str, "-map", f"[{final_stream}]"])
+            # final_stream already includes brackets (e.g., "[v1]", "[vmap]", "[vhud]")
+            cmd.extend(["-filter_complex", filter_str, "-map", final_stream])
         else:
             cmd.extend(["-map", "0:v"])
         
