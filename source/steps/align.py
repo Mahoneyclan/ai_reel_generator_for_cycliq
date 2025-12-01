@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Dict, Tuple, List
 
 from ..config import DEFAULT_CONFIG as CFG
-from ..io_paths import flatten_path, camera_offsets_path, _mk  # CHANGED from gpx_path
+from ..io_paths import flatten_path, camera_offsets_path, _mk
 from ..utils.log import setup_logger
+from ..utils.progress_reporter import progress_iter, report_progress
 
 log = setup_logger("steps.align")
 SANITY_THRESHOLD_S = 3600.0  # 1 hour
@@ -75,18 +76,17 @@ def _derive_camera_name(vp: Path) -> str:
 
 def run() -> Dict[str, float]:
     """Compute camera time offsets and auto-apply."""
+    report_progress(1, 4, "Loading GPX reference time...")
+    
     gpx_start = _get_corrected_gpx_start()
     
     if gpx_start is None:
         log.warning("[align] ⚠️  No GPX data available")
         log.warning("[align] Skipping camera alignment (no GPS to align to)")
         log.warning("[align] Camera offsets will remain at 0.0s")
-        log.warning("[align] Pipeline will continue with unaligned timestamps")
         
-        # Return empty offsets but don't crash
         normalized = {cam: 0.0 for cam in CFG.CAMERA_WEIGHTS.keys()}
         
-        # Still save to JSON for consistency
         sidecar = _mk(camera_offsets_path())
         with sidecar.open("w") as f:
             json.dump(normalized, f, indent=2, sort_keys=True)
@@ -95,12 +95,12 @@ def run() -> Dict[str, float]:
     
     log.info(f"[align] GPX start (corrected) = {gpx_start.isoformat()}")
 
+    report_progress(2, 4, "Scanning video files...")
     videos = sorted(CFG.INPUT_VIDEOS_DIR.glob("*_*.MP4"))
 
     if not videos:
         log.warning("[align] ❌ No videos found matching pattern '*_*.MP4'")
         log.warning(f"[align] Searched in: {CFG.INPUT_VIDEOS_DIR}")
-        log.warning("[align] 💡 Check that video files follow naming: CameraName_0001.MP4")
         return {}
 
     by_cam: Dict[str, List[Path]] = {}
@@ -108,8 +108,14 @@ def run() -> Dict[str, float]:
         cam = _derive_camera_name(v)
         by_cam.setdefault(cam, []).append(v)
 
+    report_progress(3, 4, f"Computing offsets for {len(by_cam)} cameras...")
+    
     offsets_vs_gpx: Dict[str, float] = {}
-    for cam, files in by_cam.items():
+    
+    for cam_idx, (cam, files) in enumerate(by_cam.items(), start=1):
+        # Sub-progress reporting
+        report_progress(3, 4, f"Analyzing camera {cam_idx}/{len(by_cam)}: {cam}")
+        
         candidates: List[Tuple[str, float]] = []
         for f in files:
             try:
@@ -134,7 +140,9 @@ def run() -> Dict[str, float]:
     if not offsets_vs_gpx:
         return {}
 
-    # Normalize offsets (min becomes 0)
+    # Normalize offsets
+    report_progress(4, 4, "Normalizing and saving offsets...")
+    
     min_offset = min(offsets_vs_gpx.values())
     normalized = {cam: round(off - min_offset, 3) for cam, off in offsets_vs_gpx.items()}
 

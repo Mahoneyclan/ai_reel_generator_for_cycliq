@@ -60,7 +60,6 @@ class ProgressReporter:
             msg = f"{self.desc}: {self.current}/{self.total} {self.unit}"
             self.callback(self.current, self.total, msg)
     
-    
     def close(self):
         """Close progress reporter."""
         if self.callback and self.total > 0:
@@ -107,3 +106,47 @@ def progress_iter(
     with reporter:
         for item in reporter:
             yield item
+
+
+def report_progress(current: int, total: int, message: str = ""):
+    """
+    Report progress for non-iterable tasks.
+    
+    Usage:
+        report_progress(1, 3, "Loading data...")
+        # ... do work ...
+        report_progress(2, 3, "Processing...")
+        # ... do work ...
+        report_progress(3, 3, "Complete")
+    
+    Args:
+        current: Current step number
+        total: Total number of steps
+        message: Status message to display
+    """
+    callback = get_progress_callback()
+    if callback:
+        callback(current, total, message)
+
+
+def with_progress(step_name: str):
+    """
+    Decorator to wrap entire step with progress context.
+    
+    Usage:
+        @with_progress("extract")
+        def run():
+            # ... step logic ...
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            report_progress(0, 100, f"{step_name} starting...")
+            try:
+                result = func(*args, **kwargs)
+                report_progress(100, 100, f"{step_name} complete")
+                return result
+            except Exception as e:
+                report_progress(0, 100, f"{step_name} failed: {str(e)}")
+                raise
+        return wrapper
+    return decorator

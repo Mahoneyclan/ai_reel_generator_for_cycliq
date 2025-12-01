@@ -11,10 +11,11 @@ from datetime import timezone
 from math import radians, sin, cos, sqrt, atan2
 
 from ..config import DEFAULT_CONFIG as CFG
-from ..io_paths import flatten_path, _mk  
+from ..io_paths import flatten_path, _mk
 from ..utils.log import setup_logger
+from ..utils.progress_reporter import report_progress
 
-log = setup_logger("steps.flatten")  
+log = setup_logger("steps.flatten")
 RESAMPLE_INTERVAL_S = 1.0
 
 def _haversine_m(lat1, lon1, lat2, lon2):
@@ -30,7 +31,6 @@ def run():
     """Parse GPX with safe failure handling and auto-detection."""
     out = _mk(flatten_path())
     
-    # Helper to write empty CSV
     def _write_empty_csv():
         with out.open("w", newline="") as f:
             csv.writer(f).writerow([
@@ -39,28 +39,23 @@ def run():
             ])
         return out
     
-    # Try configured GPX file first
+    # Step 1: Locate GPX file
+    report_progress(1, 5, "Locating GPX file...")
     gpx_fp = CFG.INPUT_GPX_FILE
     
-    # If not found, search for any .gpx file
     if not gpx_fp.exists():
         log.warning(f"[flatten] Configured GPX not found: {gpx_fp.name}")
         gpx_files = list(CFG.INPUT_DIR.glob("*.gpx"))
         
         if not gpx_files:
             log.error(f"[flatten] ❌ No GPX files found in {CFG.INPUT_DIR}")
-            log.error("[flatten] 💡 Solutions:")
-            log.error("[flatten]    1. Add a GPX file to your ride folder")
-            log.error("[flatten]    2. Export GPS track from Strava/Garmin/Wahoo")
-            log.error("[flatten]    3. Name it 'ride.gpx' or any name ending in .gpx")
             log.error("[flatten] Pipeline will continue but all steps requiring GPS will be skipped")
             return _write_empty_csv()
         
-        # Use the first GPX file found
         gpx_fp = gpx_files[0]
         log.info(f"[flatten] ✓ Auto-detected GPX file: {gpx_fp.name}")
     
-    # Validate GPX file is readable and not empty
+    # Validate file
     try:
         file_size = gpx_fp.stat().st_size
         if file_size == 0:
@@ -73,7 +68,8 @@ def run():
         log.error(f"[flatten] ❌ Cannot read GPX file: {e}")
         return _write_empty_csv()
     
-    # Try to parse GPX
+    # Step 2: Parse GPX
+    report_progress(2, 5, f"Parsing GPX ({file_size / 1024:.1f} KB)...")
     log.info(f"[flatten] Parsing {gpx_fp.name} ({file_size / 1024:.1f} KB)")
     
     try:
@@ -81,9 +77,6 @@ def run():
             gpx = gpxpy.parse(f)
     except Exception as e:
         log.error(f"[flatten] ❌ Failed to parse GPX file: {e}")
-        log.error("[flatten] 💡 GPX file may be corrupt. Try:")
-        log.error("[flatten]    1. Re-export from Strava/Garmin")
-        log.error("[flatten]    2. Validate at: https://www.gpsvisualizer.com/validator/")
         return _write_empty_csv()
 
     # Extract trackpoints
@@ -91,15 +84,14 @@ def run():
     
     if not pts:
         log.error("[flatten] ❌ GPX file contains no trackpoints with timestamps")
-        log.error("[flatten] 💡 Check that:")
-        log.error("[flatten]    1. GPX was exported correctly")
-        log.error("[flatten]    2. Activity was recorded (not manually created)")
         return _write_empty_csv()
 
     pts.sort(key=lambda p: p.time.timestamp())
-    log.info(f"[flatten] ✓ Parsed {len(pts)} trackpoints, resampling to 1 Hz...")
-
-    # Resample to 1 Hz
+    log.info(f"[flatten] ✓ Parsed {len(pts)} trackpoints")
+    
+    # Step 3: Resample to 1 Hz
+    report_progress(3, 5, f"Resampling {len(pts)} points to 1 Hz...")
+    
     rows = []
     t = pts[0].time.timestamp()
     end = pts[-1].time.timestamp()
@@ -140,11 +132,16 @@ def run():
         })
         t += RESAMPLE_INTERVAL_S
 
-    # Compute speed and gradient
-    log.info(f"[flatten] Computing speed and gradient for {len(rows)} points...")
+    # Step 4: Compute speed and gradient
+    report_progress(4, 5, f"Computing speed and gradient for {len(rows)} points...")
+    
     for i, r in enumerate(rows):
         if i == 0:
             continue
+        
+        # Report sub-progress for long computations
+        if i % 500 == 0:
+            report_progress(4, 5, f"Computing metrics: {i}/{len(rows)} points")
 
         try:
             p = rows[i-1]
@@ -164,6 +161,9 @@ def run():
         except Exception:
             pass
 
+    # Step 5: Write output
+    report_progress(5, 5, "Writing flattened CSV...")
+    
     with out.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()

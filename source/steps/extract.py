@@ -15,6 +15,7 @@ from typing import List, Dict
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import extract_path, flatten_path, camera_offsets_path, _mk
 from ..utils.log import setup_logger
+from ..utils.progress_reporter import progress_iter, report_progress
 
 log = setup_logger("steps.extract")
 FFMPEG_COMMON = ["-hide_banner", "-loglevel", "error", "-y", "-nostdin"]
@@ -40,7 +41,6 @@ def _probe_meta(video_path: Path) -> tuple[datetime, float, float]:
 
 def _get_camera_offset(camera: str) -> float:
     """Get time offset for camera from camera_offsets.json (if exists) or config."""
-    # Try to load from align step's output first
     offsets_file = camera_offsets_path()
     if offsets_file.exists():
         try:
@@ -52,7 +52,6 @@ def _get_camera_offset(camera: str) -> float:
         except Exception as e:
             log.warning(f"[extract] Failed to load camera offsets from JSON: {e}")
     
-    # Fallback to config
     return CFG.CAMERA_TIME_OFFSETS.get(camera, 0.0)
 
 def _derive_camera_and_clip(vp: Path) -> tuple[str, int, str]:
@@ -129,7 +128,7 @@ def _extract_single_video(vp: Path, target_fps: float, gpx_start_epoch: float) -
             continue
         
         # Generate virtual frame index for compatibility
-        virtual_frame_num = frame_idx  # Sequential numbering
+        virtual_frame_num = frame_idx
         index = f"{camera}_{clip_id}_{virtual_frame_num:06d}"
         
         rows.append({
@@ -144,7 +143,7 @@ def _extract_single_video(vp: Path, target_fps: float, gpx_start_epoch: float) -
             "abs_time_iso": abs_dt_utc.isoformat(),
             "abs_time_epoch": f"{abs_epoch:.3f}",
             "camera_offset_s": f"{camera_offset_s:.3f}",
-            "path": f"{camera}/{clip_id}_{virtual_frame_num:06d}.jpg",  # Virtual path
+            "path": f"{camera}/{clip_id}_{virtual_frame_num:06d}.jpg",
             "source": vp.name,
             "raw_creation_time": creation_local.isoformat(),
             "duration_s": f"{duration_s:.3f}",
@@ -162,7 +161,6 @@ def run() -> Path:
     
     if not videos:
         log.warning("[extract] No videos found")
-        # Create empty CSV
         with out_csv.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "index", "camera", "clip_num", "frame_number", "video_path", "frame_interval",
@@ -177,10 +175,9 @@ def run() -> Path:
     
     log.info(f"[extract] Processing {len(videos)} videos at {target_fps:.1f} FPS (streaming mode)")
     
-    # Process videos sequentially to avoid file handle issues
+    # Process videos with progress reporting
     all_rows: List[Dict[str, str]] = []
-    for vid_idx, vp in enumerate(videos, start=1):
-        log.info(f"[extract] Processing video {vid_idx}/{len(videos)}: {vp.name}")
+    for vp in progress_iter(videos, desc="Extracting metadata", unit="video"):
         try:
             rows = _extract_single_video(vp, target_fps, gpx_start_epoch)
             all_rows.extend(rows)
@@ -188,6 +185,8 @@ def run() -> Path:
             log.error(f"[extract] Failed {vp.name}: {e}")
     
     # Write metadata CSV
+    report_progress(1, 1, "Writing metadata CSV...")
+    
     if all_rows:
         with out_csv.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=list(all_rows[0].keys()))

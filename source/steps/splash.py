@@ -3,7 +3,7 @@
 Splash step orchestrator: produces _intro.mp4 and _outro.mp4.
 Delegates to specialized builders for sequence generation.
 
-REFACTORED: Now ~100 lines, down from 563 lines.
+REFACTORED: Now ~100 lines with progress reporting.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Tuple, List
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import select_path, frames_dir, splash_assets_dir, _mk
 from ..utils.log import setup_logger
+from ..utils.progress_reporter import report_progress
 from .splash_helpers import (
     CollageBuilder,
     IntroBuilder,
@@ -95,13 +96,15 @@ def run() -> Tuple[Path, Path]:
     global _temp_files
     _temp_files = []
     
-    # Collect frame images
+    # Step 1: Collect frames
+    report_progress(1, 5, "Collecting frame images...")
     frames = _collect_frame_images()
     if not frames:
         log.error("[splash] No frames available for splash generation")
         return CFG.PROJECT_DIR / "_intro.mp4", CFG.PROJECT_DIR / "_outro.mp4"
     
-    # Calculate grid layout
+    # Step 2: Calculate layout
+    report_progress(2, 5, "Calculating grid layout...")
     builder = CollageBuilder(OUT_W, OUT_H - BANNER_HEIGHT)
     grid_info = builder.calculate_grid(len(frames))
     
@@ -112,23 +115,29 @@ def run() -> Tuple[Path, Path]:
     
     # Build sequences
     try:
-        # Outro first (simpler, validates frame collection)
+        # Step 3: Outro (simpler, validates frame collection)
+        report_progress(3, 5, "Building outro sequence...")
         outro_builder = OutroBuilder(assets_dir, _temp_files)
         outro_builder.build_outro(frames, outro_path)
         
-        # Intro (complex with animation)
+        # Step 4: Intro (complex with animation)
+        report_progress(4, 5, "Building intro sequence...")
         intro_builder = IntroBuilder(assets_dir, _temp_files)
         intro_builder.build_intro(frames, grid_info, intro_path)
         
+        # Step 5: Cleanup
+        report_progress(5, 5, "Cleaning up temporary files...")
+        
     finally:
-        # Cleanup temp files
         _cleanup_temp_files()
     
+    log.info("[splash] Complete: intro and outro sequences generated")
     return intro_path, outro_path
 
 
 def _cleanup_temp_files():
     """Remove temporary files and directories."""
+    removed_count = 0
     for temp_item in _temp_files:
         if not temp_item.exists():
             continue
@@ -138,11 +147,16 @@ def _cleanup_temp_files():
                 import shutil
                 shutil.rmtree(temp_item)
                 log.debug(f"[splash] Cleaned up directory: {temp_item.name}")
+                removed_count += 1
             else:
                 temp_item.unlink()
                 log.debug(f"[splash] Cleaned up file: {temp_item.name}")
+                removed_count += 1
         except Exception as e:
             log.warning(f"[splash] Could not delete {temp_item.name}: {e}")
+    
+    if removed_count > 0:
+        log.debug(f"[splash] Cleaned up {removed_count} temporary items")
 
 
 if __name__ == "__main__":

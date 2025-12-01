@@ -2,11 +2,13 @@
 """
 Main application window - UI orchestration only.
 Business logic delegated to helper modules.
+
+UPDATED: Enhanced progress bar display with visual feedback.
 """
 
 from pathlib import Path
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QProgressBar
+from PySide6.QtCore import Qt, QTimer
 
 from .gui_helpers import (
     ProjectListPanel,
@@ -37,6 +39,8 @@ class MainWindow(QMainWindow):
         
         # Will be connected after UI setup
         self.log_panel = None
+        self.progress_bar = None
+        self._progress_hide_timer = None
         
         # Initialize controllers
         self.project_controller = ProjectController(
@@ -59,6 +63,8 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
         # Create panels
         self.project_panel = ProjectListPanel()
@@ -74,6 +80,35 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 2)
         
         main_layout.addWidget(splitter)
+        
+        # Progress bar (enhanced with gradient and better visibility)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #DDDDDD;
+                border-radius: 6px;
+                text-align: center;
+                height: 28px;
+                background-color: #F5F5F5;
+                font-size: 12px;
+                font-weight: 600;
+                color: #333333;
+                margin: 0px 10px 10px 10px;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #007AFF, stop:1 #00C7FF
+                );
+                border-radius: 4px;
+            }
+        """)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)  # Hidden until operations start
+        main_layout.addWidget(self.progress_bar)
+        
         main_layout.addWidget(self.action_panel)
         main_layout.addWidget(self.log_panel)
         
@@ -118,6 +153,7 @@ class MainWindow(QMainWindow):
                 path=str(project_path)
             )
             self._update_pipeline_buttons()
+            self.log_panel.log(f"Selected project: {project_path.name}", "success")
     
     def _create_project(self):
         """Create new project from source folder."""
@@ -166,16 +202,58 @@ class MainWindow(QMainWindow):
         """Handle step start."""
         self.status_manager.show_running(step_name)
         self.log_panel.log(f"▶ Starting {step_name}...", "info")
+        
+        # Cancel any pending hide timer
+        if self._progress_hide_timer:
+            self._progress_hide_timer.stop()
+            self._progress_hide_timer = None
+        
+        # Show and reset progress bar
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat(f"{step_name}: Starting...")
+        self.progress_bar.setVisible(True)
+        
+        # Update button to show in-progress state
+        self._update_button_in_progress(step_name)
     
     def _on_step_progress(self, step_name: str, current: int, total: int):
-        """Handle step progress."""
+        """Handle step progress updates."""
         self.status_manager.show_progress(step_name, current, total)
+        
+        # Update progress bar
+        if total > 0:
+            pct = int((current / total) * 100)
+            self.progress_bar.setValue(pct)
+            self.progress_bar.setFormat(f"{step_name}: {current}/{total} ({pct}%)")
+            
+            # Also update status bar with visual progress indicator
+            bar_length = 20
+            filled = int(bar_length * current / total)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            self.statusBar().showMessage(f"{step_name}: {bar} {pct}%")
+        
+        # Log to activity panel (throttled to avoid spam)
+        if current == total or current % 25 == 0:
+            self.log_panel.log(f"  {step_name}: {current}/{total}", "info")
     
     def _on_step_completed(self, step_name: str, result):
         """Handle step completion."""
         self.step_tracker.mark_completed(step_name)
         self.log_panel.log(f"✓ {step_name} completed", "success")
+        
+        # Update progress bar to show completion
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat(f"{step_name}: Complete ✓")
+        
+        # Hide progress bar after 1.5 seconds
+        self._progress_hide_timer = QTimer()
+        self._progress_hide_timer.setSingleShot(True)
+        self._progress_hide_timer.timeout.connect(lambda: self.progress_bar.setVisible(False))
+        self._progress_hide_timer.start(1500)
+        
+        # Update UI
         self._update_pipeline_buttons()
+        self.status_manager.show_ready()
         
         # Handle special completions
         if step_name == "concat":
@@ -185,6 +263,56 @@ class MainWindow(QMainWindow):
         """Handle step error."""
         self.status_manager.show_error(step_name)
         self.log_panel.log(f"✗ {step_name} failed: {error_message}", "error")
+        
+        # Update progress bar to show error
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #FF3B30;
+                border-radius: 6px;
+                text-align: center;
+                height: 28px;
+                background-color: #FFF5F5;
+                font-size: 12px;
+                font-weight: 600;
+                color: #D32F2F;
+                margin: 0px 10px 10px 10px;
+            }
+            QProgressBar::chunk {
+                background-color: #FF3B30;
+                border-radius: 4px;
+            }
+        """)
+        self.progress_bar.setFormat(f"{step_name}: Failed ✗")
+        
+        # Hide after 3 seconds and restore normal style
+        self._progress_hide_timer = QTimer()
+        self._progress_hide_timer.setSingleShot(True)
+        self._progress_hide_timer.timeout.connect(self._restore_progress_bar_style)
+        self._progress_hide_timer.start(3000)
+    
+    def _restore_progress_bar_style(self):
+        """Restore normal progress bar style and hide."""
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #DDDDDD;
+                border-radius: 6px;
+                text-align: center;
+                height: 28px;
+                background-color: #F5F5F5;
+                font-size: 12px;
+                font-weight: 600;
+                color: #333333;
+                margin: 0px 10px 10px 10px;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #007AFF, stop:1 #00C7FF
+                );
+                border-radius: 4px;
+            }
+        """)
+        self.progress_bar.setVisible(False)
     
     def _on_build_completed(self):
         """Handle build completion with video offer."""
@@ -196,6 +324,38 @@ class MainWindow(QMainWindow):
             self.dialog_manager.offer_open_video(final_video)
     
     # --- UI Updates ---
+    
+    def _update_button_in_progress(self, step_name: str):
+        """Update button to show in-progress state."""
+        # Map step names to buttons
+        step_button_map = {
+            "preflight": self.pipeline_panel.btn_prepare,
+            "flatten": self.pipeline_panel.btn_prepare,
+            "align": self.pipeline_panel.btn_prepare,
+            "extract": self.pipeline_panel.btn_analyze,
+            "analyze": self.pipeline_panel.btn_analyze,
+            "select": self.pipeline_panel.btn_select,
+            "build": self.pipeline_panel.btn_finalize,
+            "splash": self.pipeline_panel.btn_finalize,
+            "concat": self.pipeline_panel.btn_finalize,
+        }
+        
+        button = step_button_map.get(step_name)
+        if button:
+            original_text = button.property("original_text")
+            button.setText(f"⟳  {original_text}")
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #E3F2FD;
+                    color: #1976D2;
+                    font-size: 16px;
+                    font-weight: 600;
+                    border: 2px solid #2196F3;
+                    border-radius: 8px;
+                    text-align: left;
+                    padding-left: 15px;
+                }
+            """)
     
     def _update_pipeline_buttons(self):
         """Update pipeline button states and completion indicators."""
