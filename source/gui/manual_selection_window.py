@@ -125,26 +125,37 @@ class ManualSelectionWindow(QDialog):
                 self.reject()
                 return
 
-            grouped = defaultdict(list)
-            for row in rows:
-                epoch = row.get("abs_time_epoch")
-                if epoch:
-                    grouped[epoch].append(row)
-
+            # Sort rows by epoch for pairing
+            rows_sorted = sorted(rows, key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
             self.moments = []
-            for epoch, pair in grouped.items():
-                if len(pair) != 2:
-                    self.log(f"Skipping epoch {epoch}: expected 2 rows, found {len(pair)}", "warning")
-                    continue
+            used = set()
 
-                row1, row2 = pair
-                moment = {
-                    "epoch": float(epoch),
-                    "row1": row1,
-                    "row2": row2,
-                    "rows": [row1, row2],
-                }
-                self.moments.append(moment)
+            for i, row in enumerate(rows_sorted):
+                if i in used:
+                    continue
+                epoch = float(row.get("abs_time_epoch", 0) or 0.0)
+                pair = [row]
+
+                # look ahead for partner within tolerance
+                for j in range(i + 1, len(rows_sorted)):
+                    other = rows_sorted[j]
+                    other_epoch = float(other.get("abs_time_epoch", 0) or 0.0)
+                    if abs(other_epoch - epoch) <= CFG.PARTNER_TIME_TOLERANCE_S:
+                        pair.append(other)
+                        used.add(j)
+                        break
+
+                if len(pair) == 2:
+                    row1, row2 = pair
+                    moment = {
+                        "epoch": epoch,
+                        "row1": row1,
+                        "row2": row2,
+                        "rows": pair,
+                    }
+                    self.moments.append(moment)
+                else:
+                    self.log(f"Skipping epoch {epoch}: expected 2 rows, found {len(pair)}", "warning")
 
             self.selected_count = sum(
                 1 for m in self.moments if any(r.get("recommended") == "true" for r in m["rows"])
@@ -158,6 +169,7 @@ class ManualSelectionWindow(QDialog):
             QMessageBox.critical(self, "Error", f"Failed to load candidates: {e}")
             self.log(f"CSV load error: {e}", "error")
             self.reject()
+
 
     def _populate_grid(self):
         while self.grid_layout.count():

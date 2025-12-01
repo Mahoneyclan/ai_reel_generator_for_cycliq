@@ -1,29 +1,25 @@
 # source/gui/main_window.py
 """
 Main application window - UI orchestration only.
-Business logic delegated to controller modules.
+Business logic delegated to helper modules.
 """
 
-from datetime import datetime
 from pathlib import Path
-
-from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QSplitter, QFileDialog, QMessageBox
-)
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
+
+from .gui_helpers import (
+    ProjectListPanel,
+    PipelinePanel,
+    ActionButtonPanel,
+    ActivityLogPanel,
+    StatusManager,
+    DialogManager,
+    StepStatusTracker
+)
+from .controllers import ProjectController, PipelineController
 
 from ..config import DEFAULT_CONFIG as CFG
-from .import_window import ImportRideWindow
-from .preferences_window import PreferencesWindow
-from .analysis_dialog import AnalysisDialog
-from .view_log_window import ViewLogWindow
-
-# Import controllers
-from .controllers import ProjectController, PipelineController, UIBuilder
-
-from ..io_paths import enrich_path
 
 
 class MainWindow(QMainWindow):
@@ -34,29 +30,28 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Velo Highlights AI")
         self.resize(1200, 800)
         
+        # Initialize managers
+        self.status_manager = StatusManager(self)
+        self.dialog_manager = DialogManager(self)
+        self.step_tracker = StepStatusTracker()
+        
+        # Will be connected after UI setup
+        self.log_panel = None
+        
         # Initialize controllers
-        self.project_controller = ProjectController(log_callback=self.log)
-        self.pipeline_controller = PipelineController(
-            on_step_started=self.on_step_started,
-            on_step_progress=self.on_step_progress,
-            on_step_completed=self.on_step_completed,
-            on_error=self.on_error
+        self.project_controller = ProjectController(
+            log_callback=self.status_manager.log
         )
-        self.ui_builder = UIBuilder()
+        self.pipeline_controller = PipelineController(
+            on_step_started=self._on_step_started,
+            on_step_progress=self._on_step_progress,
+            on_step_completed=self._on_step_completed,
+            on_error=self._on_error
+        )
         
-        # UI components (will be initialized in _setup_ui)
-        self.log_view = None
-        self.project_list = None
-        self.project_name_label = None
-        self.project_info_label = None
-        
-        # Step buttons
-        self.btn_prepare = None
-        self.btn_analyze = None
-        self.btn_select = None
-        self.btn_finalize = None
-        
+        # Setup UI
         self._setup_ui()
+        self._connect_signals()
         self._refresh_projects()
     
     def _setup_ui(self):
@@ -65,615 +60,186 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         
-        # Top section with panels side-by-side
-        top_widget = QWidget()
-        top_layout = QHBoxLayout(top_widget)
-        top_layout.setContentsMargins(0, 0, 0, 0)
+        # Create panels
+        self.project_panel = ProjectListPanel()
+        self.pipeline_panel = PipelinePanel()
+        self.action_panel = ActionButtonPanel()
+        self.log_panel = ActivityLogPanel()
         
-        # Create left and right panels
-        left_panel = self._create_left_panel()
-        right_panel = self._create_right_panel()
-        
-        # Add to splitter
+        # Top section with splitter
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(left_panel)
-        splitter.addWidget(right_panel)
+        splitter.addWidget(self.project_panel)
+        splitter.addWidget(self.pipeline_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
-        top_layout.addWidget(splitter)
         
-        main_layout.addWidget(top_widget)
+        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.action_panel)
+        main_layout.addWidget(self.log_panel)
         
-        # Action buttons - NOW FULL WIDTH between panels and log
-        action_panel = self._create_action_buttons()
-        main_layout.addWidget(action_panel)
-        
-        # Bottom section - full width activity log
-        bottom_panel = self._create_bottom_panel()
-        main_layout.addWidget(bottom_panel)
+        # Connect status manager to log panel
+        self.status_manager.set_log_callback(self.log_panel.log)
         
         # Status bar
-        self.statusBar().showMessage("Ready")
+        self.status_manager.show_ready()
     
-    def _create_left_panel(self) -> QWidget:
-        """Create left panel with project list."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
+    def _connect_signals(self):
+        """Connect all UI signals to handlers."""
+        # Project panel
+        self.project_panel.project_selected.connect(self._on_project_selected)
         
-        # Header
-        header = self.ui_builder.create_section_label("Ride Projects")
-        layout.addWidget(header)
+        # Pipeline panel
+        self.pipeline_panel.prepare_clicked.connect(self._run_prepare)
+        self.pipeline_panel.analyze_clicked.connect(self._run_analyze)
+        self.pipeline_panel.select_clicked.connect(self._run_select)
+        self.pipeline_panel.finalize_clicked.connect(self._run_finalize)
         
-        # Project list (takes all remaining space)
-        self.project_list = QListWidget()
-        self.project_list.itemClicked.connect(self._on_project_clicked)
-        self.project_list.itemDoubleClicked.connect(self._on_project_double_clicked)
-        layout.addWidget(self.project_list)
-        
-        return panel
-    
-    def _create_action_buttons(self) -> QWidget:
-        """Create action button panel - spans full width."""
-        panel = QWidget()
-        layout = QHBoxLayout(panel)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
-        
-        btn_import = QPushButton("Import Clips")
-        btn_import.clicked.connect(self._open_import_clips)
-        btn_import.setStyleSheet(self._get_action_button_style())
-        
-        btn_strava = QPushButton("Get Strava GPX")
-        btn_strava.clicked.connect(lambda: self.log("Strava GPX import coming soon", "info"))
-        btn_strava.setStyleSheet(self._get_action_button_style())
-        
-        btn_create = QPushButton("Create New Project")
-        btn_create.clicked.connect(self._create_new_project)
-        btn_create.setStyleSheet(self._get_action_button_style())
-        
-        btn_analyze = QPushButton("Analyze Selection")
-        btn_analyze.clicked.connect(self._open_analysis)
-        btn_analyze.setStyleSheet(self._get_action_button_style())
-        
-        btn_log = QPushButton("View Log")
-        btn_log.clicked.connect(self._open_log_viewer)
-        btn_log.setStyleSheet(self._get_action_button_style())
-        
-        btn_music = QPushButton("Add Music")
-        btn_music.clicked.connect(lambda: self.log("Music management coming soon", "info"))
-        btn_music.setStyleSheet(self._get_action_button_style())
-        
-        btn_prefs = QPushButton("Preferences")
-        btn_prefs.clicked.connect(self._open_preferences)
-        btn_prefs.setStyleSheet(self._get_action_button_style())
-        
-        layout.addWidget(btn_import)
-        layout.addWidget(btn_strava)
-        layout.addWidget(btn_create)
-        layout.addWidget(btn_analyze)
-        layout.addWidget(btn_log)
-        layout.addWidget(btn_music)
-        layout.addWidget(btn_prefs)
-        
-        return panel
-    
-    def _get_action_button_style(self) -> str:
-        """Get stylesheet for action buttons."""
-        return """
-            QPushButton {
-                background-color: #F5F5F5;
-                color: #333333;
-                padding: 8px 12px;
-                font-size: 12px;
-                border: 1px solid #DDDDDD;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #E8E8E8;
-            }
-            QPushButton:pressed {
-                background-color: #DDDDDD;
-            }
-        """
-    
-    def _create_right_panel(self) -> QWidget:
-        """Create right panel with pipeline steps and project info."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(12)
-        
-        # Project info
-        self.project_name_label = QLabel("No project loaded")
-        self.project_name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a;")
-        layout.addWidget(self.project_name_label)
-        
-        self.project_info_label = self.ui_builder.create_info_label()
-        layout.addWidget(self.project_info_label)
-        
-        # Pipeline steps header
-        steps_label = self.ui_builder.create_section_label("Pipeline Steps", 14)
-        steps_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #666; padding: 10px 0 5px 0;")
-        layout.addWidget(steps_label)
-        
-        # Step buttons with updated styling
-        self.btn_prepare = self._create_pipeline_button(
-            "Prepare",
-            "Validate inputs, parse GPX, and align camera timestamps",
-            lambda: self._run_step_group("prepare")
-        )
-        layout.addWidget(self.btn_prepare)
-        
-        self.btn_analyze = self._create_pipeline_button(
-            "Analyze",
-            "Extract frame metadata and detect bikes with AI",
-            lambda: self._run_step_group("analyze")
-        )
-        layout.addWidget(self.btn_analyze)
-        
-        self.btn_select = self._create_pipeline_button(
-            "Select",
-            "AI recommends clips, then you review and finalize selection",
-            self._run_select_with_review
-        )
-        layout.addWidget(self.btn_select)
-        
-        self.btn_finalize = self._create_pipeline_button(
-            "Build",
-            "Render clips with overlays, create intro/outro, and assemble final video",
-            lambda: self._run_step_group("finalize")
-        )
-        layout.addWidget(self.btn_finalize)
-        
-        layout.addStretch()
-        
-        return panel
-    
-    def _create_pipeline_button(self, text: str, tooltip: str, callback) -> QPushButton:
-        """Create a pipeline step button with completion indicator support."""
-        btn = QPushButton(text)
-        btn.clicked.connect(callback)
-        btn.setMinimumHeight(50)
-        btn.setToolTip(tooltip)
-        
-        # Store original text for later use
-        btn.setProperty("original_text", text)
-        
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #007AFF;
-                color: white;
-                font-size: 16px;
-                font-weight: bold;
-                border-radius: 8px;
-                text-align: left;
-                padding-left: 15px;
-            }
-            QPushButton:hover {
-                background-color: #0051D5;
-            }
-            QPushButton:disabled {
-                background-color: #CCCCCC;
-                color: #888888;
-            }
-        """)
-        return btn
-    
-    def _create_bottom_panel(self) -> QWidget:
-        """Create full-width bottom panel with activity log."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Activity Log label
-        log_label = QLabel("Activity Log")
-        log_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        layout.addWidget(log_label)
-        
-        # Log view
-        self.log_view = self.ui_builder.create_log_view()
-        self.log_view.setMinimumHeight(120)
-        layout.addWidget(self.log_view)
-        
-        return panel
-    
-    # --- Project Management ---
+        # Action panel
+        self.action_panel.import_clicked.connect(self.dialog_manager.show_import)
+        self.action_panel.strava_clicked.connect(self._show_strava_placeholder)
+        self.action_panel.create_clicked.connect(self._create_project)
+        self.action_panel.analyze_clicked.connect(self.dialog_manager.show_analysis)
+        self.action_panel.log_clicked.connect(self.dialog_manager.show_log)
+        self.action_panel.music_clicked.connect(self._show_music_placeholder)
+        self.action_panel.prefs_clicked.connect(self._show_preferences)
     
     def _refresh_projects(self):
         """Refresh project list from disk."""
-        self.project_list.clear()
         projects = self.project_controller.get_all_projects()
-        
-        for name, path in projects:
-            item = QListWidgetItem(name)
-            item.setData(Qt.UserRole, str(path))
-            self.project_list.addItem(item)
-        
-        count = len(projects)
-        self.log(f"Found {count} project(s)", "success")
-        self.statusBar().showMessage(f"Loaded {count} projects")
+        self.project_panel.set_projects(projects)
+        self.status_manager.log(f"Found {len(projects)} project(s)", "success")
     
-    def _on_project_clicked(self, item):
-        """Handle project selection from list."""
-        project_path = Path(item.data(Qt.UserRole))
-        
-        # Select project via controller
+    def _on_project_selected(self, project_path: Path):
+        """Handle project selection."""
         if self.project_controller.select_project(project_path):
             self.pipeline_controller.set_current_project(project_path)
-            
-            # Update UI
-            self.project_name_label.setText(project_path.name)
-            self.project_info_label.setText(str(project_path))
-            
-            # Update button states and completion indicators
-            self._update_step_buttons()
+            self.pipeline_panel.set_project_info(
+                name=project_path.name,
+                path=str(project_path)
+            )
+            self._update_pipeline_buttons()
     
-    def _on_project_double_clicked(self, item):
-        """Handle project double-click (same as single click for now)."""
-        self._on_project_clicked(item)
-    
-    def _create_new_project(self):
-        """Create a new project from source folder."""
-        source_folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select Source Folder with Video Files"
-        )
+    def _create_project(self):
+        """Create new project from source folder."""
+        source_folder = self.dialog_manager.select_source_folder()
         if not source_folder:
             return
         
-        # Create project via controller
-        project_path = self.project_controller.create_project(Path(source_folder))
-        
+        project_path = self.project_controller.create_project(source_folder)
         if project_path:
-            # Add to list and select
-            item = QListWidgetItem(project_path.name)
-            item.setData(Qt.UserRole, str(project_path))
-            self.project_list.addItem(item)
-            self.project_list.setCurrentItem(item)
-            self._on_project_clicked(item)
-            
-            self.statusBar().showMessage(f"Project created: {project_path.name}")
-        else:
-            self.statusBar().showMessage("Failed to create project")
+            self._refresh_projects()
+            self.project_panel.select_project(project_path)
     
     # --- Pipeline Execution ---
     
-    def _run_step_group(self, group_name: str):
-        """Run a pipeline step group."""
-        if not self.project_controller.current_project:
-            return
-        
+    def _run_prepare(self):
+        """Run preparation pipeline."""
         try:
-            if group_name == "prepare":
-                self.pipeline_controller.run_prepare()
-            elif group_name == "analyze":
-                self.pipeline_controller.run_analyze()
-            elif group_name == "finalize":
-                self.pipeline_controller.run_finalize()
+            self.pipeline_controller.run_prepare()
         except Exception as e:
-            self.on_error(group_name, str(e))
+            self._on_error("prepare", str(e))
     
-    def _run_select_with_review(self):
-        """Run select step with manual review dialog."""
-        if not self.project_controller.current_project:
-            return
-        
+    def _run_analyze(self):
+        """Run analysis pipeline."""
+        try:
+            self.pipeline_controller.run_analyze()
+        except Exception as e:
+            self._on_error("analyze", str(e))
+    
+    def _run_select(self):
+        """Run selection with manual review."""
         try:
             self.pipeline_controller.run_select()
         except Exception as e:
-            self.on_error("select", str(e))
+            self._on_error("select", str(e))
     
-    def _check_step_completed(self, step_name: str) -> bool:
-        """Check if a pipeline step has been completed based on artifact files."""
-        if not self.project_controller.current_project:
-            return False
-        
+    def _run_finalize(self):
+        """Run finalization pipeline."""
         try:
-            project_path = self.project_controller.current_project
-            working_dir = project_path / "working"
-            
-            if step_name == "prepare":
-                # Check if camera_offsets.json exists
-                offsets_file = working_dir / "camera_offsets.json"
-                return offsets_file.exists()
-            elif step_name == "analyze":
-                # Check if enriched.csv exists
-                enriched_file = working_dir / "enriched.csv"
-                return enriched_file.exists()
-            elif step_name == "select":
-                # Check if select.csv exists
-                select_file = working_dir / "select.csv"
-                return select_file.exists()
-            elif step_name == "finalize":
-                # Check if final video exists - look for the actual project name
-                final_video = project_path / f"{project_path.name}.mp4"
-                return final_video.exists()
+            self.pipeline_controller.run_finalize()
         except Exception as e:
-            self.log(f"Error checking step completion for {step_name}: {e}", "error")
-            return False
-        
-        return False
-    
-    def _update_button_completion_indicator(self, button: QPushButton, step_name: str):
-        """Update button styling to show completion status with clean visual design."""
-        original_text = button.property("original_text")
-        is_completed = self._check_step_completed(step_name)
-        
-        if is_completed:
-            # Completed: Minimal checkmark, muted green background
-            button.setText(f"✓  {original_text}")
-            button.setStyleSheet("""
-                QPushButton {
-                    background-color: #F0F9F4;
-                    color: #2D7A4F;
-                    font-size: 16px;
-                    font-weight: 600;
-                    border: 2px solid #6EBF8B;
-                    border-radius: 8px;
-                    text-align: left;
-                    padding-left: 15px;
-                }
-                QPushButton:hover {
-                    background-color: #E5F4EC;
-                    border-color: #5CAF7B;
-                }
-                QPushButton:disabled {
-                    background-color: #F5F5F5;
-                    color: #AAAAAA;
-                    border-color: #DDDDDD;
-                }
-            """)
-        else:
-            # Not completed: Clean slate gray
-            button.setText(original_text)
-            button.setStyleSheet("""
-                QPushButton {
-                    background-color: #FFFFFF;
-                    color: #333333;
-                    font-size: 16px;
-                    font-weight: 600;
-                    border: 2px solid #DDDDDD;
-                    border-radius: 8px;
-                    text-align: left;
-                    padding-left: 15px;
-                }
-                QPushButton:hover {
-                    background-color: #F8F9FA;
-                    border-color: #007AFF;
-                }
-                QPushButton:disabled {
-                    background-color: #F5F5F5;
-                    color: #AAAAAA;
-                    border-color: #E5E5E5;
-                }
-            """)
-    
-    def _update_step_buttons(self):
-        """Update step button enabled/disabled state and completion indicators."""
-        if not self.project_controller.current_project:
-            self.btn_prepare.setEnabled(False)
-            self.btn_analyze.setEnabled(False)
-            self.btn_select.setEnabled(False)
-            self.btn_finalize.setEnabled(False)
-            return
-        
-        # Update completion indicators for all steps
-        self._update_button_completion_indicator(self.btn_prepare, "prepare")
-        self._update_button_completion_indicator(self.btn_analyze, "analyze")
-        self._update_button_completion_indicator(self.btn_select, "select")
-        self._update_button_completion_indicator(self.btn_finalize, "finalize")
-        
-        # Enable buttons based on completion status
-        self.btn_prepare.setEnabled(True)
-        self.btn_analyze.setEnabled(self.pipeline_controller.can_run_analyze())
-        self.btn_select.setEnabled(self.pipeline_controller.can_run_select())
-        self.btn_finalize.setEnabled(self.pipeline_controller.can_run_finalize())
+            self._on_error("finalize", str(e))
     
     # --- Pipeline Callbacks ---
     
-    def on_step_started(self, step_name: str):
-        """Callback when pipeline step starts."""
-        self.log(f"▶ Starting {step_name}...", "info")
-        self.statusBar().showMessage(f"Running: {step_name}")
+    def _on_step_started(self, step_name: str):
+        """Handle step start."""
+        self.status_manager.show_running(step_name)
+        self.log_panel.log(f"▶ Starting {step_name}...", "info")
     
-    def on_step_progress(self, step_name: str, current: int, total: int):
-        """Callback for pipeline step progress updates.
-        
-        Args:
-            step_name: Name of the current step
-            current: Current progress value (e.g., frame 42)
-            total: Total items to process (e.g., 100 frames)
-        """
-        if total > 0:
-            pct = int((current / total) * 100)
-            status = f"{step_name}: {current}/{total} ({pct}%)"
-            self.statusBar().showMessage(status)
+    def _on_step_progress(self, step_name: str, current: int, total: int):
+        """Handle step progress."""
+        self.status_manager.show_progress(step_name, current, total)
     
-    def on_step_completed(self, step_name: str, result):
-        """Callback when pipeline step completes."""
-        self.log(f"✓ {step_name} completed", "success")
-        self.statusBar().showMessage(f"Completed: {step_name}")
-        self._update_step_buttons()
+    def _on_step_completed(self, step_name: str, result):
+        """Handle step completion."""
+        self.step_tracker.mark_completed(step_name)
+        self.log_panel.log(f"✓ {step_name} completed", "success")
+        self._update_pipeline_buttons()
         
-        # Special handling for concat completion (final step of build group)
-        # The concat step is the last one, so we show the popup after it finishes
+        # Handle special completions
         if step_name == "concat":
             self._on_build_completed()
     
-    def on_error(self, step_name: str, error_message: str):
-        """Callback when pipeline step fails."""
-        self.statusBar().showMessage("Pipeline failed")
-        self.log(f"✗ {step_name} failed: {error_message}", "error")
-
-    # --- Dialogs ---
+    def _on_error(self, step_name: str, error_message: str):
+        """Handle step error."""
+        self.status_manager.show_error(step_name)
+        self.log_panel.log(f"✗ {step_name} failed: {error_message}", "error")
+    
     def _on_build_completed(self):
-        """Handle Build step completion - offer to open final video."""
+        """Handle build completion with video offer."""
         if not self.project_controller.current_project:
             return
         
-        project_path = self.project_controller.current_project
-        final_video = project_path / f"{project_path.name}.mp4"
-        
-        if not final_video.exists():
-            self.log("Build completed but final video not found", "warning")
+        final_video = self.project_controller.current_project / f"{self.project_controller.current_project.name}.mp4"
+        if final_video.exists():
+            self.dialog_manager.offer_open_video(final_video)
+    
+    # --- UI Updates ---
+    
+    def _update_pipeline_buttons(self):
+        """Update pipeline button states and completion indicators."""
+        if not self.project_controller.current_project:
+            self.pipeline_panel.disable_all()
             return
         
-        # Show success dialog with option to open video
-        reply = QMessageBox.question(
-            self,
-            "Build Complete! 🎉",
-            f"Your highlight reel has been created successfully!\n\n"
-            f"Location: {final_video}\n\n"
-            f"Would you like to open the video now?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
+        # Update button states
+        prepare_done = self.pipeline_controller.can_run_analyze()
+        analyze_done = self.pipeline_controller.can_run_select()
+        select_done = self.pipeline_controller.can_run_finalize()
+        
+        self.pipeline_panel.update_button_states(
+            prepare_enabled=True,
+            prepare_done=prepare_done,
+            analyze_enabled=prepare_done,
+            analyze_done=analyze_done,
+            select_enabled=analyze_done,
+            select_done=select_done,
+            finalize_enabled=select_done,
+            finalize_done=self._check_finalize_done()
         )
-        
-        if reply == QMessageBox.Yes:
-            self._open_final_video(final_video)
     
-    def _open_final_video(self, video_path: Path):
-        """Open final video in default system player."""
-        import subprocess
-        import sys
-        
-        try:
-            if sys.platform == 'darwin':  # macOS
-                subprocess.run(['open', str(video_path)], check=True)
-            elif sys.platform == 'win32':  # Windows
-                subprocess.run(['start', str(video_path)], shell=True, check=True)
-            else:  # Linux
-                subprocess.run(['xdg-open', str(video_path)], check=True)
-            
-            self.log(f"Opened video: {video_path.name}", "success")
-        except Exception as e:
-            self.log(f"Failed to open video: {e}", "error")
-            QMessageBox.warning(
-                self,
-                "Cannot Open Video",
-                f"Could not open video automatically.\n\n"
-                f"Please open manually:\n{video_path}"
-            )
-    
-    def _open_import_clips(self):
-        """Open import clips dialog."""
-        dlg = ImportRideWindow(self)
-        dlg.exec()
-    
-    def _open_preferences(self):
-        """Open preferences dialog."""
+    def _check_finalize_done(self) -> bool:
+        """Check if finalize step is complete."""
         if not self.project_controller.current_project:
-            QMessageBox.warning(
-                self,
-                "No Project Selected",
-                "Please select or create a project before opening preferences."
-            )
-            return
-        
-        from ..utils.log import reconfigure_loggers
-        
-        prefs_dialog = PreferencesWindow(self)
-        result = prefs_dialog.exec()
-        
-        if result == PreferencesWindow.Accepted:
-            overrides = prefs_dialog.get_overrides()
-            
-            # Apply overrides to config
-            changes_applied = []
-            for key, value in overrides.items():
-                if hasattr(CFG, key):
-                    old_value = getattr(CFG, key)
-                    setattr(CFG, key, value)
-                    
-                    if old_value != value:
-                        changes_applied.append(f"{key}: {old_value} → {value}")
-            
-            if changes_applied:
-                self.log("✓ Preferences updated:", "success")
-                for change in changes_applied[:5]:
-                    self.log(f"  • {change}", "info")
-                if len(changes_applied) > 5:
-                    self.log(f"  ... and {len(changes_applied) - 5} more changes", "info")
-                
-                if any("LOG_LEVEL" in change for change in changes_applied):
-                    reconfigure_loggers()
-                
-                self.statusBar().showMessage(f"Applied {len(changes_applied)} preference changes")
-            else:
-                self.log("No changes made to preferences", "info")
-        else:
-            self.log("Preferences changes cancelled", "info")
+            return False
+        final_video = self.project_controller.current_project / f"{self.project_controller.current_project.name}.mp4"
+        return final_video.exists()
     
-    def _open_analysis(self):
-        """Open selection analysis dialog."""
+    # --- Dialogs ---
+    
+    def _show_preferences(self):
+        """Show preferences dialog."""
         if not self.project_controller.current_project:
-            QMessageBox.warning(
-                self,
-                "No Project Selected",
-                "Please select or create a project before analyzing selection."
-            )
+            self.dialog_manager.show_no_project_warning()
             return
         
-        if not enrich_path().exists():
-            QMessageBox.warning(
-                self,
-                "No Analysis Data",
-                "Please run the 'Analyze Frames' step first.\n\n"
-                "The analysis tool needs enriched.csv to identify bottlenecks."
-            )
-            return
-        
-        try:
-            dialog = AnalysisDialog(self.project_controller.current_project, self)
-            dialog.exec()
-        except Exception as e:
-            self.log(f"Failed to open analysis: {e}", "error")
-            QMessageBox.critical(
-                self,
-                "Analysis Error",
-                f"Failed to run analysis:\n\n{str(e)}"
-            )
+        self.dialog_manager.show_preferences()
     
-    def _open_log_viewer(self):
-        """Open log viewer window."""
-        if not self.project_controller.current_project:
-            QMessageBox.warning(
-                self,
-                "No Project Selected",
-                "Please select or create a project before viewing logs."
-            )
-            return
-        
-        try:
-            log_window = ViewLogWindow(self.project_controller.current_project, self)
-            log_window.exec()
-        except Exception as e:
-            self.log(f"Failed to open log viewer: {e}", "error")
-            QMessageBox.critical(
-                self,
-                "Log Viewer Error",
-                f"Failed to open log viewer:\n\n{str(e)}"
-            )
+    def _show_strava_placeholder(self):
+        """Show Strava placeholder message."""
+        self.log_panel.log("Strava GPX import coming soon", "info")
     
-    # --- Logging ---
-    
-    def log(self, message: str, level: str = "info"):
-        """Add colored log message to log view."""
-        color_map = {
-            "info": "#000000",
-            "error": "#FF0000",
-            "warning": "#FF9500",
-            "success": "#00C853"
-        }
-        color = color_map.get(level, "#000000")
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_view.append(
-            f'<span style="color: #888">[{timestamp}]</span> '
-            f'<span style="color: {color}">{message}</span>'
-        )
-        self.log_view.ensureCursorVisible()
-    
-    def closeEvent(self, event):
-        """Handle window close event."""
-        event.accept()
+    def _show_music_placeholder(self):
+        """Show music management placeholder."""
+        self.log_panel.log("Music management coming soon", "info")
