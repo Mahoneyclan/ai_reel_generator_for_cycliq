@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from ..config import DEFAULT_CONFIG as CFG
 from ..utils.log import setup_logger
+from ..utils.progress_reporter import report_progress
 
 log = setup_logger("steps.preflight")
 
@@ -89,36 +90,45 @@ def check_assets() -> bool:
     return all_ok
 
 def run() -> bool:
-    """Run all pre-flight checks."""
+    """Run all pre-flight checks with GUI progress reporting."""
     log.info(f"[preflight] Starting pre-flight checks for: {CFG.RIDE_FOLDER}")
     log.info(f"[preflight] Input directory: {CFG.INPUT_DIR}")
-    
+
+    report_progress(1, 3, "Checking video files...")
+    videos_ok = check_videos()
+
+    report_progress(2, 3, "Checking GPS data...")
+    gps_ok = check_gpx()
+
+    report_progress(3, 3, "Checking assets...")
+    assets_ok = check_assets()
+
     checks = {
-        "Videos": check_videos(),
-        "GPS data": check_gpx(),
-        "Assets": check_assets(),
+        "Videos": videos_ok,
+        "GPS data": gps_ok,
+        "Assets": assets_ok,
     }
-    
+
     log.info("\n[preflight] ═══════════════════════════════════════")
     log.info("[preflight] Pre-flight Check Summary:")
     for name, passed in checks.items():
         status = "✓ PASS" if passed else "✗ FAIL"
         log.info(f"[preflight]   {status:8s} {name}")
-    
+
     critical_failed = not checks["Videos"]
-    
+
     if critical_failed:
         log.error("[preflight] ═══════════════════════════════════════")
         log.error("[preflight] ❌ CRITICAL: Cannot proceed without videos")
         log.error("[preflight] Add video files to:")
         log.error(f"[preflight]   {CFG.INPUT_DIR}")
         return False
-    
+
     if not checks["GPS data"]:
         log.warning("[preflight] ═══════════════════════════════════════")
         log.warning("[preflight] ⚠️  WARNING: No GPS data")
         log.warning("[preflight] Pipeline will run but with limited features")
-    
+
     log.info("[preflight] ═══════════════════════════════════════")
     log.info("[preflight] ✓ Ready to proceed")
     return True

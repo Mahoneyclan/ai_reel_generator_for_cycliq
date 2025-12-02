@@ -84,53 +84,53 @@ def _get_gpx_start_epoch() -> float:
     return 0.0
 
 def _extract_single_video(vp: Path, target_fps: float, gpx_start_epoch: float) -> List[Dict[str, str]]:
-    """Generate frame metadata for one video without extracting images."""
+    """Generate frame metadata for one video without extracting images, with live progress reporting."""
     camera, clip_num, clip_id = _derive_camera_and_clip(vp)
     raw_dt, duration_s, video_fps = _probe_meta(vp)
-    
+
     # Apply timezone and camera offset corrections
     if CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z:
         creation_local = raw_dt.replace(tzinfo=CFG.CAMERA_CREATION_TIME_TZ)
     else:
         creation_local = raw_dt.astimezone(CFG.CAMERA_CREATION_TIME_TZ)
-    
+
     adjusted_local = creation_local - timedelta(seconds=duration_s)
     camera_offset_s = _get_camera_offset(camera)
     adjusted_local_corrected = adjusted_local - timedelta(seconds=camera_offset_s)
     adjusted_utc = adjusted_local_corrected.astimezone(timezone.utc)
-    
+
     log.info(
         f"[extract] {vp.name} | duration={duration_s:.1f}s | fps={video_fps:.2f} | "
         f"offset={camera_offset_s:.3f}s | start_utc={adjusted_utc.isoformat()}"
     )
-    
+
     if duration_s <= 0:
         return []
-    
+
     # Calculate frame sampling interval
     frame_interval = max(1, int(video_fps / target_fps))
     target_frame_duration = 1.0 / target_fps
-    
+
+    # Estimate total frames for progress reporting
+    total_frames = int(duration_s / target_frame_duration)
+
     rows: List[Dict[str, str]] = []
     frame_idx = 0
-    
-    while True:
+
+    # Wrap iteration with progress_iter for GUI progress bar
+    for frame_idx in progress_iter(range(0, total_frames, frame_interval),
+                                   desc=f"Extract {vp.name}", unit="frame"):
         session_ts_s = frame_idx * target_frame_duration
-        if session_ts_s >= duration_s:
-            break
-        
         abs_dt_utc = adjusted_utc + timedelta(seconds=session_ts_s)
         abs_epoch = abs_dt_utc.timestamp()
-        
+
         # Skip frames before GPX start time
         if gpx_start_epoch > 0 and abs_epoch < gpx_start_epoch:
-            frame_idx += frame_interval
             continue
-        
-        # Generate virtual frame index for compatibility
+
         virtual_frame_num = frame_idx
         index = f"{camera}_{clip_id}_{virtual_frame_num:06d}"
-        
+
         rows.append({
             "index": index,
             "camera": camera,
@@ -149,9 +149,12 @@ def _extract_single_video(vp: Path, target_fps: float, gpx_start_epoch: float) -
             "duration_s": f"{duration_s:.3f}",
             "adjusted_start_time": adjusted_local.isoformat(),
         })
-        
-        frame_idx += frame_interval
-    
+
+        # Optional: debug log every N frames
+        if frame_idx % 500 == 0:
+            log.debug(f"[extract] {vp.name}: processed frame {frame_idx}/{total_frames}")
+
+    log.info(f"[extract] Finished extracting {len(rows)} frames from {vp.name}")
     return rows
 
 def run() -> Path:

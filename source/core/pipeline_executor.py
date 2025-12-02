@@ -6,6 +6,8 @@ Each action runs its constituent steps with callbacks.
 """
 
 from pathlib import Path
+from PySide6.QtWidgets import QApplication
+
 from source.core import step_registry
 from source.config import DEFAULT_CONFIG as CFG
 from source.utils.log import setup_logger
@@ -27,32 +29,42 @@ class PipelineExecutor:
 
     def _run_step(self, step_name: str):
         """Internal helper to run a single step with callbacks, injecting progress reporter."""
-        
-        # Define a wrapper that converts progress_reporter format to GUI format
+
         def step_progress_callback(current: int, total: int, message: str):
-            # Convert (current, total, message) → (step_name, current, total)
+            # Update GUI progress indicator (3 args only, matches MainWindow._on_step_progress)
             self.on_step_progress(step_name, current, total)
 
+            # Forward descriptive message into logs (so activity panel shows detail)
+            if total and (current % max(1, total // 10) == 0 or current == total):
+                pct = int((current / total) * 100)
+                logger.info(f"[progress] {step_name}: {pct}% ({current}/{total}) {message}")
+
+            # Allow GUI to repaint immediately
+            QApplication.processEvents()
+
         try:
+            # Reset progress indicator at start
             self.on_step_started(step_name)
+            logger.info(f"▶ Starting step: {step_name}")
+
             fn = step_registry.get_step_function(step_name)
-            
+
             # Inject the callback globally
             set_progress_callback(step_progress_callback)
-            
+
             result = fn()
-            
+
             # Cleanup the global callback
             set_progress_callback(None)
-                
+
             # Signal completion to the GUI
             self.on_step_completed(step_name, result)
+            logger.info(f"✓ Completed step: {step_name}")
             return result
-        
+
         except Exception as e:
-            # Ensure cleanup happens even on error
             set_progress_callback(None)
-            logger.error(f"Step {step_name} failed: {e}", exc_info=True)
+            logger.error(f"❌ Step {step_name} failed: {e}", exc_info=True)
             self.on_error(step_name, str(e))
             raise
 
@@ -70,10 +82,8 @@ class PipelineExecutor:
 
     def select(self, project_dir: Path):
         """Run AI pre-select, then open manual selection window."""
-        # Step 1: AI pre-selection
         self._run_step("select")
 
-        # Step 2: Manual review dialog
         from source.gui.manual_selection_window import ManualSelectionWindow
         dialog = ManualSelectionWindow(project_dir)
         dialog.exec()

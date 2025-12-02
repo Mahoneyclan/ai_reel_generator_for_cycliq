@@ -10,87 +10,64 @@ from PySide6.QtCore import Signal
 
 class PipelinePanel(QWidget):
     """Panel displaying pipeline steps and project info."""
-    
+
     prepare_clicked = Signal()
     analyze_clicked = Signal()
     select_clicked = Signal()
     finalize_clicked = Signal()
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
-    
+
     def _setup_ui(self):
-        """Setup panel UI."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(12)
-        
+
         # Project info
         self.project_name_label = QLabel("No project loaded")
-        self.project_name_label.setStyleSheet(
-            "font-size: 18px; font-weight: bold; color: #1a1a1a;"
-        )
+        self.project_name_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a;")
         layout.addWidget(self.project_name_label)
-        
+
         self.project_info_label = QLabel()
         self.project_info_label.setStyleSheet("font-size: 12px; color: #666;")
         layout.addWidget(self.project_info_label)
-        
+
         # Pipeline steps header
         steps_label = QLabel("Pipeline Steps")
-        steps_label.setStyleSheet(
-            "font-size: 14px; font-weight: 600; color: #666; "
-            "padding: 10px 0 5px 0;"
-        )
+        steps_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #666; padding: 10px 0 5px 0;")
         layout.addWidget(steps_label)
-        
+
         # Step buttons
-        self.btn_prepare = self._create_button(
-            "Prepare",
-            "Validate inputs, parse GPX, and align camera timestamps",
-            self.prepare_clicked
-        )
+        self.btn_prepare = self._create_button("Prepare", "Validate inputs, parse GPX, and align camera timestamps", self.prepare_clicked)
         layout.addWidget(self.btn_prepare)
-        
-        self.btn_analyze = self._create_button(
-            "Analyze",
-            "Extract frame metadata and detect bikes with AI",
-            self.analyze_clicked
-        )
+
+        self.btn_analyze = self._create_button("Analyze", "Extract frame metadata and detect bikes with AI", self.analyze_clicked)
         layout.addWidget(self.btn_analyze)
-        
-        self.btn_select = self._create_button(
-            "Select",
-            "AI recommends clips, then you review and finalize selection",
-            self.select_clicked
-        )
+
+        self.btn_select = self._create_button("Select", "AI recommends clips, then you review and finalize selection", self.select_clicked)
         layout.addWidget(self.btn_select)
-        
-        self.btn_finalize = self._create_button(
-            "Build",
-            "Render clips with overlays, create intro/outro, and assemble final video",
-            self.finalize_clicked
-        )
+
+        self.btn_finalize = self._create_button("Build", "Render clips with overlays, create intro/outro, and assemble final video", self.finalize_clicked)
         layout.addWidget(self.btn_finalize)
-        
+
         layout.addStretch()
-    
+
     def _create_button(self, text: str, tooltip: str, signal: Signal) -> QPushButton:
-        """Create a pipeline step button."""
         btn = QPushButton(text)
         btn.clicked.connect(signal.emit)
         btn.setMinimumHeight(50)
+        btn.setMinimumWidth(240)
         btn.setToolTip(tooltip)
         btn.setProperty("original_text", text)
         btn.setStyleSheet(self._get_default_style())
         return btn
-    
+
     def set_project_info(self, name: str, path: str):
-        """Update project information display."""
         self.project_name_label.setText(name)
         self.project_info_label.setText(path)
-    
+
     def update_button_states(
         self,
         prepare_enabled: bool = False,
@@ -102,33 +79,27 @@ class PipelinePanel(QWidget):
         finalize_enabled: bool = False,
         finalize_done: bool = False
     ):
-        """Update button enabled states and completion indicators."""
         self._update_button(self.btn_prepare, prepare_enabled, prepare_done)
         self._update_button(self.btn_analyze, analyze_enabled, analyze_done)
         self._update_button(self.btn_select, select_enabled, select_done)
         self._update_button(self.btn_finalize, finalize_enabled, finalize_done)
-    
+
     def disable_all(self):
-        """Disable all pipeline buttons."""
         for btn in [self.btn_prepare, self.btn_analyze, self.btn_select, self.btn_finalize]:
             btn.setEnabled(False)
             btn.setStyleSheet(self._get_default_style())
-    
+
     def _update_button(self, button: QPushButton, enabled: bool, done: bool):
-        """Update single button state."""
         button.setEnabled(enabled)
-        
         original_text = button.property("original_text")
-        
         if done:
             button.setText(f"✓  {original_text}")
             button.setStyleSheet(self._get_completed_style())
         else:
             button.setText(original_text)
             button.setStyleSheet(self._get_default_style())
-    
+
     def _get_default_style(self) -> str:
-        """Get default button stylesheet."""
         return """
             QPushButton {
                 background-color: #FFFFFF;
@@ -150,9 +121,8 @@ class PipelinePanel(QWidget):
                 border-color: #E5E5E5;
             }
         """
-    
+
     def _get_completed_style(self) -> str:
-        """Get completed button stylesheet."""
         return """
             QPushButton {
                 background-color: #F0F9F4;

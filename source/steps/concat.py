@@ -12,8 +12,10 @@ import re
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import clips_dir
 from ..utils.log import setup_logger
+from ..utils.progress_reporter import report_progress
 
 log = setup_logger("steps.concat")
+
 
 def run() -> Path:
     """Concatenate intro, multiple middle segments, and outro into final reel."""
@@ -23,10 +25,10 @@ def run() -> Path:
     intro = clips_path / "_intro.mp4"
     outro = clips_path / "_outro.mp4"
 
-    # Collect all _middle_##.mp4 segments
+    # Step 1: Collect segments
+    report_progress(1, 3, "Collecting segments...")
     middle_segments = []
     for f in clips_path.glob("_middle_*.mp4"):
-        # Ensure numeric sort by extracting the index
         m = re.match(r"_middle_(\d+)\.mp4", f.name)
         if m:
             idx = int(m.group(1))
@@ -61,6 +63,8 @@ def run() -> Path:
         for part in final_parts:
             f.write(f"file '{part.resolve()}'\n")
 
+    # Step 2: Concatenate parts
+    report_progress(2, 3, f"Concatenating {len(final_parts)} parts...")
     log.info(f"[concat] Concatenating {len(final_parts)} parts into final reel...")
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -69,6 +73,8 @@ def run() -> Path:
         str(out)
     ], check=True)
 
+    # Step 3: Finalize output
+    report_progress(3, 3, "Finalizing output...")
     log.info(f"[concat] wrote {out}")
 
     try:
@@ -77,6 +83,7 @@ def run() -> Path:
         log.debug(f"[concat] cleanup warning: {e}")
 
     return out
+
 
 if __name__ == "__main__":
     run()
