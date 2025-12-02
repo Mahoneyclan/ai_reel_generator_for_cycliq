@@ -1,6 +1,7 @@
 # gitignore
 # Exclude assets (images, audio, etc.)
 assets/
+py_txt/
 
 # Exclude YOLO model weights
 *.pt
