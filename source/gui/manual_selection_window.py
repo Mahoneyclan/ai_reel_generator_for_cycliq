@@ -1,9 +1,9 @@
 # source/gui/manual_selection_window.py
 
 import csv
+import logging
 from pathlib import Path
 from typing import List, Dict
-from collections import defaultdict
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -38,10 +38,18 @@ class ManualSelectionWindow(QDialog):
         self._populate_grid()
 
     def log(self, message: str, level: str = "info"):
+        """Route messages to parent GUI log panel or fallback to file logger."""
         if self.parent() and hasattr(self.parent(), 'log'):
             self.parent().log(message, level)
         else:
-            print(f"[ManualSelectionWindow] {level.upper()}: {message}")
+            level_map = {
+                "debug": logging.DEBUG,
+                "info": logging.INFO,
+                "warning": logging.WARNING,
+                "error": logging.ERROR,
+                "success": logging.INFO,
+            }
+            log.log(level_map.get(level, logging.INFO), message)
 
     def accept(self):
         try:
@@ -125,7 +133,6 @@ class ManualSelectionWindow(QDialog):
                 self.reject()
                 return
 
-            # Sort rows by epoch for pairing
             rows_sorted = sorted(rows, key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
             self.moments = []
             used = set()
@@ -136,7 +143,6 @@ class ManualSelectionWindow(QDialog):
                 epoch = float(row.get("abs_time_epoch", 0) or 0.0)
                 pair = [row]
 
-                # look ahead for partner within tolerance
                 for j in range(i + 1, len(rows_sorted)):
                     other = rows_sorted[j]
                     other_epoch = float(other.get("abs_time_epoch", 0) or 0.0)
@@ -169,7 +175,6 @@ class ManualSelectionWindow(QDialog):
             QMessageBox.critical(self, "Error", f"Failed to load candidates: {e}")
             self.log(f"CSV load error: {e}", "error")
             self.reject()
-
 
     def _populate_grid(self):
         while self.grid_layout.count():
@@ -213,15 +218,8 @@ class ManualSelectionWindow(QDialog):
         time_str = row1.get('abs_time_iso') or row1.get('adjusted_start_time') or 'N/A'
         metadata_lines = [f"Time: {time_str}"]
 
-        def _fmt_meta(r: Dict, label: str) -> str:
-            parts = []
-            if r.get('speed_kmh'): parts.append(f"Speed {r['speed_kmh']} km/h")
-            if r.get('detect_score'): parts.append(f"Detection {r['detect_score']}")
-            if r.get('scene_boost'): parts.append(f"Scene {r['scene_boost']}")
-            return f"{label}: " + (" | ".join(parts) if parts else "—")
-
-        metadata_lines.append(_fmt_meta(row1, row1.get("camera", "Cam1")))
-        metadata_lines.append(_fmt_meta(row2, row2.get("camera", "Cam2")))
+        metadata_lines.append(self._fmt_meta(row1, row1.get("camera", "Cam1")))
+        metadata_lines.append(self._fmt_meta(row2, row2.get("camera", "Cam2")))
 
         metadata = QLabel("\n".join(metadata_lines))
         metadata.setAlignment(Qt.AlignCenter)
@@ -230,6 +228,17 @@ class ManualSelectionWindow(QDialog):
         layout.addWidget(metadata)
 
         return container
+
+    def _fmt_meta(self, r: Dict, label: str) -> str:
+        """Format metadata for a given row."""
+        parts = []
+        if r.get('speed_kmh'):
+            parts.append(f"Speed {r['speed_kmh']} km/h")
+        if r.get('detect_score'):
+            parts.append(f"Detection {r['detect_score']}")
+        if r.get('scene_boost'):
+            parts.append(f"Scene {r['scene_boost']}")
+        return f"{label}: " + (" | ".join(parts) if parts else "—")
 
     def _create_perspective_widget(self, row: Dict, label: str, moment: Dict) -> QWidget:
         container = QFrame()
@@ -311,12 +320,10 @@ class ManualSelectionWindow(QDialog):
         if currently_selected:
             row["recommended"] = "false"
         else:
-            # Select this perspective, deselect the other
             row["recommended"] = "true"
             other = moment["row1"] if row is moment["row2"] else moment["row2"]
             other["recommended"] = "false"
 
-        # Refresh styles for both perspectives in this moment
         parent_frames = persp_container.parent()
         if parent_frames is not None:
             for i in range(parent_frames.layout().count()):
@@ -324,7 +331,6 @@ class ManualSelectionWindow(QDialog):
                 if isinstance(w, QFrame) and hasattr(w, "row_data"):
                     self._apply_perspective_style(w, w.row_data)
 
-        # Update counter: number of moments with one perspective selected
         self.selected_count = sum(
             1 for m in self.moments
             if any(r.get("recommended") == "true" for r in m["rows"])
@@ -342,20 +348,20 @@ class ManualSelectionWindow(QDialog):
                 csv.writer(f).writerow(["index"])
             self.log("[manual] No candidates to save; wrote minimal header", "warning")
             return
+
         all_rows.sort(key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
         selected_count = sum(1 for r in all_rows if r.get("recommended") == "true")
         message = f"[manual] Saving {len(all_rows)} rows ({selected_count} recommended)"
         self.log(message, "info")
-        log.info(message)
+
         try:
             fieldnames = list(all_rows[0].keys())
             with csv_path.open('w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(all_rows)
-            self.log(f"[manual] Selection confirmed: {selected_count} clips selected", "info")
-            log.info(f"[manual] Successfully wrote {csv_path}")
+            self.log(f"[manual] Selection confirmed: {selected_count} clips selected", "success")
         except Exception as e:
             self.log(f"[manual] FAILED to write {csv_path}: {e}", "error")
-            log.error(f"[manual] FAILED to write {csv_path}: {e}")
             raise
+

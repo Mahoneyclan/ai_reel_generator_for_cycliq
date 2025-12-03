@@ -17,7 +17,9 @@ import contextily as ctx
 from ..config import DEFAULT_CONFIG as CFG
 from .gpx import GpxPoint, GPXIndex
 
-log = logging.getLogger("utils.map_overlay")
+from source.utils.log import setup_logger
+
+log = setup_logger("utils.map_overlay")
 
 # --- Caches ---
 _gpx_index_cache: Dict[int, GPXIndex] = {}

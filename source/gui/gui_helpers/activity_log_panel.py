@@ -35,7 +35,7 @@ class ActivityLogPanel(QWidget):
                 border: 1px solid #DDDDDD;
                 border-radius: 4px;
                 padding: 8px;
-                font-family: 'Monaco', 'Courier New', monospace;
+                font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
                 font-size: 11px;
             }
         """)

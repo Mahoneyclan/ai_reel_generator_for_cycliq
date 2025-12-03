@@ -3,8 +3,9 @@ from pathlib import Path
 from typing import Optional
 import logging
 import random
+from source.utils.log import setup_logger
 
-log = logging.getLogger(__name__)
+log = setup_logger("utils.music")
 
 class MusicTrackManager:
     """Automatically discovers and selects .mp3 tracks in MUSIC_DIR."""

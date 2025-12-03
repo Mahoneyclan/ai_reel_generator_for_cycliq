@@ -9,7 +9,9 @@ from typing import List, Tuple, Optional, Callable
 
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import reconfigure_loggers
+from ...utils.log import setup_logger
 
+controller_log = setup_logger("gui.project_controller")
 
 class ProjectController:
     """Manages project CRUD operations and validation."""
@@ -22,7 +24,7 @@ class ProjectController:
             log_callback: Function to call for logging (message, level)
         """
         self.current_project: Optional[Path] = None
-        self.log = log_callback or (lambda msg, lvl: print(f"[{lvl}] {msg}"))
+        self.log = log_callback or (lambda msg, lvl: controller_log.info(f"[{lvl}] {msg}"))
     
     def get_all_projects(self) -> List[Tuple[str, Path]]:
         """
