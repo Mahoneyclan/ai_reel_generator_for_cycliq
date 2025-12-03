@@ -58,7 +58,9 @@ class ProgressReporter:
         if self.callback and self.total > 0:
             pct = int((self.current / self.total) * 100)
             msg = f"{self.desc}: {self.current}/{self.total} {self.unit}"
-            self.callback(self.current, self.total, msg)
+            # Throttle: only emit every 10% or at completion
+            if pct % 10 == 0 or self.current == self.total:
+                self.callback(self.current, self.total, msg)
     
     def close(self):
         """Close progress reporter."""

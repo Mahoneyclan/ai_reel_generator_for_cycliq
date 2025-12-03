@@ -216,15 +216,16 @@ class MainWindow(QMainWindow):
         # Update button to show in-progress state
         self._update_button_in_progress(step_name)
     
-    def _on_step_progress(self, step_name: str, current: int, total: int):
-        """Handle step progress updates."""
+    def _on_step_progress(self, step_name: str, current: int, total: int, message: str):
+        """Handle step progress updates with descriptive messages."""
         self.status_manager.show_progress(step_name, current, total)
         
         # Update progress bar
         if total > 0:
             pct = int((current / total) * 100)
             self.progress_bar.setValue(pct)
-            self.progress_bar.setFormat(f"{step_name}: {current}/{total} ({pct}%)")
+            # Show descriptive message instead of just counts
+            self.progress_bar.setFormat(f"{step_name}: {message}")
             
             # Also update status bar with visual progress indicator
             bar_length = 20
@@ -232,9 +233,9 @@ class MainWindow(QMainWindow):
             bar = "█" * filled + "░" * (bar_length - filled)
             self.statusBar().showMessage(f"{step_name}: {bar} {pct}%")
         
-        # Log to activity panel (throttled to avoid spam)
-        if current == total or current % 25 == 0:
-            self.log_panel.log(f"  {step_name}: {current}/{total}", "info")
+        # Log descriptive message to activity panel (throttled by progress_reporter)
+        self.log_panel.log(f"{step_name}: {message}", "info")
+
     
     def _on_step_completed(self, step_name: str, result):
         """Handle step completion."""

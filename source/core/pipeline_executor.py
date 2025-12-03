@@ -31,16 +31,16 @@ class PipelineExecutor:
         """Internal helper to run a single step with callbacks, injecting progress reporter."""
 
         def step_progress_callback(current: int, total: int, message: str):
-            # Update GUI progress indicator (3 args only, matches MainWindow._on_step_progress)
-            self.on_step_progress(step_name, current, total)
+            # Update GUI progress indicator with descriptive message
+            self.on_step_progress(step_name, current, total, message)
 
-            # Forward descriptive message into logs (so activity panel shows detail)
+            # Also forward progress into activity log (throttled)
             if total and (current % max(1, total // 10) == 0 or current == total):
                 pct = int((current / total) * 100)
                 logger.info(f"[progress] {step_name}: {pct}% ({current}/{total}) {message}")
 
-            # Allow GUI to repaint immediately
             QApplication.processEvents()
+
 
         try:
             # Reset progress indicator at start
