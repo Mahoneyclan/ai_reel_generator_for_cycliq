@@ -179,7 +179,7 @@ class ViewLogWindow(QDialog):
         return panel
 
     def _load_log_files(self):
-        """Load list of log files from logs directory."""
+        """Load list of log files from logs directory, only those with content."""
         self.log_list.clear()
         self.log_content.clear()
         self.content_label.setText("Select a log file to view")
@@ -190,11 +190,11 @@ class ViewLogWindow(QDialog):
             self.log_list.addItem(item)
             return
         
-        # Get all .txt log files
-        log_files = sorted(self.logs_dir.glob("*.txt"))
+        # Get all .txt log files with non-zero size
+        log_files = [lf for lf in sorted(self.logs_dir.glob("*.txt")) if lf.stat().st_size > 0]
         
         if not log_files:
-            item = QListWidgetItem("📝 No log files found")
+            item = QListWidgetItem("📝 No non-empty log files found")
             item.setFlags(Qt.ItemIsEnabled)
             self.log_list.addItem(item)
             return
@@ -206,7 +206,6 @@ class ViewLogWindow(QDialog):
                 size_kb = stat.st_size / 1024
                 mod_time = datetime.fromtimestamp(stat.st_mtime)
                 
-                # Clean display
                 display_name = f"📄 {log_file.name}"
                 subtitle = f"    {size_kb:.1f} KB • {mod_time.strftime('%Y-%m-%d %H:%M')}"
                 
@@ -218,6 +217,7 @@ class ViewLogWindow(QDialog):
                 item = QListWidgetItem(f"⚠️  {log_file.name}")
                 item.setFlags(Qt.ItemIsEnabled)
                 self.log_list.addItem(item)
+
     
     def _on_log_selected(self, item: QListWidgetItem):
         """Load and display selected log file."""
