@@ -12,7 +12,7 @@ class ActionButtonPanel(QWidget):
     """Panel with action buttons spanning full width."""
     
     import_clicked = Signal()
-    strava_clicked = Signal()
+    gpx_clicked = Signal()
     create_clicked = Signal()
     analyze_clicked = Signal()
     log_clicked = Signal()
@@ -32,7 +32,7 @@ class ActionButtonPanel(QWidget):
         # Create action buttons
         buttons = [
             ("Import Clips", self.import_clicked),
-            ("Get Strava GPX", self.strava_clicked),
+            ("Get GPX", self.gpx_clicked),
             ("Create New Project", self.create_clicked),
             ("Analyze Selection", self.analyze_clicked),
             ("View Log", self.log_clicked),

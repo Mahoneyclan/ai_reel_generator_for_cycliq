@@ -28,3 +28,6 @@ venv/
 
 # Ignore specific root scripts
 copy_rename.py
+
+# Exclude strava config file 
+source/strava/strava_config.py

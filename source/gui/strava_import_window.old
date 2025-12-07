@@ -1,0 +1,486 @@
+# source/gui/strava_import_window.py
+from __future__ import annotations
+
+"""
+Strava GPX import dialog.
+Allows users to authenticate with Strava and download GPX for a ride.
+"""
+
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Optional
+
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QListWidget, QListWidgetItem, QDateEdit, QTextEdit, QMessageBox,
+    QGroupBox, QProgressBar
+)
+from PySide6.QtCore import Qt, QDate, QThread, Signal
+
+from ..strava import StravaClient
+from ..utils.log import setup_logger
+
+log = setup_logger("gui.strava_import")
+
+
+class StravaImportThread(QThread):
+    """Background thread for Strava API operations."""
+    
+    log_message = Signal(str, str)  # message, level
+    activities_loaded = Signal(list)  # activities
+    gpx_downloaded = Signal(str)  # output_path
+    error_occurred = Signal(str)  # error_message
+    
+    def __init__(self, operation: str, client: StravaClient, **kwargs):
+        """
+        Args:
+            operation: "connect", "load_activities", or "download_gpx"
+            client: Shared StravaClient instance
+            **kwargs: Operation-specific parameters
+        """
+        super().__init__()
+        self.operation = operation
+        self.kwargs = kwargs
+        self.client = client
+    
+    def run(self):
+        """Execute the requested operation."""
+        try:
+            if self.operation == "connect":
+                self._connect()
+            elif self.operation == "load_activities":
+                self._load_activities()
+            elif self.operation == "download_gpx":
+                self._download_gpx()
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+    
+    def _connect(self):
+        """Connect to Strava."""
+        self.log_message.emit("Connecting to Strava...", "info")
+        if self.client.connect():
+            self.log_message.emit("✓ Connected to Strava", "success")
+        else:
+            self.error_occurred.emit("Failed to authenticate with Strava")
+    
+    def _load_activities(self):
+        """Load recent activities."""
+        search_date = self.kwargs.get("search_date")
+        
+        if search_date:
+            # Search by date
+            self.log_message.emit(f"Searching for rides on {search_date.toString('yyyy-MM-dd')}...", "info")
+            activities = self.client.search_activities_by_date(
+                datetime.strptime(search_date.toString("yyyy-MM-dd"), "%Y-%m-%d")
+            )
+        else:
+            # Load recent
+            self.log_message.emit("Loading recent activities...", "info")
+            activities = self.client.get_recent_activities(limit=30)
+        
+        if activities:
+            self.log_message.emit(f"Found {len(activities)} activities", "success")
+            self.activities_loaded.emit(activities)
+        else:
+            self.log_message.emit("No activities found", "warning")
+    
+    def _download_gpx(self):
+        """Download GPX for activity."""
+        activity_id = self.kwargs["activity_id"]
+        output_path = Path(self.kwargs["output_path"])
+        
+        self.log_message.emit(f"Downloading GPX for activity {activity_id}...", "info")
+        
+        if self.client.download_gpx(activity_id, output_path):
+            self.log_message.emit(f"✓ GPX saved to {output_path.name}", "success")
+            self.gpx_downloaded.emit(str(output_path))
+        else:
+            self.error_occurred.emit("Failed to download GPX")
+
+
+class StravaImportWindow(QDialog):
+    """Dialog for importing GPX from Strava."""
+    
+    def __init__(self, project_dir: Path, parent=None):
+        super().__init__(parent)
+        self.project_dir = project_dir
+        self.client = StravaClient(log_callback=self.log)  # Pass log callback
+        self.current_activities = []
+        self.worker_thread: Optional[StravaImportThread] = None
+        
+        self.setWindowTitle("Import from Strava")
+        self.setMinimumSize(800, 600)
+        self.setModal(True)
+        
+        self._setup_ui()
+        self._connect_signals()
+    
+    def _setup_ui(self):
+        """Setup dialog UI."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Title
+        title = QLabel("Import GPX from Strava")
+        title.setStyleSheet(
+            "font-size: 20px; font-weight: 600; color: #1a1a1a; margin-bottom: 10px;"
+        )
+        layout.addWidget(title)
+        
+        # Connection status
+        self.status_label = QLabel("Not connected")
+        self.status_label.setStyleSheet("color: #666; font-size: 13px;")
+        layout.addWidget(self.status_label)
+        
+        # Connect button
+        self.connect_btn = QPushButton("🔗 Connect to Strava")
+        self.connect_btn.clicked.connect(self._connect_to_strava)
+        self.connect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FC4C02;
+                color: white;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #E34402;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #888888;
+            }
+        """)
+        layout.addWidget(self.connect_btn)
+        
+        # Search section
+        search_group = QGroupBox("Find Activity")
+        search_layout = QHBoxLayout(search_group)
+        
+        search_layout.addWidget(QLabel("Date:"))
+        
+        self.date_edit = QDateEdit(QDate.currentDate())
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDisplayFormat("yyyy-MM-dd")
+        self.date_edit.setEnabled(False)
+        search_layout.addWidget(self.date_edit)
+        
+        self.search_btn = QPushButton("🔍 Search")
+        self.search_btn.clicked.connect(self._search_activities)
+        self.search_btn.setEnabled(False)
+        search_layout.addWidget(self.search_btn)
+        
+        self.recent_btn = QPushButton("📋 Show Recent")
+        self.recent_btn.clicked.connect(self._load_recent_activities)
+        self.recent_btn.setEnabled(False)
+        search_layout.addWidget(self.recent_btn)
+        
+        search_layout.addStretch()
+        layout.addWidget(search_group)
+        
+        # Activities list
+        activities_label = QLabel("Select Activity:")
+        activities_label.setStyleSheet("font-weight: 600; font-size: 13px;")
+        layout.addWidget(activities_label)
+        
+        self.activities_list = QListWidget()
+        self.activities_list.setStyleSheet("""
+            QListWidget {
+                border: 2px solid #E5E5E5;
+                border-radius: 4px;
+                background-color: #FAFAFA;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #F0F0F0;
+            }
+            QListWidget::item:selected {
+                background-color: #E8F4F8;
+                color: #0066CC;
+            }
+        """)
+        layout.addWidget(self.activities_list)
+        
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #DDDDDD;
+                border-radius: 4px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #FC4C02;
+            }
+        """)
+        layout.addWidget(self.progress_bar)
+        
+        # Log view
+        log_label = QLabel("Status Log:")
+        log_label.setStyleSheet("font-weight: 600; font-size: 13px; margin-top: 10px;")
+        layout.addWidget(log_label)
+        
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMaximumHeight(150)
+        self.log_view.setStyleSheet("""
+            QTextEdit {
+                background-color: #FAFAFA;
+                border: 1px solid #E5E5E5;
+                border-radius: 4px;
+                padding: 8px;
+                font-family: 'Monaco', 'Courier New', monospace;
+                font-size: 11px;
+            }
+        """)
+        layout.addWidget(self.log_view)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        
+        self.download_btn = QPushButton("⬇️ Download GPX")
+        self.download_btn.clicked.connect(self._download_gpx)
+        self.download_btn.setEnabled(False)
+        self.download_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D7A4F;
+                color: white;
+                padding: 10px 20px;
+                font-size: 14px;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #246840;
+            }
+            QPushButton:disabled {
+                background-color: #F5F5F5;
+                color: #AAAAAA;
+            }
+        """)
+        
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.download_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.close_btn)
+        layout.addLayout(btn_layout)
+    
+    def _connect_signals(self):
+        """Connect internal signals."""
+        self.activities_list.itemSelectionChanged.connect(self._on_activity_selected)
+    
+    def _connect_to_strava(self):
+        """Start Strava authentication."""
+        self.connect_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Indeterminate
+        
+        self.worker_thread = StravaImportThread("connect", self.client)
+        self.worker_thread.log_message.connect(self.log)
+        self.worker_thread.error_occurred.connect(self._on_connection_error)
+        self.worker_thread.finished.connect(self._on_connection_complete)
+        self.worker_thread.start()
+    
+    def _on_connection_complete(self):
+        """Handle successful connection."""
+        self.progress_bar.setVisible(False)
+        self.status_label.setText("✓ Connected to Strava")
+        self.status_label.setStyleSheet("color: #2D7A4F; font-size: 13px; font-weight: 600;")
+        
+        # Enable search controls
+        self.date_edit.setEnabled(True)
+        self.search_btn.setEnabled(True)
+        self.recent_btn.setEnabled(True)
+        
+        # Auto-load recent activities
+        self._load_recent_activities()
+    
+    def _on_connection_error(self, error_msg: str):
+        """Handle connection error."""
+        self.progress_bar.setVisible(False)
+        self.connect_btn.setEnabled(True)
+        
+        QMessageBox.critical(
+            self,
+            "Connection Failed",
+            f"Failed to connect to Strava:\n\n{error_msg}\n\n"
+            "Please check your app credentials in strava_config.py"
+        )
+    
+    def _load_recent_activities(self):
+        """Load recent activities."""
+        self.activities_list.clear()
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        
+        self.worker_thread = StravaImportThread("load_activities", self.client)
+        self.worker_thread.log_message.connect(self.log)
+        self.worker_thread.activities_loaded.connect(self._populate_activities)
+        self.worker_thread.error_occurred.connect(self._on_load_error)
+        self.worker_thread.finished.connect(lambda: self.progress_bar.setVisible(False))
+        self.worker_thread.start()
+    
+    def _search_activities(self):
+        """Search activities by date."""
+        self.activities_list.clear()
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        
+        self.worker_thread = StravaImportThread(
+            "load_activities",
+            self.client,
+            search_date=self.date_edit.date()
+        )
+        self.worker_thread.log_message.connect(self.log)
+        self.worker_thread.activities_loaded.connect(self._populate_activities)
+        self.worker_thread.error_occurred.connect(self._on_load_error)
+        self.worker_thread.finished.connect(lambda: self.progress_bar.setVisible(False))
+        self.worker_thread.start()
+    
+    def _populate_activities(self, activities: list):
+        """Populate activities list."""
+        self.current_activities = activities
+        
+        for activity in activities:
+            # Format: "Morning Ride - 25.3 km - 1h 23m"
+            name = activity.get("name", "Unnamed")
+            distance = activity.get("distance", 0) / 1000.0
+            time_s = activity.get("moving_time", 0)
+            hours = time_s // 3600
+            minutes = (time_s % 3600) // 60
+            
+            # Format date
+            start_date = activity.get("start_date", "")
+            if start_date:
+                date_obj = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                date_str = date_obj.strftime("%Y-%m-%d %H:%M")
+            else:
+                date_str = "Unknown date"
+            
+            time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+            
+            # Check if activity has GPS data
+            has_gps = bool(activity.get("start_latlng")) or activity.get("type") not in ["VirtualRide"]
+            gps_indicator = "📍" if has_gps else "⚠️ "
+            
+            display = f"{gps_indicator} {name}\n{date_str} • {distance:.1f} km • {time_str}"
+            
+            item = QListWidgetItem(display)
+            item.setData(Qt.UserRole, activity["id"])
+            self.activities_list.addItem(item)
+    
+    def _on_load_error(self, error_msg: str):
+        """Handle activity load error."""
+        self.log(f"Error: {error_msg}", "error")
+    
+    def _on_activity_selected(self):
+        """Enable download button when activity selected."""
+        has_selection = bool(self.activities_list.selectedItems())
+        self.download_btn.setEnabled(has_selection)
+    
+    def _download_gpx(self):
+        """Download GPX for selected activity."""
+        selected = self.activities_list.selectedItems()
+        if not selected:
+            return
+        
+        activity_id = selected[0].data(Qt.UserRole)
+        output_path = self.project_dir / "ride.gpx"
+        
+        # Confirm overwrite if exists
+        if output_path.exists():
+            reply = QMessageBox.question(
+                self,
+                "Overwrite GPX?",
+                f"A GPX file already exists in this project.\n\n"
+                f"Do you want to replace it?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+        
+        self.download_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        
+        self.worker_thread = StravaImportThread(
+            "download_gpx",
+            self.client,
+            activity_id=activity_id,
+            output_path=str(output_path)
+        )
+        self.worker_thread.log_message.connect(self.log)
+        self.worker_thread.gpx_downloaded.connect(self._on_download_complete)
+        self.worker_thread.error_occurred.connect(self._on_download_error)
+        self.worker_thread.finished.connect(lambda: self.progress_bar.setVisible(False))
+        self.worker_thread.start()
+    
+    def _on_download_complete(self, output_path: str):
+        """Handle successful download."""
+        self.download_btn.setEnabled(True)
+        
+        QMessageBox.information(
+            self,
+            "GPX Downloaded",
+            f"✓ GPX file saved successfully!\n\n"
+            f"Location: {Path(output_path).name}\n\n"
+            f"You can now run the Prepare step."
+        )
+        
+        self.accept()
+    
+    def _on_download_error(self, error_msg: str):
+        """Handle download error."""
+        self.download_btn.setEnabled(True)
+        
+        # Check if it's a "no GPS" error
+        if "Not connected" in error_msg:
+            msg = (
+                f"Connection lost. Please reconnect to Strava.\n\n"
+                f"Error: {error_msg}"
+            )
+        elif "404" in error_msg or "no GPS data" in error_msg.lower():
+            msg = (
+                f"This activity has no GPS data available.\n\n"
+                f"Common reasons:\n"
+                f"• Virtual ride (Zwift, TrainerRoad, etc.)\n"
+                f"• Manual entry (no recording device)\n"
+                f"• GPS disabled during recording\n"
+                f"• Privacy settings hide GPS data\n\n"
+                f"Try selecting a different ride with outdoor GPS tracking."
+            )
+        else:
+            msg = f"Failed to download GPX:\n\n{error_msg}"
+        
+        QMessageBox.warning(
+            self,
+            "Download Failed",
+            msg
+        )
+    
+    def log(self, message: str, level: str = "info"):
+        """Add message to log view."""
+        color_map = {
+            "info": "#333333",
+            "error": "#D32F2F",
+            "warning": "#F57C00",
+            "success": "#2D7A4F"
+        }
+        
+        color = color_map.get(level, "#333333")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        self.log_view.append(
+            f'<span style="color: #888">[{timestamp}]</span> '
+            f'<span style="color: {color}">{message}</span>'
+        )
+        self.log_view.ensureCursorVisible()

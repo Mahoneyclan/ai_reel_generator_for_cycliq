@@ -20,6 +20,7 @@ from .gui_helpers import (
     StepStatusTracker
 )
 from .controllers import ProjectController, PipelineController
+from .gpx_import_window import GPXImportWindow
 
 from ..config import DEFAULT_CONFIG as CFG
 
@@ -131,7 +132,7 @@ class MainWindow(QMainWindow):
         
         # Action panel
         self.action_panel.import_clicked.connect(self.dialog_manager.show_import)
-        self.action_panel.strava_clicked.connect(self._show_strava_placeholder)
+        self.action_panel.gpx_clicked.connect(self._show_gpx_import)
         self.action_panel.create_clicked.connect(self._create_project)
         self.action_panel.analyze_clicked.connect(self.dialog_manager.show_analysis)
         self.action_panel.log_clicked.connect(self.dialog_manager.show_log)
@@ -397,9 +398,30 @@ class MainWindow(QMainWindow):
         
         self.dialog_manager.show_preferences()
     
-    def _show_strava_placeholder(self):
-        """Show Strava placeholder message."""
-        self.log_panel.log("Strava GPX import coming soon", "info")
+    def _show_gpx_import(self):
+        """Show unified GPS import dialog (Strava or Garmin)."""
+        if not self.project_controller.current_project:
+            self.dialog_manager.show_no_project_warning()
+            return
+
+        try:
+            from .gpx_import_window import GPXImportWindow
+            from ..config import DEFAULT_CONFIG as CFG
+
+            dialog = GPXImportWindow(
+                project_dir=self.project_controller.current_project,
+                input_dir=CFG.INPUT_DIR,   # raw video source folder
+                log_dir=CFG.LOG_DIR,       # project logs folder
+                parent=self
+            )
+            dialog.exec()
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self, "GPS Import Error",
+                f"Failed to open GPS import:\n\n{str(e)}"
+            )
+
     
     def _show_music_placeholder(self):
         """Show music management placeholder."""
