@@ -1,268 +1,277 @@
-# source/garmin/garmin_client.py
+# source/gui/view_log_window.py
 """
-FIXED: Garmin Connect API client for fetching activities and GPX exports.
-Uses garminconnect library for authentication and API access.
+View Log Window - displays logs for selected ride project.
+UPDATED: Clean, understated visual theme.
 """
 
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Callable
 
-from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError
-
-from .garmin_config import GarminConfig
-from ..utils.log import setup_logger
-
-log = setup_logger("garmin.client")
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QListWidget, QListWidgetItem, QSplitter, QTextEdit, QWidget
+)
+from PySide6.QtCore import Qt
 
 
-class GarminClient:
-    """Client for interacting with Garmin Connect API."""
+class ViewLogWindow(QDialog):
+    """Window to view log files for a ride project with clean styling."""
     
-    def __init__(self, log_callback: Optional[Callable[[str, str], None]] = None):
-        """
-        Initialize Garmin client with config.
+    def __init__(self, project_dir: Path, parent=None):
+        super().__init__(parent)
+        self.project_dir = project_dir
+        self.logs_dir = project_dir / "logs"
         
-        Args:
-            log_callback: Optional callback function(message, level) for logging
-        """
-        self.config = GarminConfig()
-        self.client: Optional[Garmin] = None
-        self.log = log_callback or self._default_log
-    
-    def _default_log(self, message: str, level: str = "info"):
-        """Default logging to console if no callback provided."""
-        print(f"[garmin] {message}")
-    
-    def connect(self, email: str, password: str) -> bool:
-        """
-        Authenticate with Garmin Connect using email/password.
+        self.setWindowTitle(f"View Logs - {project_dir.name}")
+        self.setMinimumSize(900, 600)
+        self.resize(1100, 700)
+        self.setModal(False)
         
-        Args:
-            email: Garmin Connect email
-            password: Garmin Connect password
-            
-        Returns:
-            True if connection successful
-        """
-        try:
-            log.info("[garmin_client] Connecting to Garmin Connect...")
+        self._setup_ui()
+        self._load_log_files()
+    
+    def _setup_ui(self):
+        """Set up the UI - clean two-panel layout."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Main splitter
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(1)
+        splitter.setStyleSheet("QSplitter::handle { background-color: #E5E5E5; }")
+        
+        # Left panel
+        left_panel = self._create_left_panel()
+        splitter.addWidget(left_panel)
+        
+        # Right panel
+        right_panel = self._create_right_panel()
+        splitter.addWidget(right_panel)
+        
+        # Set sizes (25% left, 75% right)
+        splitter.setStretchFactor(0, 25)
+        splitter.setStretchFactor(1, 75)
+        
+        layout.addWidget(splitter)
+    
+    def _create_left_panel(self) -> QWidget:
+        """Create left panel with log file list."""
+        panel = QWidget()
+        panel.setStyleSheet("background-color: #FAFAFA;")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        
+        # Header with refresh button
+        header_layout = QHBoxLayout()
+        header = QLabel("Available Logs")
+        header.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #333; padding: 2px;"
+        )
+        header_layout.addWidget(header)
+        header_layout.addStretch()
+        
+        # Refresh button
+        self.refresh_btn = QPushButton("🔄")
+        self.refresh_btn.clicked.connect(self._load_log_files)
+        self.refresh_btn.setFixedSize(28, 28)
+        self.refresh_btn.setStyleSheet("""
+            QPushButton {
+                padding: 2px;
+                font-size: 12px;
+                border: 2px solid #E5E5E5;
+                border-radius: 4px;
+                background-color: #FFFFFF;
+            }
+            QPushButton:hover {
+                background-color: #F8F9FA;
+                border-color: #CCCCCC;
+            }
+        """)
+        header_layout.addWidget(self.refresh_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Log list
+        self.log_list = QListWidget()
+        self.log_list.itemClicked.connect(self._on_log_selected)
+        self.log_list.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #E5E5E5;
+                background-color: #FFFFFF;
+                font-size: 11px;
+                outline: none;
+                border-radius: 4px;
+            }
+            QListWidget::item {
+                padding: 8px;
+                border-bottom: 1px solid #F5F5F5;
+            }
+            QListWidget::item:selected {
+                background-color: #F0F9F4;
+                color: #2D7A4F;
+                border-left: 3px solid #6EBF8B;
+            }
+            QListWidget::item:hover:!selected {
+                background-color: #F8F9FA;
+            }
+        """)
+        layout.addWidget(self.log_list)
+        
+        return panel
+    
+    def _create_right_panel(self) -> QWidget:
+        """Create right panel with log content."""
+        panel = QWidget()
+        panel.setStyleSheet("background-color: #FFFFFF;")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        
+        # Header with close button
+        header_layout = QHBoxLayout()
+        self.content_label = QLabel("Select a log file to view")
+        self.content_label.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: #333; padding: 2px;"
+        )
+        header_layout.addWidget(self.content_label)
+        header_layout.addStretch()
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                padding: 6px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                border: 2px solid #E5E5E5;
+                border-radius: 4px;
+                background-color: #FFFFFF;
+                color: #333333;
+            }
+            QPushButton:hover {
+                background-color: #F8F9FA;
+                border-color: #CCCCCC;
+            }
+        """)
+        header_layout.addWidget(close_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Log content
+        self.log_content = QTextEdit()
+        self.log_content.setReadOnly(True)
+        self.log_content.setStyleSheet("""
+            QTextEdit {
+                background-color: #FAFAFA;
+                border: 1px solid #E5E5E5;
+                border-radius: 4px;
+                font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+                font-size: 10px;
+                line-height: 1.5;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self.log_content)
+        
+        return panel
 
-            # Try to load existing session first
-            saved = self.config.load_session()
-            if saved:
-                saved_email, session_data = saved
-                if saved_email == email:
-                    log.info("[garmin_client] Using saved session...")
-                    try:
-                        # Create client 
-                        self.client = Garmin(email, password)
-                        
-                        # FIXED: The garminconnect library handles sessions internally
-                        # We can't manually restore sessions - just try to login
-                        # If saved session exists, the library may use cached tokens
-                        self.client.login()
-                        
-                        # Test session validity
-                        self.client.get_full_name()
-                        log.info("[garmin_client] ✓ Connected (session reused)")
-                        return True
-                        
-                    except Exception as e:
-                        log.info(f"[garmin_client] Saved session invalid, performing fresh login...")
-
-            # Fresh login
-            log.info("[garmin_client] Performing fresh login...")
-            self.client = Garmin(email, password)
-            self.client.login()
-
-            # FIXED: Save session properly using library's export method
-            # Get session data from the client - garminconnect exports this
-            session_data = {}
-            
+    def _load_log_files(self):
+        """Load list of log files from logs directory, only those with content."""
+        self.log_list.clear()
+        self.log_content.clear()
+        self.content_label.setText("Select a log file to view")
+        
+        if not self.logs_dir.exists():
+            item = QListWidgetItem("⚠️  No logs directory")
+            item.setFlags(Qt.ItemIsEnabled)
+            self.log_list.addItem(item)
+            return
+        
+        # Get all .txt log files with non-zero size
+        log_files = [lf for lf in sorted(self.logs_dir.glob("*.txt")) if lf.stat().st_size > 0]
+        
+        if not log_files:
+            item = QListWidgetItem("📝 No non-empty log files found")
+            item.setFlags(Qt.ItemIsEnabled)
+            self.log_list.addItem(item)
+            return
+        
+        # Add log files to list
+        for log_file in log_files:
             try:
-                # The garminconnect library uses OAuth tokens internally
-                # These are complex objects that can't be directly serialized
-                # We'll save minimal state and rely on fresh login next time
-                session_data = {
-                    'username': email,
-                    'authenticated': True,
-                    'last_successful_login': True
-                }
-                log.debug("[garmin_client] Saved minimal session state")
-            except Exception as e:
-                log.warning(f"[garmin_client] Could not save session data: {e}")
-                # Minimal session data
-                session_data = {
-                    'username': email,
-                    'authenticated': True
-                }
-            
-            # Save for future use
-            self.config.save_session(email, session_data)
-
-            user_name = self.client.get_full_name()
-            log.info(f"[garmin_client] ✓ Connected to Garmin Connect as {user_name}")
-            return True
-
-        except GarminConnectAuthenticationError as e:
-            log.error(f"[garmin_client] Authentication failed: {e}")
-            log.error("[garmin_client] Check your email and password")
-            return False
-            
-        except GarminConnectConnectionError as e:
-            log.error(f"[garmin_client] Connection failed: {e}")
-            log.error("[garmin_client] Check your internet connection")
-            return False
-            
-        except Exception as e:
-            log.error(f"[garmin_client] Unexpected error: {e}")
-            import traceback
-            log.error(traceback.format_exc())
-            return False
-    
-    def get_recent_activities(self, limit: int = 30) -> List[Dict]:
-        """
-        Fetch recent activities.
-        
-        Args:
-            limit: Maximum number of activities to fetch
-            
-        Returns:
-            List of activity dicts with activityId, activityName, startTimeLocal, distance
-        """
-        if not self.client:
-            raise RuntimeError("Not connected. Call connect() first.")
-        
-        log.info(f"[garmin_client] Fetching {limit} recent activities...")
-        
-        try:
-            # Get activities
-            activities = self.client.get_activities(0, limit)
-            
-            # Filter to cycling activities
-            cycling_types = ['cycling', 'road_biking', 'mountain_biking', 'gravel_cycling', 'indoor_cycling']
-            cycling = [
-                a for a in activities 
-                if a.get('activityType', {}).get('typeKey', '').lower() in cycling_types
-            ]
-            
-            log.info(f"[garmin_client] Found {len(cycling)} cycling activities")
-            return cycling
-            
-        except Exception as e:
-            log.error(f"[garmin_client] Failed to fetch activities: {e}")
-            return []
-    
-    def get_activity_details(self, activity_id: int) -> Optional[Dict]:
-        """
-        Fetch detailed activity information.
-        
-        Args:
-            activity_id: Garmin activity ID
-            
-        Returns:
-            Activity dict with full details or None
-        """
-        if not self.client:
-            raise RuntimeError("Not connected. Call connect() first.")
-        
-        log.debug(f"[garmin_client] Fetching activity {activity_id} details...")
-        
-        try:
-            return self.client.get_activity(activity_id)
-        except Exception as e:
-            log.error(f"[garmin_client] Failed to fetch activity details: {e}")
-            return None
-    
-    def download_gpx(self, activity_id: int, output_path: Path) -> bool:
-        """
-        Download activity GPX export.
-        
-        Args:
-            activity_id: Garmin activity ID
-            output_path: Where to save GPX file (should be in raw source folder)
-            
-        Returns:
-            True if successful
-        """
-        if not self.client:
-            raise RuntimeError("Not connected. Call connect() first.")
-        
-        log.info(f"[garmin_client] Downloading GPX for activity {activity_id}...")
-        
-        try:
-            # FIXED: Better error handling for GPX download
-            # Download GPX data
-            gpx_data = self.client.download_activity(
-                activity_id, 
-                dl_fmt=self.client.ActivityDownloadFormat.GPX
-            )
-            
-            # Validate GPX data
-            if not gpx_data:
-                log.error(f"[garmin_client] No GPX data returned for activity {activity_id}")
-                return False
-            
-            if len(gpx_data) < 100:
-                log.error(f"[garmin_client] GPX data too small ({len(gpx_data)} bytes)")
-                return False
-            
-            # Save to file
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("wb") as f:
-                f.write(gpx_data)
-            
-            file_size = output_path.stat().st_size
-            log.info(
-                f"[garmin_client] ✓ Downloaded GPX to {output_path.name} "
-                f"({file_size / 1024:.1f} KB)"
-            )
-            return True
-            
-        except AttributeError as e:
-            log.error(f"[garmin_client] GPX download not supported: {e}")
-            log.error("[garmin_client] Make sure you're using the latest garminconnect library")
-            return False
-            
-        except Exception as e:
-            log.error(f"[garmin_client] GPX download failed: {e}")
-            
-            # Provide helpful error messages
-            error_str = str(e).lower()
-            if "404" in error_str or "not found" in error_str:
-                log.error("[garmin_client] Activity not found or no GPS data available")
-            elif "403" in error_str or "forbidden" in error_str:
-                log.error("[garmin_client] Access denied - check activity privacy settings")
-            elif "401" in error_str or "unauthorized" in error_str:
-                log.error("[garmin_client] Session expired - try reconnecting")
-                self.client = None
+                stat = log_file.stat()
+                size_kb = stat.st_size / 1024
+                mod_time = datetime.fromtimestamp(stat.st_mtime)
                 
-            return False
+                display_name = f"📄 {log_file.name}"
+                subtitle = f"    {size_kb:.1f} KB • {mod_time.strftime('%Y-%m-%d %H:%M')}"
+                
+                item = QListWidgetItem(f"{display_name}\n{subtitle}")
+                item.setData(Qt.UserRole, str(log_file))
+                self.log_list.addItem(item)
+                
+            except Exception:
+                item = QListWidgetItem(f"⚠️  {log_file.name}")
+                item.setFlags(Qt.ItemIsEnabled)
+                self.log_list.addItem(item)
+
     
-    def format_activity_summary(self, activity: Dict) -> str:
-        """
-        Format activity as readable string for UI display.
+    def _on_log_selected(self, item: QListWidgetItem):
+        """Load and display selected log file."""
+        log_path_str = item.data(Qt.UserRole)
+        if not log_path_str:
+            return
         
-        Args:
-            activity: Activity dict from API
+        log_path = Path(log_path_str)
+        
+        try:
+            self.content_label.setText(f"Log: {log_path.name}")
             
-        Returns:
-            Formatted string like "Morning Ride - 25.3 km - 1h 23m"
-        """
-        name = activity.get("activityName", "Unnamed Activity")
-        distance_m = activity.get("distance", 0)
-        distance_km = distance_m / 1000.0
-        duration_s = activity.get("duration", 0)
-        
-        hours = int(duration_s // 3600)
-        minutes = int((duration_s % 3600) // 60)
-        
-        time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-        
-        return f"{name} - {distance_km:.1f} km - {time_str}"
+            with log_path.open('r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            
+            formatted = self._format_log_content(content)
+            self.log_content.setHtml(formatted)
+            
+            # Scroll to bottom
+            self.log_content.verticalScrollBar().setValue(
+                self.log_content.verticalScrollBar().maximum()
+            )
+            
+        except Exception as e:
+            self.log_content.setPlainText(f"Error reading log:\n{str(e)}")
     
-    def disconnect(self):
-        """Clear connection (logout)."""
-        self.client = None
-        log.info("[garmin_client] Disconnected from Garmin Connect")
+    def _format_log_content(self, content: str) -> str:
+        """Format log content with subtle color coding."""
+        lines = content.split('\n')
+        formatted = []
+        
+        for line in lines:
+            # Determine color based on log level - understated palette
+            if '| ERROR |' in line or '| CRITICAL |' in line:
+                color = '#D32F2F'
+            elif '| WARNING |' in line:
+                color = '#F57C00'
+            elif '| INFO |' in line:
+                color = '#333333'
+            elif '| DEBUG |' in line:
+                color = '#999999'
+            else:
+                color = '#666666'
+            
+            # Escape HTML
+            escaped = (line
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace(' ', '&nbsp;')
+            )
+            
+            formatted.append(
+                f'<div style="color: {color}; font-family: Monaco, monospace; font-size: 10px;">{escaped}</div>'
+            )
+        
+        return ''.join(formatted)
