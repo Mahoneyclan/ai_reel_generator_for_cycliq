@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import Optional
 
 from ..utils.log import setup_logger
+from .garmin_credentials import get_credentials
 
 log = setup_logger("garmin.config")
 
+email, _ = get_credentials()
+log.info(f"[garmin_config] Active Garmin account: {email}")
 
 class GarminConfig:
     """Manages Garmin Connect credentials and minimal session tracking."""

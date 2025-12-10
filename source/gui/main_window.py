@@ -3,7 +3,11 @@
 Main application window - UI orchestration only.
 Business logic delegated to helper modules.
 
-UPDATED: Enhanced progress bar display with visual feedback.
+Layout:
+1. Action bar (top) - project-independent actions
+2. Project/Pipeline splitter (middle) - main workspace
+3. Progress bar (below splitter) - step progress
+4. Activity log (bottom) - status messages
 """
 
 from pathlib import Path
@@ -23,6 +27,11 @@ from .controllers import ProjectController, PipelineController
 from .gpx_import_window import GPXImportWindow
 
 from ..config import DEFAULT_CONFIG as CFG
+from ..utils.log import setup_logger
+from ..utils.map_overlay import clear_map_caches
+from ..utils.temp_files import cleanup_temp_files
+
+log = setup_logger("gui.main_window")
 
 
 class MainWindow(QMainWindow):
@@ -38,14 +47,14 @@ class MainWindow(QMainWindow):
         self.dialog_manager = DialogManager(self)
         self.step_tracker = StepStatusTracker()
         
-        # Will be connected after UI setup
+        # Progress tracking
         self.log_panel = None
         self.progress_bar = None
         self._progress_hide_timer = None
         
         # Initialize controllers
         self.project_controller = ProjectController(
-            log_callback=self.status_manager.log
+            log_callback=self._log_to_panel
         )
         self.pipeline_controller = PipelineController(
             on_step_started=self._on_step_started,
@@ -60,21 +69,23 @@ class MainWindow(QMainWindow):
         self._refresh_projects()
     
     def _setup_ui(self):
-        """Set up the main UI layout."""
+        """Set up the main UI layout with correct ordering."""
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Create panels
+        # 1. ACTION BAR AT TOP (project-independent actions)
+        self.action_panel = ActionButtonPanel()
+        main_layout.addWidget(self.action_panel)
+        
+        # 2. PROJECT/PIPELINE SPLITTER (main workspace)
+        splitter = QSplitter(Qt.Horizontal)
+        
         self.project_panel = ProjectListPanel()
         self.pipeline_panel = PipelinePanel()
-        self.action_panel = ActionButtonPanel()
-        self.log_panel = ActivityLogPanel()
         
-        # Top section with splitter
-        splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.project_panel)
         splitter.addWidget(self.pipeline_panel)
         splitter.setStretchFactor(0, 1)
@@ -82,7 +93,7 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(splitter)
         
-        # Progress bar (enhanced with gradient and better visibility)
+        # 3. PROGRESS BAR (below workspace, above log)
         self.progress_bar = QProgressBar()
         self.progress_bar.setStyleSheet("""
             QProgressBar {
@@ -107,10 +118,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(False)  # Hidden until operations start
+        self.progress_bar.setVisible(False)
         main_layout.addWidget(self.progress_bar)
         
-        main_layout.addWidget(self.action_panel)
+        # 4. ACTIVITY LOG AT BOTTOM
+        self.log_panel = ActivityLogPanel()
         main_layout.addWidget(self.log_panel)
         
         # Connect status manager to log panel
@@ -124,26 +136,33 @@ class MainWindow(QMainWindow):
         # Project panel
         self.project_panel.project_selected.connect(self._on_project_selected)
         
-        # Pipeline panel
+        # Action panel (top bar - project-independent)
+        self.action_panel.import_clicked.connect(self.dialog_manager.show_import)
+        self.action_panel.create_clicked.connect(self._create_project)
+        self.action_panel.music_clicked.connect(self._show_music_placeholder)
+        self.action_panel.prefs_clicked.connect(self._show_preferences)
+        
+        # Pipeline panel (project-specific workflow)
+        self.pipeline_panel.gpx_clicked.connect(self._show_gpx_import)
         self.pipeline_panel.prepare_clicked.connect(self._run_prepare)
         self.pipeline_panel.analyze_clicked.connect(self._run_analyze)
         self.pipeline_panel.select_clicked.connect(self._run_select)
-        self.pipeline_panel.finalize_clicked.connect(self._run_finalize)
+        self.pipeline_panel.build_clicked.connect(self._run_build)
         
-        # Action panel
-        self.action_panel.import_clicked.connect(self.dialog_manager.show_import)
-        self.action_panel.gpx_clicked.connect(self._show_gpx_import)
-        self.action_panel.create_clicked.connect(self._create_project)
-        self.action_panel.analyze_clicked.connect(self.dialog_manager.show_analysis)
-        self.action_panel.log_clicked.connect(self.dialog_manager.show_log)
-        self.action_panel.music_clicked.connect(self._show_music_placeholder)
-        self.action_panel.prefs_clicked.connect(self._show_preferences)
+        # Special project tools
+        self.pipeline_panel.analyze_selection_clicked.connect(self.dialog_manager.show_analysis)
+        self.pipeline_panel.view_log_clicked.connect(self.dialog_manager.show_log)
+    
+    def _log_to_panel(self, message: str, level: str = "info"):
+        """Route project controller logs to activity panel."""
+        if self.log_panel:
+            self.log_panel.log(message, level)
     
     def _refresh_projects(self):
         """Refresh project list from disk."""
         projects = self.project_controller.get_all_projects()
         self.project_panel.set_projects(projects)
-        self.status_manager.log(f"Found {len(projects)} project(s)", "success")
+        self.log_panel.log(f"Found {len(projects)} project(s)", "success")
     
     def _on_project_selected(self, project_path: Path):
         """Handle project selection."""
@@ -155,6 +174,9 @@ class MainWindow(QMainWindow):
             )
             self._update_pipeline_buttons()
             self.log_panel.log(f"Selected project: {project_path.name}", "success")
+            
+            # Clear caches when switching projects
+            clear_map_caches()
     
     def _create_project(self):
         """Create new project from source folder."""
@@ -166,6 +188,21 @@ class MainWindow(QMainWindow):
         if project_path:
             self._refresh_projects()
             self.project_panel.select_project(project_path)
+    
+    def closeEvent(self, event):
+        """Handle application close - cleanup resources."""
+        try:
+            # Cleanup temporary files
+            cleanup_temp_files(force=True)
+            
+            # Clear caches
+            clear_map_caches()
+            
+            log.info("Application closed cleanly")
+        except Exception as e:
+            log.warning(f"Cleanup warning on close: {e}")
+        
+        event.accept()
     
     # --- Pipeline Execution ---
     
@@ -190,12 +227,12 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._on_error("select", str(e))
     
-    def _run_finalize(self):
+    def _run_build(self):
         """Run finalization pipeline."""
         try:
-            self.pipeline_controller.run_finalize()
+            self.pipeline_controller.run_build()
         except Exception as e:
-            self._on_error("finalize", str(e))
+            self._on_error("build", str(e))
     
     # --- Pipeline Callbacks ---
     
@@ -225,18 +262,13 @@ class MainWindow(QMainWindow):
         if total > 0:
             pct = int((current / total) * 100)
             self.progress_bar.setValue(pct)
-            # Show descriptive message instead of just counts
             self.progress_bar.setFormat(f"{step_name}: {message}")
             
-            # Also update status bar with visual progress indicator
+            # Update status bar with visual progress
             bar_length = 20
             filled = int(bar_length * current / total)
             bar = "█" * filled + "░" * (bar_length - filled)
             self.statusBar().showMessage(f"{step_name}: {bar} {pct}%")
-        
-        # Log descriptive message to activity panel (throttled by progress_reporter)
-        self.log_panel.log(f"{step_name}: {message}", "info")
-
     
     def _on_step_completed(self, step_name: str, result):
         """Handle step completion."""
@@ -286,7 +318,7 @@ class MainWindow(QMainWindow):
         """)
         self.progress_bar.setFormat(f"{step_name}: Failed ✗")
         
-        # Hide after 3 seconds and restore normal style
+        # Hide after 3 seconds and restore style
         self._progress_hide_timer = QTimer()
         self._progress_hide_timer.setSingleShot(True)
         self._progress_hide_timer.timeout.connect(self._restore_progress_bar_style)
@@ -329,7 +361,6 @@ class MainWindow(QMainWindow):
     
     def _update_button_in_progress(self, step_name: str):
         """Update button to show in-progress state."""
-        # Map step names to buttons
         step_button_map = {
             "preflight": self.pipeline_panel.btn_prepare,
             "flatten": self.pipeline_panel.btn_prepare,
@@ -337,9 +368,9 @@ class MainWindow(QMainWindow):
             "extract": self.pipeline_panel.btn_analyze,
             "analyze": self.pipeline_panel.btn_analyze,
             "select": self.pipeline_panel.btn_select,
-            "build": self.pipeline_panel.btn_finalize,
-            "splash": self.pipeline_panel.btn_finalize,
-            "concat": self.pipeline_panel.btn_finalize,
+            "build": self.pipeline_panel.btn_build,
+            "splash": self.pipeline_panel.btn_build,
+            "concat": self.pipeline_panel.btn_build,
         }
         
         button = step_button_map.get(step_name)
@@ -362,23 +393,26 @@ class MainWindow(QMainWindow):
     def _update_pipeline_buttons(self):
         """Update pipeline button states and completion indicators."""
         if not self.project_controller.current_project:
-            self.pipeline_panel.disable_all()
+            self.pipeline_panel.enable_all_buttons(False)
             return
         
-        # Update button states
+        # Check pipeline progress
         prepare_done = self.pipeline_controller.can_run_analyze()
         analyze_done = self.pipeline_controller.can_run_select()
         select_done = self.pipeline_controller.can_run_finalize()
+        build_done = self._check_finalize_done()
         
         self.pipeline_panel.update_button_states(
+            gpx_enabled=True,
+            gpx_done=False,
             prepare_enabled=True,
             prepare_done=prepare_done,
             analyze_enabled=prepare_done,
             analyze_done=analyze_done,
             select_enabled=analyze_done,
             select_done=select_done,
-            finalize_enabled=select_done,
-            finalize_done=self._check_finalize_done()
+            build_enabled=select_done,
+            build_done=build_done
         )
     
     def _check_finalize_done(self) -> bool:
@@ -403,15 +437,12 @@ class MainWindow(QMainWindow):
         if not self.project_controller.current_project:
             self.dialog_manager.show_no_project_warning()
             return
-
+        
         try:
-            from .gpx_import_window import GPXImportWindow
-            from ..config import DEFAULT_CONFIG as CFG
-
             dialog = GPXImportWindow(
                 project_dir=self.project_controller.current_project,
-                input_dir=CFG.INPUT_DIR,   # raw video source folder
-                log_dir=CFG.LOG_DIR,       # project logs folder
+                input_dir=CFG.INPUT_DIR,
+                log_dir=CFG.LOG_DIR,
                 parent=self
             )
             dialog.exec()
@@ -421,7 +452,6 @@ class MainWindow(QMainWindow):
                 self, "GPS Import Error",
                 f"Failed to open GPS import:\n\n{str(e)}"
             )
-
     
     def _show_music_placeholder(self):
         """Show music management placeholder."""

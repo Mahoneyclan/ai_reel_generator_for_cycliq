@@ -59,7 +59,7 @@ class PipelineController:
             raise ValueError("No project selected")
         self.executor.select(self.current_project)
     
-    def run_finalize(self):
+    def run_build(self):
         """Run finalization steps: build → splash → concat."""
         if not self.current_project:
             raise ValueError("No project selected")

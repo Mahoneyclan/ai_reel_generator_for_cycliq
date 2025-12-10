@@ -26,8 +26,12 @@ venv/
 *.log
 *.tmp
 
-# Ignore specific root scripts
-copy_rename.py
 
 # Exclude strava config file 
 source/strava/strava_config.py
+
+# Exclude garmin credential file 
+source/garmin/garmin_credentials.py
+
+# Ignore specific root scripts
+copy_rename.py

@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Callable
 from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError
 
 from .garmin_config import GarminConfig
+from .garmin_credentials import get_credentials
 from ..utils.log import setup_logger
 
 log = setup_logger("garmin.client")
@@ -34,7 +35,7 @@ class GarminClient:
         """Default logging to console if no callback provided."""
         print(f"[garmin] {message}")
     
-    def connect(self, email: str, password: str) -> bool:
+    def connect(self, email: str = None, password: str = None) -> bool:
         """
         Authenticate with Garmin Connect using email/password.
         
@@ -45,6 +46,9 @@ class GarminClient:
         Returns:
             True if connection successful
         """
+        # Fallback to stored credentials if not provided
+        if not email or not password:
+            email, password = get_credentials()
         try:
             log.info("[garmin_client] Connecting to Garmin Connect...")
 
