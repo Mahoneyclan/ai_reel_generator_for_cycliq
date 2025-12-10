@@ -247,24 +247,22 @@ class GarminClient:
     def format_activity_summary(self, activity: Dict) -> str:
         """
         Format activity as readable string for UI display.
-        
-        Args:
-            activity: Activity dict from API
-            
-        Returns:
-            Formatted string like "Morning Ride - 25.3 km - 1h 23m"
+        Includes date, name, distance, and duration.
         """
         name = activity.get("activityName", "Unnamed Activity")
         distance_m = activity.get("distance", 0)
         distance_km = distance_m / 1000.0
         duration_s = activity.get("duration", 0)
-        
+
         hours = int(duration_s // 3600)
         minutes = int((duration_s % 3600) // 60)
-        
         time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-        
-        return f"{name} - {distance_km:.1f} km - {time_str}"
+
+        # Include date from startTimeLocal
+        date_str = activity.get("startTimeLocal", "")[:10]
+
+        return f"{date_str} | {name} - {distance_km:.1f} km - {time_str}"
+
     
     def disconnect(self):
         """Clear connection (logout)."""

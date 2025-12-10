@@ -439,12 +439,7 @@ class MainWindow(QMainWindow):
             return
         
         try:
-            dialog = GPXImportWindow(
-                project_dir=self.project_controller.current_project,
-                input_dir=CFG.INPUT_DIR,
-                log_dir=CFG.LOG_DIR,
-                parent=self
-            )
+            dialog = GPXImportWindow(parent=self)
             dialog.exec()
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox

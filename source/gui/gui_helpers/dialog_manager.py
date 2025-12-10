@@ -32,9 +32,9 @@ class DialogManager:
         return Path(folder) if folder else None
     
     def show_import(self):
-        """Show import clips dialog."""
-        from ..import_window import ImportRideWindow
-        dialog = ImportRideWindow(self.parent)
+        """Show GPX import dialog."""
+        from ..gpx_import_window import GPXImportWindow
+        dialog = GPXImportWindow(parent=self.parent)
         dialog.exec()
     
     def show_analysis(self):

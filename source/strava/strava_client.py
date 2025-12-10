@@ -260,23 +260,21 @@ class StravaClient:
     def format_activity_summary(self, activity: Dict) -> str:
         """
         Format activity as readable string for UI display.
-        
-        Args:
-            activity: Activity dict from API
-            
-        Returns:
-            Formatted string like "Morning Ride - 25.3 km - 1h 23m"
+        Includes date, name, distance, and duration.
         """
         name = activity.get("name", "Unnamed Activity")
         distance_km = activity.get("distance", 0) / 1000.0
         moving_time_s = activity.get("moving_time", 0)
-        
+
         hours = moving_time_s // 3600
         minutes = (moving_time_s % 3600) // 60
-        
         time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-        
-        return f"{name} - {distance_km:.1f} km - {time_str}"
+
+        # Include date from start_date_local
+        date_str = activity.get("start_date_local", "")[:10]
+
+        return f"{date_str} | {name} - {distance_km:.1f} km - {time_str}"
+
     
     def disconnect(self):
         """Clear authentication (logout)."""
