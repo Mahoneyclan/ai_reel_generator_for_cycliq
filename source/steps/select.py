@@ -5,11 +5,11 @@ Select step:
 - Filters to valid frames (paired_ok, bike_detected, optional GPS)
 - Ranks by score_weighted
 - Applies gap spacing at the timeslot (moment) level
-- Expands selected moments to ALWAYS include both reciprocal clips
-- Builds a pool capped at 2× target moments (pairs), with one side marked recommended="true"
-- Writes select.csv including full enriched fields + recommended
-- Extracts frame images for all candidates to frames directory using actual video metadata
-- Ensures output is chronological for GUI consumption
+- Creates candidate pool at CANDIDATE_FRACTION × target (e.g., 2× = 128 moments for 64 target)
+- Marks top-ranked moments as recommended="true" (up to target count)
+- Expands ALL candidates to include both reciprocal clips (both camera angles)
+- Writes select.csv with full pool + recommended flags
+- Extracts frame images for all candidates
 """
 
 from __future__ import annotations
@@ -198,15 +198,20 @@ def run() -> Path:
     """
     Main selection pipeline.
     
+    CRITICAL FIX: Creates candidate pool at CANDIDATE_FRACTION × target,
+    then marks only top-ranked as recommended.
+    
     Process:
     1. Load enriched.csv
     2. Filter to valid frames (detection + pairing)
     3. Apply scene boost if enabled
     4. Group by timeslot and select best per slot
-    5. Apply gap filtering
-    6. Expand to reciprocal pairs
-    7. Extract frame images
-    8. Write select.csv
+    5. Create LARGE candidate pool (CANDIDATE_FRACTION × target)
+    6. Apply gap filtering to select top N for recommendation
+    7. Expand ALL candidates to reciprocal pairs
+    8. Mark only top N as recommended="true"
+    9. Extract frame images for ALL candidates
+    10. Write select.csv with full pool
     
     Returns:
         Path to select.csv output file
@@ -238,7 +243,7 @@ def run() -> Path:
         return dst
     
     log.info("=" * 60)
-    log.info("SELECT STEP: Rank by score, Timeslot gap filter, Expand to reciprocal pairs")
+    log.info("SELECT STEP: Build candidate pool → Gap filter → Mark recommendations")
     log.info("=" * 60)
     
     # Build index for partner lookup
@@ -260,6 +265,8 @@ def run() -> Path:
             csv.writer(f).writerow(["index"])
         log.error("[select] ❌ No valid frames after filtering")
         return dst
+    
+    log.info(f"[select] Valid frames: {len(valid)} (from {len(rows)} total)")
     
     # Sort by weighted score
     valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
@@ -294,19 +301,36 @@ def run() -> Path:
         best["_slot_key"] = slot
         representatives.append(best)
     
-    # Calculate candidate pool size
+    # Sort representatives by score
+    representatives.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
+    
+    # Calculate pool sizes
     target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
     candidate_fraction = getattr(CFG, 'CANDIDATE_FRACTION', 2.0)
-    pool_slots = min(len(representatives), int(target_clips * candidate_fraction))
-    reps_pool = representatives[:pool_slots]
+    pool_size = int(target_clips * candidate_fraction)
     
-    # Apply gap filtering
-    preselected_reps = apply_gap_filter(reps_pool, CFG.MIN_GAP_BETWEEN_CLIPS, target_clips)
+    log.info(f"[select] Target clips: {target_clips}")
+    log.info(f"[select] Candidate fraction: {candidate_fraction}x")
+    log.info(f"[select] Pool size: {pool_size} moments")
     
-    # Expand to reciprocal pairs
+    # Take top N for candidate pool (LARGE pool, not filtered by gaps yet)
+    candidate_pool = representatives[:pool_size]
+    
+    log.info(f"[select] Selected {len(candidate_pool)} representatives for candidate pool")
+    
+    # Apply gap filtering ONLY for marking recommendations (not for pool inclusion)
+    recommended_reps = apply_gap_filter(candidate_pool, CFG.MIN_GAP_BETWEEN_CLIPS, target_clips)
+    
+    log.info(f"[select] Gap-filtered to {len(recommended_reps)} recommended moments")
+    
+    # Build set of recommended indices for fast lookup
+    recommended_indices = {r.get("index") for r in recommended_reps}
+    
+    # Expand ALL candidates to reciprocal pairs
     final_pool: List[Dict] = []
-    for rep in preselected_reps:
-        slot = rep["_slot_key"]
+    
+    for rep in candidate_pool:
+        slot = rep.get("_slot_key")
         rows_in_slot = timeslot_map.get(slot, [])
         partner_idx = rep.get("partner_index", "")
         partner_row = None
@@ -327,18 +351,19 @@ def run() -> Path:
                     if epoch_diff <= CFG.PARTNER_TIME_TOLERANCE_S:
                         partner_row = candidate
         
-        # Add representative (pre-selected)
-        rep["recommended"] = "true"
+        # Mark recommendation status
+        rep_is_recommended = rep.get("index") in recommended_indices
+        rep["recommended"] = "true" if rep_is_recommended else "false"
         final_pool.append(rep)
         
-        # Add partner (not pre-selected)
+        # Add partner (never recommended - only one per moment can be recommended)
         if partner_row:
             partner_copy = dict(partner_row)
             partner_copy["recommended"] = "false"
             final_pool.append(partner_copy)
         else:
             log.warning(
-                f"[select] Missing partner row for representative {rep.get('index')} "
+                f"[select] Missing partner row for {rep.get('index')} "
                 f"(expected partner {partner_idx})"
             )
     
@@ -348,6 +373,17 @@ def run() -> Path:
     # Clean internal fields
     final_pool_cleaned = [_clean_internal_fields(row) for row in final_pool]
     
+    # Count recommendations
+    rec_count = sum(1 for r in final_pool if r.get("recommended") == "true")
+    
+    log.info("=" * 60)
+    log.info(
+        f"SELECT COMPLETE | Pool: {len(candidate_pool)} moments ({len(final_pool)} rows) | "
+        f"Recommended: {rec_count} | Target: {target_clips} | "
+        f"Pool ratio: {len(candidate_pool)/target_clips:.1f}x"
+    )
+    log.info("=" * 60)
+    
     # Write select.csv
     if final_pool_cleaned:
         fieldnames = sorted({k for row in final_pool_cleaned for k in row.keys()})
@@ -355,14 +391,6 @@ def run() -> Path:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(final_pool_cleaned)
-    
-    rec_count = sum(1 for r in final_pool if r.get("recommended") == "true")
-    log.info("=" * 60)
-    log.info(
-        f"SELECT COMPLETE | Moments: {len(preselected_reps)} | "
-        f"Pool rows: {len(final_pool)} | Preselected: {rec_count} (gap‑filtered)"
-    )
-    log.info("=" * 60)
     
     # Extract frames for all candidates
     extract_frames_for_candidates(final_pool)
