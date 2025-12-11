@@ -4,6 +4,7 @@ Garmin import panel:
 - Connect to Garmin
 - List cycling activities with date
 - Download GPX to CFG.INPUT_DIR as 'ride.gpx'
+- Immediately run flatten step after successful download
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from source.gui.gui_helpers.activity_list_panel import ActivityListPanel
 from source.garmin.garmin_client import GarminClient
 from source.garmin.garmin_credentials import get_credentials, set_credentials
 from source.importer.import_controller import ImportController
+from source.steps.flatten import run as run_flatten
+from source.config import DEFAULT_CONFIG as CFG
 
 
 class GarminImportPanel(QWidget):
@@ -85,7 +88,7 @@ class GarminImportPanel(QWidget):
             self._log("✓ Garmin connected")
             self._load_activities()
         else:
-            self._log("❌ Garmin connection failed")
+            self._log("✘ Garmin connection failed")
 
     def _load_activities(self) -> None:
         activities = self.client.get_recent_activities(limit=50)
@@ -115,14 +118,23 @@ class GarminImportPanel(QWidget):
             QMessageBox.warning(self, "No selection", "Please select an activity.")
             return
 
-        saved_path = self.importer.download_gpx(
-            provider="garmin",
-            activity_id=act_id,
-            downloader=lambda out_path: self.client.download_gpx(act_id, out_path),
-        )
-        if saved_path:
-            self._log(f"GPX saved: {saved_path}")
-            self.importCompleted.emit(saved_path)
-            self.window().accept()  # ✅ auto-close after success
+        # Force output path to raw video folder: <INPUT_DIR>/ride.gpx
+        out_path = CFG.INPUT_GPX_FILE
+        ok = self.client.download_gpx(act_id, out_path)
+
+        if ok:
+            self._log(f"GPX saved: {out_path}")
+            # Immediately flatten
+            try:
+                flatten_out = run_flatten()
+                self._log(f"✓ Flatten complete → {flatten_out}")
+            except Exception as e:
+                self._log(f"Flatten failed: {e}", level="error")
+                QMessageBox.warning(self, "Flatten failed", f"Could not process GPX:\n\n{e}")
+                return
+
+            # Emit completion and auto-close
+            self.importCompleted.emit(str(out_path))
+            self.window().accept()
         else:
             QMessageBox.warning(self, "Download failed", "Could not download GPX.")

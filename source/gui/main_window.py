@@ -27,6 +27,7 @@ from .controllers import ProjectController, PipelineController
 from .gpx_import_window import GPXImportWindow
 
 from ..config import DEFAULT_CONFIG as CFG
+from ..io_paths import flatten_path
 from ..utils.log import setup_logger
 from ..utils.map_overlay import clear_map_caches
 from ..utils.temp_files import cleanup_temp_files
@@ -207,7 +208,7 @@ class MainWindow(QMainWindow):
     # --- Pipeline Execution ---
     
     def _run_prepare(self):
-        """Run preparation pipeline."""
+        """Run preparation pipeline (align only)."""
         try:
             self.pipeline_controller.run_prepare()
         except Exception as e:
@@ -396,16 +397,17 @@ class MainWindow(QMainWindow):
             self.pipeline_panel.enable_all_buttons(False)
             return
         
-        # Check pipeline progress
-        prepare_done = self.pipeline_controller.can_run_analyze()
-        analyze_done = self.pipeline_controller.can_run_select()
-        select_done = self.pipeline_controller.can_run_finalize()
+        # Treat GPX as done if flatten.csv exists (import + flatten complete)
+        gpx_done = flatten_path().exists()
+        prepare_done = self.pipeline_controller.can_run_analyze()  # camera_offsets.json exists
+        analyze_done = self.pipeline_controller.can_run_select()    # enriched.csv exists
+        select_done = self.pipeline_controller.can_run_finalize()   # select.csv exists
         build_done = self._check_finalize_done()
         
         self.pipeline_panel.update_button_states(
             gpx_enabled=True,
-            gpx_done=False,
-            prepare_enabled=True,
+            gpx_done=gpx_done,
+            prepare_enabled=True,          # align-only now
             prepare_done=prepare_done,
             analyze_enabled=prepare_done,
             analyze_done=analyze_done,
@@ -433,20 +435,40 @@ class MainWindow(QMainWindow):
         self.dialog_manager.show_preferences()
     
     def _show_gpx_import(self):
-        """Show unified GPS import dialog (Strava or Garmin)."""
         if not self.project_controller.current_project:
             self.dialog_manager.show_no_project_warning()
             return
-        
         try:
             dialog = GPXImportWindow(parent=self)
+            dialog.importCompleted.connect(lambda p: self.log_panel.log(f"GPX import complete: {p}", "success"))
+            dialog.statusChanged.connect(lambda s: self.log_panel.log(s, "info"))
             dialog.exec()
+            self._update_pipeline_buttons()  # flatten.csv now exists → GPX done
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                self, "GPS Import Error",
-                f"Failed to open GPS import:\n\n{str(e)}"
-            )
+            QMessageBox.critical(self, "GPS Import Error", f"Failed to open GPS import:\n\n{str(e)}")
+
+    def _update_pipeline_buttons(self):
+        if not self.project_controller.current_project:
+            self.pipeline_panel.enable_all_buttons(False)
+            return
+        gpx_done = flatten_path().exists()
+        prepare_done = self.pipeline_controller.can_run_analyze()
+        analyze_done = self.pipeline_controller.can_run_select()
+        select_done = self.pipeline_controller.can_run_finalize()
+        build_done = self._check_finalize_done()
+        self.pipeline_panel.update_button_states(
+            gpx_enabled=True,
+            gpx_done=gpx_done,
+            prepare_enabled=True,
+            prepare_done=prepare_done,
+            analyze_enabled=prepare_done,
+            analyze_done=analyze_done,
+            select_enabled=analyze_done,
+            select_done=select_done,
+            build_enabled=select_done,
+            build_done=build_done
+        )
     
     def _show_music_placeholder(self):
         """Show music management placeholder."""

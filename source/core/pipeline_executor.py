@@ -41,7 +41,6 @@ class PipelineExecutor:
 
             QApplication.processEvents()
 
-
         try:
             # Reset progress indicator at start
             self.on_step_started(step_name)
@@ -64,15 +63,15 @@ class PipelineExecutor:
 
         except Exception as e:
             set_progress_callback(None)
-            logger.error(f"❌ Step {step_name} failed: {e}", exc_info=True)
+            logger.error(f"✘ Step {step_name} failed: {e}", exc_info=True)
             self.on_error(step_name, str(e))
             raise
 
     # --- High-level actions ---
 
     def prepare(self):
-        """Run preflight → flatten → align."""
-        for step in ["preflight", "flatten", "align"]:
+        """Run alignment only (flatten is invoked after GPX import)."""
+        for step in ["align"]:
             self._run_step(step)
 
     def analyze(self):
