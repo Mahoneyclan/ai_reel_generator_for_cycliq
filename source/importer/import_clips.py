@@ -1,20 +1,33 @@
 # source/importer/import_clips.py
 """
-Optimized multi-threaded importer for copying video clips from cameras.
-Uses ThreadPoolExecutor to copy from both cameras simultaneously.
-2-3x faster than sequential copying.
+Optimized importer for copying video clips from cameras.
+Uses ThreadPoolExecutor with rsync to copy from both cameras simultaneously.
+Faster than sequential shutil.copy2.
 """
 
-import os
-import shutil
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Callable
 
+
+def _rsync_copy(src: Path, dst: Path, cam: str) -> Tuple[bool, str, str]:
+    """Copy a single file with rsync and return (success, camera, filename)."""
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        cmd = ["rsync", "-a", "--info=progress2", str(src), str(dst)]
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode != 0:
+            return (False, cam, f"{dst.name}: {result.stderr.decode().strip()}")
+        return (True, cam, dst.name)
+    except Exception as e:
+        return (False, cam, f"{dst.name}: {str(e)}")
+
+
 def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Callable):
     """
-    Imports clips from cameras for a specific date using parallel copying.
+    Imports clips from cameras for a specific date using parallel rsync copying.
 
     Args:
         cameras (list): List of camera names to import from (e.g., ["Fly12S", "Fly6Pro"])
@@ -24,7 +37,7 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
     """
     try:
         # --- 1. Define Paths ---
-        base_import_path = Path("/Volumes/GDrive/Fly")  # FIXED: Added GDrive
+        base_import_path = Path("/Volumes/GDrive/Fly")
         ride_date_obj = datetime.strptime(ride_date, "%Y-%m-%d")
         folder_name = f"{ride_date_obj.strftime('%Y-%m-%d')} {ride_name}"
         destination_path = base_import_path / folder_name
@@ -35,24 +48,24 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
             "Fly12S": "Fly12Sport",
             "Fly6Pro": "Fly6Pro"
         }
-        
+
         camera_volume_map = {
-            "Fly12S": Path("/Volumes/FLY12S"),  # Note: uppercase from your ls output
-            "Fly6Pro": Path("/Volumes/FLY6PRO")  # Note: uppercase from your ls output
+            "Fly12S": Path("/Volumes/FLY12S"),
+            "Fly6Pro": Path("/Volumes/FLY6PRO")
         }
 
         # --- 2. Create Destination Directory ---
-        log_callback(f"Creating destination directory...", "info")
+        log_callback("Creating destination directory...", "info")
         destination_path.mkdir(parents=True, exist_ok=True)
 
-        # --- 3. Collect all files to copy (fast scan phase) ---
+        # --- 3. Collect all files to copy ---
         log_callback("Scanning cameras for files...", "info")
-        files_to_copy: List[Tuple[Path, Path, str]] = []  # (source, dest, camera_name)
-        
+        files_to_copy: List[Tuple[Path, Path, str]] = []
+
         for cam_selection in cameras:
             cam_name = camera_map.get(cam_selection)
             cam_volume = camera_volume_map.get(cam_selection)
-            
+
             if not cam_name or not cam_volume:
                 log_callback(f"Unknown camera: {cam_selection}", "warning")
                 continue
@@ -62,17 +75,14 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
                 continue
 
             source_path = cam_volume / "DCIM" / "100_Ride"
-            
             if not source_path.exists():
                 log_callback(f"Source path does not exist: {source_path}", "warning")
                 continue
 
-            # Scan for matching files
             for file_path in source_path.glob("*.MP4"):
                 try:
                     mod_time = datetime.fromtimestamp(file_path.stat().st_mtime)
                     if mod_time.date() == ride_date_obj.date():
-                        # Prepare destination filename
                         base_name = file_path.stem
                         if "_" in base_name:
                             number_part = base_name.split("_")[-1]
@@ -89,30 +99,19 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
         total_files = len(files_to_copy)
         log_callback(f"Found {total_files} clips to copy", "info")
 
-        # --- 4. Copy files in parallel ---
-        log_callback("Starting parallel copy...", "info")
-        
-        def copy_single_file(src: Path, dst: Path, cam: str) -> Tuple[bool, str, str]:
-            """Copy a single file and return (success, camera, filename)"""
-            try:
-                shutil.copy2(src, dst)
-                return (True, cam, dst.name)
-            except Exception as e:
-                return (False, cam, f"{dst.name}: {str(e)}")
+        # --- 4. Copy files in parallel with rsync ---
+        log_callback("Starting parallel rsync copy...", "info")
 
         copied_count = 0
         failed_count = 0
         camera_counts = {}
 
-        # Use ThreadPoolExecutor with 4 workers (good for 2 cameras)
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            # Submit all copy tasks
+        with ThreadPoolExecutor(max_workers=2) as executor:
             future_to_file = {
-                executor.submit(copy_single_file, src, dst, cam): (src, dst, cam)
+                executor.submit(_rsync_copy, src, dst, cam): (src, dst, cam)
                 for src, dst, cam in files_to_copy
             }
 
-            # Process results as they complete
             for future in as_completed(future_to_file):
                 src, dst, cam = future_to_file[future]
                 try:
@@ -120,7 +119,6 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
                     if success:
                         copied_count += 1
                         camera_counts[camera] = camera_counts.get(camera, 0) + 1
-                        # Log every 5th file to avoid spam
                         if copied_count % 5 == 0 or copied_count == total_files:
                             log_callback(
                                 f"Progress: {copied_count}/{total_files} files copied",
@@ -135,10 +133,7 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
 
         # --- 5. Summary ---
         if copied_count > 0:
-            log_callback(
-                f"✓ Import complete! Copied {copied_count} clips",
-                "success"
-            )
+            log_callback(f"✓ Import complete! Copied {copied_count} clips", "success")
             for cam, count in camera_counts.items():
                 log_callback(f"  • {cam}: {count} clips", "success")
         else:
