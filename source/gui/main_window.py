@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
         self.project_panel.project_selected.connect(self._on_project_selected)
         
         # Action panel (top bar - project-independent)
-        self.action_panel.import_clicked.connect(self.dialog_manager.show_import)
+        self.action_panel.import_clicked.connect(self._show_import_raw_video)
         self.action_panel.create_clicked.connect(self._create_project)
         self.action_panel.music_clicked.connect(self._show_music_placeholder)
         self.action_panel.prefs_clicked.connect(self._show_preferences)
@@ -434,6 +434,17 @@ class MainWindow(QMainWindow):
         
         self.dialog_manager.show_preferences()
     
+    def _show_import_raw_video(self):
+        """Show raw video import dialog from cameras."""
+        from .import_window import ImportRideWindow
+        
+        dialog = ImportRideWindow(self)
+        result = dialog.exec()
+        
+        if result == ImportRideWindow.Accepted:
+            self.log_panel.log("✓ Video import completed", "success")
+            self._refresh_projects()
+
     def _show_gpx_import(self):
         if not self.project_controller.current_project:
             self.dialog_manager.show_no_project_warning()
