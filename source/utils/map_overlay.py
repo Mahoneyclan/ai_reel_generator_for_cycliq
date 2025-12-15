@@ -52,10 +52,11 @@ def _compute_gpx_hash(gpx_points: List[GpxPoint]) -> str:
     if not gpx_points:
         return "empty"
     
-    # Create fingerprint from first/last coords + count
+    # Create fingerprint from first/last coords, count, and hash of all coords
     first = gpx_points[0]
     last = gpx_points[-1]
-    fingerprint = f"{first.lat:.6f},{first.lon:.6f},{last.lat:.6f},{last.lon:.6f},{len(gpx_points)}"
+    all_coords = "".join([f"{p.lat:.6f}{p.lon:.6f}" for p in gpx_points])
+    fingerprint = f"{first.lat:.6f},{first.lon:.6f},{last.lat:.6f},{last.lon:.6f},{len(gpx_points)},{hash(all_coords)}"
     
     return hashlib.md5(fingerprint.encode()).hexdigest()[:16]
 
@@ -121,7 +122,7 @@ def _get_gpx_index(gpx_points: List[GpxPoint]) -> GPXIndex:
 def _render_base_figure(
     gpx_points: List[GpxPoint], 
     size: Tuple[int, int]
-) -> Tuple[plt.Figure, plt.Axes, Tuple[float, float, float, float]]:
+) -> Tuple[plt.Figure, plt.Axes, Tuple[float, float, float, float]] | Tuple[None, None, None]:
     """
     Render base map figure with route overlay.
     
@@ -130,7 +131,7 @@ def _render_base_figure(
         size: Output image size (width, height) in pixels
     
     Returns:
-        Tuple of (figure, axes, extent) where extent is (x_min, x_max, y_max, y_min)
+        Tuple of (figure, axes, extent) or (None, None, None) on failure. Extent is (x_min, x_max, y_max, y_min).
     """
     # Downsample for performance
     sampled = _sample_by_time(gpx_points, interval_s=getattr(CFG, "MAP_SAMPLE_INTERVAL_S", 6))
@@ -138,10 +139,8 @@ def _render_base_figure(
     
     if len(coords) < 2:
         # Fallback for insufficient data
-        fig = plt.figure(figsize=(size[0]/100, size[1]/100), dpi=100)
-        ax = fig.add_axes([0, 0, 1, 1])
-        ax.axis("off")
-        return fig, ax, (0.0, 0.0, 0.0, 0.0)
+        log.warning("Cannot render map, less than 2 GPX points.")
+        return None, None, None
     
     # Create GeoDataFrame and project to Web Mercator
     gdf = gpd.GeoDataFrame(
@@ -167,10 +166,12 @@ def _render_base_figure(
     
     # Add basemap
     try:
+        # Default to OpenStreetMap if not specified in config
+        basemap_source = getattr(ctx.providers, CFG.MAP_BASEMAP_PROVIDER, ctx.providers.OpenStreetMap.Mapnik)
         ctx.add_basemap(
             ax, 
             crs="EPSG:3857", 
-            source=ctx.providers.OpenStreetMap.Mapnik
+            source=basemap_source
         )
         # Reapply limits after basemap
         ax.set_xlim(x_min, x_max)
@@ -219,7 +220,6 @@ def _figure_to_image(fig: plt.Figure) -> Image.Image:
 def render_splash_map_with_xy(
     gpx_points: List[GpxPoint],
     size: Tuple[int, int] = (2560, 1440),
-    gutters_px: Tuple[int, int, int, int] = (0, 0, 0, 0),
 ) -> Tuple[Image.Image, Tuple[float, float, float, float]]:
     """
     Render full-route splash map with coordinate extent.
@@ -229,7 +229,6 @@ def render_splash_map_with_xy(
     Args:
         gpx_points: GPS trackpoints to render
         size: Output size (width, height) in pixels
-        gutters_px: Padding (left, top, right, bottom) - currently unused
     
     Returns:
         Tuple of (image, extent) where extent is (x_min, x_max, y_max, y_min)
@@ -245,6 +244,10 @@ def render_splash_map_with_xy(
     
     # Render new map
     fig, ax, extent = _render_base_figure(gpx_points, size)
+    if fig is None:
+        # Handle rendering failure from _render_base_figure
+        fallback_img = Image.new("RGBA", size, (0, 0, 0, 0))
+        return fallback_img, (0, 0, 0, 0)
     img = _figure_to_image(fig)
     
     # Cache result
@@ -279,6 +282,10 @@ def render_overlay_minimap(
     """
     # Render base map
     fig, ax, extent = _render_base_figure(gpx_points, size)
+    if fig is None:
+        # Handle rendering failure by returning a blank image
+        log.warning("Base figure rendering failed for minimap, returning blank image.")
+        return Image.new("RGBA", size, (0, 0, 0, 0))
     
     # Add current position marker
     gpx_index = _get_gpx_index(gpx_points)
