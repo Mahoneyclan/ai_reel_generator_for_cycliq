@@ -2,6 +2,7 @@
 # Exclude assets (images, audio, etc.)
 assets/
 py_txt/
+dist/
 
 # Exclude YOLO model weights
 *.pt
@@ -35,3 +36,5 @@ source/garmin/garmin_credentials.py
 
 # Ignore specific root scripts
 copy_rename.py
+diagnose_csv.py
+diagnose_enrich.py

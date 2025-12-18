@@ -42,15 +42,31 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(
 from source.gui.main_window import MainWindow
 
 def main():
-    app = QApplication(sys.argv)
-    app.setApplicationName("Highlights")
-    app.setOrganizationName("Highlights")
-    app.setOrganizationDomain("highlights.local")
+    try:
+        app = QApplication(sys.argv)
+        app.setApplicationName("Highlights")
+        app.setOrganizationName("Highlights")
+        app.setOrganizationDomain("highlights.local")
 
-    window = MainWindow()
-    window.show()
+        # Set up exception hook for Qt thread crashes
+        sys.excepthook = handle_exception
+        
+        window = MainWindow()
+        window.show()
+        return app.exec()
+    
+    except Exception as e:
+        logging.critical(f"Application failed to start: {e}", exc_info=True)
+        return 1
 
-    return app.exec()
+def handle_exception(exc_type, exc_value, exc_traceback):
+    """Global exception handler for uncaught exceptions."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    
+    logging.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
 
 if __name__ == "__main__":
     sys.exit(main())

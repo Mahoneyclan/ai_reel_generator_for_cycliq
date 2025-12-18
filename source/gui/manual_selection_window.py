@@ -169,113 +169,106 @@ class ManualSelectionWindow(QDialog):
 
             self.log(f"Loaded {len(rows)} rows from select.csv", "info")
             
-            # Build index for partner lookups
-            index_map = {r.get("index", ""): r for r in rows if r.get("index")}
-            self.log(f"Built index with {len(index_map)} entries", "debug")
+            # Build index lookup
+            index_map = {r["index"]: r for r in rows}
             
-            # Group by exact epoch - use partner_index for precise pairing
-            from collections import defaultdict
-            timeslot_groups = defaultdict(list)
-            
-            # First pass: group by partner relationships
-            paired_indices = set()
-            moments_by_index = {}
+            # Create moments using partner_index relationships
+            self.moments = []
+            seen = set()
             
             for row in rows:
-                idx = row.get("index", "")
-                partner_idx = row.get("partner_index", "")
+                idx = row["index"]
                 
                 # Skip if already paired
-                if idx in paired_indices:
+                if idx in seen:
                     continue
                 
-                # Find partner
-                partner_row = index_map.get(partner_idx) if partner_idx else None
+                # Get partner
+                partner_idx = row.get("partner_index", "")
+                if not partner_idx:
+                    self.log(f"Row {idx} missing partner_index", "warning")
+                    continue
                 
-                if partner_row and partner_idx not in paired_indices:
-                    # Valid pair found
-                    paired_indices.add(idx)
-                    paired_indices.add(partner_idx)
-                    
-                    # Create moment (use epoch from first row)
-                    epoch = float(row.get("abs_time_epoch", 0) or 0.0)
-                    moment_key = f"{idx}_{partner_idx}"
-                    moments_by_index[moment_key] = (epoch, row, partner_row)
-            
-            self.log(f"Found {len(moments_by_index)} valid pairs from {len(rows)} rows", "info")
-            self.log(f"Paired {len(paired_indices)} indices, unpaired: {len(rows) - len(paired_indices)}", "debug")
-            
-            # Build moments from paired data, sorted by time
-            self.moments = []
-            
-            for moment_key, (epoch, row1, row2) in sorted(moments_by_index.items(), key=lambda x: x[1][0]):
-                # Verify cameras are different
-                cam1 = row1.get("camera", "")
-                cam2 = row2.get("camera", "")
+                if partner_idx not in index_map:
+                    self.log(f"Row {idx} has invalid partner_index: {partner_idx}", "warning")
+                    continue
                 
+                partner_row = index_map[partner_idx]
+                
+                # Verify different cameras
+                cam1 = row.get("camera", "")
+                cam2 = partner_row.get("camera", "")
                 if cam1 == cam2:
-                    self.log(f"Skipping same-camera pair: {cam1}", "warning")
+                    self.log(f"Row {idx} has same camera as partner: {cam1}", "warning")
                     continue
                 
-                # Create moment - include ALL pairs, not just recommended
+                # Mark both as used
+                seen.add(idx)
+                seen.add(partner_idx)
+                
+                # Create moment with both perspectives
+                epoch = float(row.get("abs_time_epoch", 0) or 0.0)
+                time_diff = float(row.get("partner_abs_time_diff", 0) or 0.0)
+                
                 moment = {
                     "epoch": epoch,
-                    "row1": row1,
-                    "row2": row2,
-                    "rows": [row1, row2],
+                    "row1": row,
+                    "row2": partner_row,
+                    "rows": [row, partner_row],
                 }
                 self.moments.append(moment)
                 
-                # Log details including recommendation status
-                rec1 = row1.get("recommended", "false")
-                rec2 = row2.get("recommended", "false")
-                time_diff = abs(float(row1.get("abs_time_epoch", 0)) - float(row2.get("abs_time_epoch", 0)))
-                
+                # Log the pairing
+                rec1 = row.get("recommended", "false")
+                rec2 = partner_row.get("recommended", "false")
                 self.log(
                     f"Moment {len(self.moments)}: {cam1} ↔ {cam2} "
                     f"(Δt={time_diff:.3f}s, rec: {rec1}/{rec2})",
                     "debug"
                 )
-
-            # Count how many are pre-selected by AI
+            
+            # Sort by time
+            self.moments.sort(key=lambda m: m["epoch"])
+            
+            # Count pre-selected
             self.selected_count = sum(
-                1 for m in self.moments if any(r.get("recommended") == "true" for r in m["rows"])
+                1 for m in self.moments 
+                if any(r.get("recommended") == "true" for r in m["rows"])
             )
             
-            total_moments = len(self.moments)
+            total = len(self.moments)
+            unpaired = len(rows) - len(seen)
+            
             self.log(
-                f"Created {total_moments} moments total, "
-                f"{self.selected_count} pre-selected by AI ({self.selected_count/total_moments*100:.1f}%)", 
+                f"Created {total} moments from {len(rows)} rows, "
+                f"{unpaired} rows couldn't be paired, "
+                f"{self.selected_count} pre-selected",
                 "success"
             )
             
-            self.counter_label.setText(f"Selected: {self.selected_count} / {total_moments} clips")
+            self.counter_label.setText(f"Selected: {self.selected_count} / {total} clips")
             self.ok_btn.setText(f"Use {self.selected_count} Clips & Continue")
             self.status_label.setText(
-                f"Showing {total_moments} moments (candidate pool)  •  "
-                f"Pre-selected: {self.selected_count} / {self.target_clips} target  •  "
-                f"Pool ratio: {total_moments/self.target_clips:.1f}x"
+                f"Showing {total} moments (2 perspectives each)  •  "
+                f"Pre-selected: {self.selected_count} / {self.target_clips} target"
             )
             
-            if len(self.moments) == 0:
-                QMessageBox.warning(
+            if total == 0:
+                QMessageBox.critical(
                     self, 
-                    "No Paired Moments", 
-                    f"No valid camera pairs found from {len(rows)} rows.\n\n"
-                    "Check that:\n"
-                    "• Both cameras recorded simultaneously\n"
-                    "• Rows are properly paired in select.csv\n"
-                    "• Camera time alignment is correct"
+                    "No Moments", 
+                    f"Could not create any moments from {len(rows)} rows.\n\n"
+                    f"Check that partner_index values are correct in select.csv"
                 )
                 self.reject()
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load candidates: {e}")
-            self.log(f"CSV load error: {e}", "error")
+            self.log(f"Error: {e}", "error")
             import traceback
             self.log(traceback.format_exc(), "error")
+            QMessageBox.critical(self, "Error", str(e))
             self.reject()
-
+            
     def _populate_grid(self):
         while self.grid_layout.count():
             item = self.grid_layout.takeAt(0)

@@ -1,28 +1,19 @@
 # source/steps/select.py
 """
-Select step:
-- Loads enriched.csv (authoritative dataset from Analyze)
-- Filters to valid frames (paired_ok, bike_detected, optional GPS)
-- Ranks by score_weighted
-- Applies gap spacing at the timeslot (moment) level
-- Creates candidate pool at CANDIDATE_FRACTION × target (e.g., 2× = 128 moments for 64 target)
-- Marks top-ranked moments as recommended="true" (up to target count)
-- Expands ALL candidates to include both reciprocal clips (both camera angles)
-- Writes select.csv with full pool + recommended flags
-- Extracts frame images for all candidates
+Clip selection step - PAIR-BASED APPROACH
+Works with pre-paired data from enriched.csv.
+Each pair = 1 moment with 2 perspectives (both cameras).
 """
 
 from __future__ import annotations
-import csv
-import subprocess
+from typing import List, Dict, Tuple
 from pathlib import Path
-from typing import List, Dict
-from source.utils.progress_reporter import progress_iter
+import csv
 
-from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import enrich_path, select_path, frames_dir, _mk
 from ..utils.log import setup_logger
-from ..utils.temp_files import register_temp_file
+from .analyze_helpers.score_calculator import ScoreCalculator
+from ..config import DEFAULT_CONFIG as CFG
 
 log = setup_logger("steps.select")
 
@@ -35,369 +26,213 @@ def _sf(v, d=0.0) -> float:
         return d
 
 
-def apply_gap_filter(candidates: List[Dict], min_gap_s: int, target_clips: int) -> List[Dict]:
+def build_pairs(rows: List[Dict]) -> List[Tuple[Dict, Dict]]:
     """
-    Select top clips with adaptive spacing based on scene boost.
-    High scene-change clips get priority and can be closer together.
-    
-    Args:
-        candidates: List of candidate clip dictionaries
-        min_gap_s: Minimum gap between clips in seconds
-        target_clips: Target number of clips to select
-    
-    Returns:
-        Filtered list of selected clips
+    Build pairs from enriched rows using partner_index relationships.
+    Returns list of (row1, row2) tuples representing moments.
     """
-    filtered: List[Dict] = []
+    index_map = {r["index"]: r for r in rows}
+    pairs = []
+    seen = set()
+    
+    for row in rows:
+        idx = row["index"]
+        if idx in seen:
+            continue
+        
+        partner_idx = row.get("partner_index", "")
+        if not partner_idx or partner_idx not in index_map:
+            log.warning(f"Row {idx} has invalid partner_index: {partner_idx}")
+            continue
+        
+        partner = index_map[partner_idx]
+        
+        # Verify reciprocal relationship
+        if partner.get("partner_index") != idx:
+            log.warning(f"Non-reciprocal pair: {idx} -> {partner_idx}")
+            continue
+        
+        # Verify different cameras
+        if row.get("camera") == partner.get("camera"):
+            log.warning(f"Same camera pair: {idx}")
+            continue
+        
+        seen.add(idx)
+        seen.add(partner_idx)
+        pairs.append((row, partner))
+    
+    log.info(f"Built {len(pairs)} valid pairs from {len(rows)} rows ({len(seen)} paired, {len(rows)-len(seen)} unpaired)")
+    return pairs
+
+
+def score_pair(pair: Tuple[Dict, Dict]) -> float:
+    """
+    Score a pair by taking the maximum score of the two perspectives.
+    We want to select moments where at least one angle is good.
+    """
+    score1 = _sf(pair[0].get("score_weighted"))
+    score2 = _sf(pair[1].get("score_weighted"))
+    return max(score1, score2)
+
+
+def apply_gap_filter(pairs: List[Tuple[Dict, Dict]], target_clips: int) -> List[Tuple[Dict, Dict]]:
+    """
+    Select top pairs with adaptive spacing based on scene_boost.
+    """
+    filtered = []
     used_windows = set()
-    
-    # Scene change thresholds from config
-    HIGH_SCENE_THRESHOLD = getattr(CFG, 'SCENE_HIGH_THRESHOLD', 0.50)
-    MAJOR_SCENE_THRESHOLD = getattr(CFG, 'SCENE_MAJOR_THRESHOLD', 0.70)
-    
-    for c in candidates:
-        t = int(_sf(c.get("abs_time_epoch")))
-        scene_boost = _sf(c.get("scene_boost", 0))
-        
-        # Adaptive gap based on scene significance
-        if scene_boost >= MAJOR_SCENE_THRESHOLD:
-            effective_gap = max(1, min_gap_s // 2)
-        elif scene_boost >= HIGH_SCENE_THRESHOLD:
-            effective_gap = max(1, int(min_gap_s * 0.75))
-        else:
-            effective_gap = max(1, min_gap_s)
-        
+
+    for pair in pairs:
+        # Use first row's timestamp (both should be similar)
+        t = int(_sf(pair[0].get("abs_time_epoch")))
+        scene_boost = max(_sf(pair[0].get("scene_boost", 0)), _sf(pair[1].get("scene_boost", 0)))
+
+        # Adaptive gap
+        effective_gap = CFG.MIN_GAP_BETWEEN_CLIPS
+        if scene_boost >= CFG.SCENE_MAJOR_THRESHOLD:
+            effective_gap *= CFG.SCENE_MAJOR_GAP_MULTIPLIER
+        elif scene_boost >= CFG.SCENE_HIGH_THRESHOLD:
+            effective_gap *= CFG.SCENE_HIGH_GAP_MULTIPLIER
+
+        effective_gap = max(1, int(effective_gap))
         window = t // effective_gap
-        
+
         if window not in used_windows:
-            filtered.append(c)
+            filtered.append(pair)
             # Block adjacent windows
             for offset in range(-1, 2):
                 used_windows.add(window + offset)
-        
+
         if len(filtered) >= target_clips:
             break
-    
+
     return filtered
 
 
-def extract_frames_for_candidates(pool: List[Dict]) -> None:
-    """
-    Extract frame images for all candidate clips to frames directory.
-    Uses accurate timing from CSV metadata instead of hardcoded FPS.
-    
-    Args:
-        pool: List of candidate clip dictionaries with video metadata
-    """
-    if not pool:
+def _load_csv(path: Path) -> List[Dict]:
+    if not path.exists():
+        return []
+    with path.open() as f:
+        return list(csv.DictReader(f))
+
+
+def _write_csv(path: Path, rows: List[Dict]):
+    if not rows:
         return
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def extract_frame_images(rows: List[Dict]) -> int:
+    """Extract frame images from videos for manual review."""
+    from ..io_paths import frames_dir, _mk
+    import cv2
     
-    log.info(f"Extracting {len(pool)} frame images for manual review...")
-    frames_path = _mk(frames_dir())
-    extraction_count = 0
+    frames_dir_path = _mk(frames_dir())
+    extracted_count = 0
     
-    for candidate in progress_iter(pool, desc="[select] Extracting frames", unit="frame"):
-        try:
-            idx = candidate.get("index", "")
-            source_file = candidate.get("source", "")
-            
-            # Use accurate frame timing from metadata
-            session_ts_s = candidate.get("session_ts_s", "")
-            
-            if not idx or not source_file or not session_ts_s:
-                log.warning(f"Missing metadata for candidate: {idx}")
-                continue
-            
-            # Skip if already extracted
-            output_path = frames_path / f"{idx}_Primary.jpg"
-            if output_path.exists():
-                continue
-            
-            video_path = CFG.INPUT_VIDEOS_DIR / source_file
-            if not video_path.exists():
-                log.warning(f"Video not found: {source_file}")
-                continue
-            
-            # Use session timestamp from CSV (accurate)
-            timestamp = float(session_ts_s)
-            
-            # Extract primary frame
-            cmd = [
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                "-ss", f"{timestamp:.3f}",
-                "-i", str(video_path),
-                "-frames:v", "1",
-                "-q:v", "2",
-                str(output_path)
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True)
-            if result.returncode != 0:
-                log.warning(f"FFmpeg error for {idx}: {result.stderr.decode()}")
-                continue
-            
-            extraction_count += 1
-            
-            # Extract partner frame if available
-            partner_source = candidate.get("partner_source", "")
-            partner_video_path = candidate.get("partner_video_path", "")
-            
-            if partner_source and partner_video_path:
-                partner_video = Path(partner_video_path)
-                partner_output = frames_path / f"{idx}_Partner.jpg"
-                
-                if partner_video.exists() and not partner_output.exists():
-                    # Use partner's session timestamp
-                    # Look up partner's metadata from enriched data if available
-                    # For now, use same timestamp (cameras are synchronized)
-                    partner_cmd = [
-                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                        "-ss", f"{timestamp:.3f}",
-                        "-i", str(partner_video),
-                        "-frames:v", "1",
-                        "-q:v", "2",
-                        str(partner_output)
-                    ]
-                    subprocess.run(partner_cmd, capture_output=True)
+    log.info(f"Extracting {len(rows)} frame images for manual review...")
+    
+    for row in rows:
+        index = row["index"]
+        video_path = Path(row["video_path"])
+        frame_number = int(float(row["frame_number"]))
         
+        # Output paths
+        primary_out = frames_dir_path / f"{index}_Primary.jpg"
+        
+        # Skip if already exists
+        if primary_out.exists():
+            continue
+        
+        # Extract frame using OpenCV
+        try:
+            cap = cv2.VideoCapture(str(video_path))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = cap.read()
+            cap.release()
+            
+            if ret and frame is not None:
+                cv2.imwrite(str(primary_out), frame)
+                extracted_count += 1
+            else:
+                log.warning(f"Failed to extract frame {frame_number} from {video_path.name}")
         except Exception as e:
-            log.warning(f"Failed to extract frame {idx}: {e}")
+            log.error(f"Error extracting {index}: {e}")
     
-    log.info(f"Extracted {extraction_count} new frame images to {frames_path}")
-
-
-def _timeslot_key(abs_time_epoch: str) -> int:
-    """
-    Bucket absolute time into timeslots aligned to CLIP_OUT_LEN_S.
-    
-    Args:
-        abs_time_epoch: Timestamp string from CSV
-    
-    Returns:
-        Integer timeslot bucket
-    """
-    t = int(_sf(abs_time_epoch))
-    slot_len = max(1, int(CFG.CLIP_OUT_LEN_S))
-    return t // slot_len
-
-
-def _clean_internal_fields(row: Dict) -> Dict:
-    """
-    Remove internal fields that shouldn't be written to CSV.
-    
-    Args:
-        row: Dictionary with potential internal fields
-    
-    Returns:
-        Cleaned dictionary
-    """
-    return {k: v for k, v in row.items() if not k.startswith('_')}
+    log.info(f"Extracted {extracted_count} new frame images to {frames_dir_path}")
+    return extracted_count
 
 
 def run() -> Path:
-    """
-    Main selection pipeline.
-    
-    CRITICAL FIX: Creates candidate pool at CANDIDATE_FRACTION × target,
-    then marks only top-ranked as recommended.
-    
-    Process:
-    1. Load enriched.csv
-    2. Filter to valid frames (detection + pairing)
-    3. Apply scene boost if enabled
-    4. Group by timeslot and select best per slot
-    5. Create LARGE candidate pool (CANDIDATE_FRACTION × target)
-    6. Apply gap filtering to select top N for recommendation
-    7. Expand ALL candidates to reciprocal pairs
-    8. Mark only top N as recommended="true"
-    9. Extract frame images for ALL candidates
-    10. Write select.csv with full pool
-    
-    Returns:
-        Path to select.csv output file
-    """
-    src = enrich_path()
-    dst = _mk(select_path())
-    
-    # Validate input
-    if not src.exists():
-        with dst.open("w", newline="") as f:
-            csv.writer(f).writerow(["index"])
-        log.error("[select] ❌ enriched.csv missing")
-        return dst
-    
-    # Load enriched data
-    try:
-        with src.open() as f:
-            rows = list(csv.DictReader(f))
-    except Exception as e:
-        log.error(f"[select] Failed to load enriched.csv: {e}")
-        with dst.open("w", newline="") as f:
-            csv.writer(f).writerow(["index"])
-        return dst
-    
-    if not rows:
-        with dst.open("w", newline="") as f:
-            csv.writer(f).writerow(["index"])
-        log.error("[select] ❌ enriched.csv is empty")
-        return dst
-    
+    """Main selection step: work with pairs from the start."""
     log.info("=" * 60)
-    log.info("SELECT STEP: Build candidate pool → Gap filter → Mark recommendations")
+    log.info("SELECT STEP: Pair-based selection")
     log.info("=" * 60)
     
-    # Build index for partner lookup
-    index_all: Dict[str, Dict] = {r.get("index", ""): r for r in rows if r.get("index")}
+    enriched = _load_csv(enrich_path())
+    if not enriched:
+        log.warning("No enriched frames found.")
+        return select_path()
+
+    # Score all rows
+    calc = ScoreCalculator()
+    scored = calc.compute_scores(enriched)
     
-    # Filter to valid frames
-    valid: List[Dict] = []
-    for r in rows:
-        if r.get("paired_ok") != "true":
-            continue
-        if r.get("bike_detected") != "true":
-            continue
-        if CFG.REQUIRE_GPS_FOR_SELECTION and r.get("gpx_missing") == "true":
-            continue
-        valid.append(r)
+    # Build pairs from scored data
+    all_pairs = build_pairs(scored)
     
-    if not valid:
-        with dst.open("w", newline="") as f:
-            csv.writer(f).writerow(["index"])
-        log.error("[select] ❌ No valid frames after filtering")
-        return dst
+    if not all_pairs:
+        log.error("No valid pairs found in enriched data")
+        return select_path()
     
-    log.info(f"[select] Valid frames: {len(valid)} (from {len(rows)} total)")
+    # Sort pairs by their combined score
+    pairs_with_scores = [(pair, score_pair(pair)) for pair in all_pairs]
+    pairs_sorted = sorted(pairs_with_scores, key=lambda x: x[1], reverse=True)
     
-    # Sort by weighted score
-    valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
-    
-    # Apply scene boost if enabled
-    if CFG.SCENE_PRIORITY_MODE:
-        HIGH_THRESHOLD = getattr(CFG, 'SCENE_HIGH_THRESHOLD', 0.50)
-        MAJOR_THRESHOLD = getattr(CFG, 'SCENE_MAJOR_THRESHOLD', 0.70)
-        
-        for r in valid:
-            scene_boost = _sf(r.get("scene_boost"))
-            current_score = _sf(r.get("score_weighted"))
-            
-            if scene_boost >= MAJOR_THRESHOLD:
-                r["score_weighted"] = f"{current_score * 1.3:.3f}"
-            elif scene_boost >= HIGH_THRESHOLD:
-                r["score_weighted"] = f"{current_score * 1.15:.3f}"
-        
-        # Re-sort after boost
-        valid.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
-    
-    # Group by timeslot
-    timeslot_map: Dict[int, List[Dict]] = {}
-    for r in valid:
-        slot = _timeslot_key(r.get("abs_time_epoch"))
-        timeslot_map.setdefault(slot, []).append(r)
-    
-    # Select best representative per timeslot
-    representatives: List[Dict] = []
-    for slot, rows_in_slot in timeslot_map.items():
-        best = max(rows_in_slot, key=lambda r: _sf(r.get("score_weighted")))
-        best["_slot_key"] = slot
-        representatives.append(best)
-    
-    # Sort representatives by score
-    representatives.sort(key=lambda r: _sf(r.get("score_weighted")), reverse=True)
-    
-    # Calculate pool sizes
     target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
-    candidate_fraction = getattr(CFG, 'CANDIDATE_FRACTION', 2.0)
-    pool_size = int(target_clips * candidate_fraction)
+    pool_size = int(target_clips * CFG.CANDIDATE_FRACTION)
     
-    log.info(f"[select] Target clips: {target_clips}")
-    log.info(f"[select] Candidate fraction: {candidate_fraction}x")
-    log.info(f"[select] Pool size: {pool_size} moments")
+    log.info(f"Target clips: {target_clips}")
+    log.info(f"Candidate pool size: {pool_size} moments (×2 = {pool_size*2} rows)")
     
-    # Take top N for candidate pool (LARGE pool, not filtered by gaps yet)
-    candidate_pool = representatives[:pool_size]
+    # Select candidate pool (top scoring pairs)
+    candidate_pairs = [pair for pair, score in pairs_sorted[:pool_size]]
     
-    log.info(f"[select] Selected {len(candidate_pool)} representatives for candidate pool")
+    # Apply gap filter to get recommended pairs
+    recommended_pairs = apply_gap_filter(candidate_pairs, target_clips)
+    log.info(f"Gap-filtered to {len(recommended_pairs)} recommended moments")
     
-    # Apply gap filtering ONLY for marking recommendations (not for pool inclusion)
-    recommended_reps = apply_gap_filter(candidate_pool, CFG.MIN_GAP_BETWEEN_CLIPS, target_clips)
+    # Mark recommended flag
+    recommended_indices = set()
+    for pair in recommended_pairs:
+        recommended_indices.add(pair[0]["index"])
+        recommended_indices.add(pair[1]["index"])
     
-    log.info(f"[select] Gap-filtered to {len(recommended_reps)} recommended moments")
+    # Flatten pairs to rows for output
+    output_rows = []
+    for pair in candidate_pairs:
+        for row in pair:
+            row["recommended"] = "true" if row["index"] in recommended_indices else "false"
+            output_rows.append(row)
     
-    # Build set of recommended indices for fast lookup
-    recommended_indices = {r.get("index") for r in recommended_reps}
+    # Sort output by time
+    output_rows.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
     
-    # Expand ALL candidates to reciprocal pairs
-    final_pool: List[Dict] = []
-    
-    for rep in candidate_pool:
-        slot = rep.get("_slot_key")
-        rows_in_slot = timeslot_map.get(slot, [])
-        partner_idx = rep.get("partner_index", "")
-        partner_row = None
-        
-        # Find partner in same timeslot
-        if partner_idx:
-            for r in rows_in_slot:
-                epoch_diff = abs(_sf(r.get("abs_time_epoch")) - _sf(rep.get("abs_time_epoch")))
-                if r.get("index") == partner_idx and epoch_diff <= CFG.PARTNER_TIME_TOLERANCE_S:
-                    partner_row = r
-                    break
-            
-            # Fall back to index lookup if not in slot
-            if partner_row is None:
-                candidate = index_all.get(partner_idx)
-                if candidate:
-                    epoch_diff = abs(_sf(candidate.get("abs_time_epoch")) - _sf(rep.get("abs_time_epoch")))
-                    if epoch_diff <= CFG.PARTNER_TIME_TOLERANCE_S:
-                        partner_row = candidate
-        
-        # Mark recommendation status
-        rep_is_recommended = rep.get("index") in recommended_indices
-        rep["recommended"] = "true" if rep_is_recommended else "false"
-        final_pool.append(rep)
-        
-        # Add partner (never recommended - only one per moment can be recommended)
-        if partner_row:
-            partner_copy = dict(partner_row)
-            partner_copy["recommended"] = "false"
-            final_pool.append(partner_copy)
-        else:
-            log.warning(
-                f"[select] Missing partner row for {rep.get('index')} "
-                f"(expected partner {partner_idx})"
-            )
-    
-    # Sort chronologically for GUI
-    final_pool.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
-    
-    # Clean internal fields
-    final_pool_cleaned = [_clean_internal_fields(row) for row in final_pool]
-    
-    # Count recommendations
-    rec_count = sum(1 for r in final_pool if r.get("recommended") == "true")
+    _write_csv(select_path(), output_rows)
     
     log.info("=" * 60)
-    log.info(
-        f"SELECT COMPLETE | Pool: {len(candidate_pool)} moments ({len(final_pool)} rows) | "
-        f"Recommended: {rec_count} | Target: {target_clips} | "
-        f"Pool ratio: {len(candidate_pool)/target_clips:.1f}x"
-    )
+    log.info(f"SELECT COMPLETE")
+    log.info(f"Pool: {len(candidate_pairs)} moments ({len(output_rows)} rows)")
+    log.info(f"Recommended: {len(recommended_pairs)} moments")
+    log.info(f"Target: {target_clips}")
+    log.info(f"Pool ratio: {len(candidate_pairs)/target_clips:.1f}x")
     log.info("=" * 60)
     
-    # Write select.csv
-    if final_pool_cleaned:
-        fieldnames = sorted({k for row in final_pool_cleaned for k in row.keys()})
-        with dst.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(final_pool_cleaned)
-    
-    # Extract frames for all candidates
-    extract_frames_for_candidates(final_pool)
+    # Extract frame images for manual review
+    extract_frame_images(output_rows)
     log.info("Ready for manual review")
-    
-    return dst
 
-
-if __name__ == "__main__":
-    run()
+    return select_path()

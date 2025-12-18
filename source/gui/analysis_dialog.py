@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 from pathlib import Path
-from ..utils.selection_analyzer import SelectionAnalyzer, format_analysis_report
+from ..utils.selection_analyzer import analyze_selection
 
 
 class AnalysisDialog(QDialog):
@@ -81,15 +81,12 @@ class AnalysisDialog(QDialog):
         """Run the analysis and display results."""
         self.text_view.setPlainText("Running analysis...")
         self.text_view.repaint()  # Force immediate update
-        
+
         try:
-            analyzer = SelectionAnalyzer(self.project_dir)
-            results = analyzer.analyze()
-            report = format_analysis_report(results)
+            report = analyze_selection()   # <-- call the real report generator
             self.text_view.setPlainText(report)
-            
         except Exception as e:
             self.text_view.setPlainText(
                 f"❌ Analysis failed:\n\n{str(e)}\n\n"
-                f"Make sure you have run the Analyze step first."
+                f"Make sure you have run the Analyze and Select steps first."
             )
