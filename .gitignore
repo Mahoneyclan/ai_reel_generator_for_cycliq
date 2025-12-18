@@ -3,6 +3,7 @@
 assets/
 py_txt/
 dist/
+build/
 
 # Exclude YOLO model weights
 *.pt
