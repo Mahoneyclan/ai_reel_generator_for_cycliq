@@ -3,6 +3,7 @@
 Clip selection step - PAIR-BASED APPROACH
 Works with pre-paired data from enriched.csv.
 Each pair = 1 moment with 2 perspectives (both cameras).
+Only one perspective per moment can be recommended.
 """
 
 from __future__ import annotations
@@ -66,10 +67,7 @@ def build_pairs(rows: List[Dict]) -> List[Tuple[Dict, Dict]]:
 
 
 def score_pair(pair: Tuple[Dict, Dict]) -> float:
-    """
-    Score a pair by taking the maximum score of the two perspectives.
-    We want to select moments where at least one angle is good.
-    """
+    """Score a pair by taking the maximum score of the two perspectives."""
     score1 = _sf(pair[0].get("score_weighted"))
     score2 = _sf(pair[1].get("score_weighted"))
     return max(score1, score2)
@@ -83,11 +81,9 @@ def apply_gap_filter(pairs: List[Tuple[Dict, Dict]], target_clips: int) -> List[
     used_windows = set()
 
     for pair in pairs:
-        # Use first row's timestamp (both should be similar)
         t = int(_sf(pair[0].get("abs_time_epoch")))
         scene_boost = max(_sf(pair[0].get("scene_boost", 0)), _sf(pair[1].get("scene_boost", 0)))
 
-        # Adaptive gap
         effective_gap = CFG.MIN_GAP_BETWEEN_CLIPS
         if scene_boost >= CFG.SCENE_MAJOR_THRESHOLD:
             effective_gap *= CFG.SCENE_MAJOR_GAP_MULTIPLIER
@@ -99,7 +95,6 @@ def apply_gap_filter(pairs: List[Tuple[Dict, Dict]], target_clips: int) -> List[
 
         if window not in used_windows:
             filtered.append(pair)
-            # Block adjacent windows
             for offset in range(-1, 2):
                 used_windows.add(window + offset)
 
@@ -140,14 +135,10 @@ def extract_frame_images(rows: List[Dict]) -> int:
         video_path = Path(row["video_path"])
         frame_number = int(float(row["frame_number"]))
         
-        # Output paths
         primary_out = frames_dir_path / f"{index}_Primary.jpg"
-        
-        # Skip if already exists
         if primary_out.exists():
             continue
         
-        # Extract frame using OpenCV
         try:
             cap = cv2.VideoCapture(str(video_path))
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -177,18 +168,14 @@ def run() -> Path:
         log.warning("No enriched frames found.")
         return select_path()
 
-    # Score all rows
     calc = ScoreCalculator()
     scored = calc.compute_scores(enriched)
-    
-    # Build pairs from scored data
     all_pairs = build_pairs(scored)
     
     if not all_pairs:
         log.error("No valid pairs found in enriched data")
         return select_path()
     
-    # Sort pairs by their combined score
     pairs_with_scores = [(pair, score_pair(pair)) for pair in all_pairs]
     pairs_sorted = sorted(pairs_with_scores, key=lambda x: x[1], reverse=True)
     
@@ -198,40 +185,35 @@ def run() -> Path:
     log.info(f"Target clips: {target_clips}")
     log.info(f"Candidate pool size: {pool_size} moments (×2 = {pool_size*2} rows)")
     
-    # Select candidate pool (top scoring pairs)
     candidate_pairs = [pair for pair, score in pairs_sorted[:pool_size]]
-    
-    # Apply gap filter to get recommended pairs
     recommended_pairs = apply_gap_filter(candidate_pairs, target_clips)
     log.info(f"Gap-filtered to {len(recommended_pairs)} recommended moments")
     
-    # Mark recommended flag
+    # Only one perspective per recommended moment
     recommended_indices = set()
     for pair in recommended_pairs:
-        recommended_indices.add(pair[0]["index"])
-        recommended_indices.add(pair[1]["index"])
+        score1 = _sf(pair[0].get("score_weighted"))
+        score2 = _sf(pair[1].get("score_weighted"))
+        chosen = pair[0] if score1 >= score2 else pair[1]
+        recommended_indices.add(chosen["index"])
     
-    # Flatten pairs to rows for output
     output_rows = []
     for pair in candidate_pairs:
         for row in pair:
             row["recommended"] = "true" if row["index"] in recommended_indices else "false"
             output_rows.append(row)
     
-    # Sort output by time
     output_rows.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
-    
     _write_csv(select_path(), output_rows)
     
     log.info("=" * 60)
-    log.info(f"SELECT COMPLETE")
+    log.info("SELECT COMPLETE")
     log.info(f"Pool: {len(candidate_pairs)} moments ({len(output_rows)} rows)")
     log.info(f"Recommended: {len(recommended_pairs)} moments")
     log.info(f"Target: {target_clips}")
     log.info(f"Pool ratio: {len(candidate_pairs)/target_clips:.1f}x")
     log.info("=" * 60)
     
-    # Extract frame images for manual review
     extract_frame_images(output_rows)
     log.info("Ready for manual review")
 

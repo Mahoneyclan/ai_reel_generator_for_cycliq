@@ -431,21 +431,20 @@ class ManualSelectionWindow(QDialog):
         """)
 
     def _on_perspective_selected(self, container: QFrame):
-        """Handle perspective card selection."""
+        """Handle perspective card selection - enforce 0 or 1 per moment, never 2."""
         moment = container.moment_data
         primary_idx = container.primary_idx
         
         selected_row = moment["rows"][primary_idx]
         other_row = moment["rows"][1 - primary_idx]
         
-        # Toggle selection
         currently_selected = selected_row.get("recommended") == "true"
         
         if currently_selected:
-            # Deselect this perspective
+            # Clicking selected → deselect (allow 0 selected)
             selected_row["recommended"] = "false"
         else:
-            # Select this perspective, deselect other
+            # Clicking unselected → select this, deselect other
             selected_row["recommended"] = "true"
             other_row["recommended"] = "false"
 
@@ -457,7 +456,7 @@ class ManualSelectionWindow(QDialog):
                     row_idx = widget.primary_idx
                     self._apply_perspective_style(widget, moment["rows"][row_idx])
 
-        # Update counter
+        # Update counter - count moments with at least 1 selected perspective
         self.selected_count = sum(
             1 for m in self.moments
             if any(r.get("recommended") == "true" for r in m["rows"])

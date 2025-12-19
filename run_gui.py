@@ -14,7 +14,7 @@ os.environ['QT_MAC_WANTS_LAYER'] = '1'
 import sys
 from pathlib import Path
 import logging 
-from source.config import Config # Import your config class
+from source.config import Config, DEFAULT_CONFIG
 
 # Add project root to path
 project_root = Path(__file__).parent.resolve()
@@ -22,7 +22,7 @@ sys.path.insert(0, str(project_root))
 
 CONSOLE_LOG_LEVEL = logging.WARNING
 logging.basicConfig(
-    level=Config.LOG_LEVEL, 
+    level=DEFAULT_CONFIG.LOG_LEVEL,
     format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
 )
 

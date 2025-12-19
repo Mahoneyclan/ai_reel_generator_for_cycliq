@@ -2,7 +2,7 @@
 """
 Native macOS preferences dialog for streaming pipeline.
 Scene scoring removed (requires JPGs). M1 controls added.
-Now includes YOLO detection classes selection.
+Now includes YOLO detection classes selection and persistent storage.
 """
 
 from __future__ import annotations
@@ -13,10 +13,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget, QWidget, QFormLayout,
     QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
-    QPushButton, QHBoxLayout, QLabel, QSizePolicy, QScrollArea,
-    QGridLayout, QGroupBox
+    QPushButton, QHBoxLayout, QLabel, QSizePolicy, QGridLayout,
+    QGroupBox, QFileDialog, QMessageBox
 )
 
+from ..utils.persistent_config import save_persistent_config, load_persistent_config, clear_persistent_config
 from ..config import DEFAULT_CONFIG as CFG
 
 
@@ -51,6 +52,15 @@ class PreferencesWindow(QDialog):
         self.detect_tab, self.detect_form = self._make_tab("Detection")
         self.yolo_tab = self._make_yolo_tab("YOLO Classes")
         self.m1_tab, self.m1_form = self._make_tab("M1 Performance")
+        self.paths_tab, self.paths_form = self._make_tab("Paths")
+
+        # Populate tabs
+        self._create_core_settings()
+        self._create_video_settings()
+        self._create_detection_settings()
+        self._create_m1_settings()
+        self._create_paths_settings()
+        self.load_current_values()
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -62,35 +72,24 @@ class PreferencesWindow(QDialog):
         btn_layout.addWidget(save_btn)
         layout.addLayout(btn_layout)
 
-        # Populate tabs
-        self._create_core_settings()
-        self._create_video_settings()
-        self._create_detection_settings()
-        self._create_m1_settings()
-        self.load_current_values()
-
         # Global polish: label alignment and growth
-        for form in (self.core_form, self.video_form, self.detect_form, self.m1_form):
+        for form in (self.core_form, self.video_form, self.detect_form, self.m1_form, self.paths_form):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setSpacing(8)
 
     def _make_tab(self, name: str):
-        """Create a tab with a form layout and add it to the tab widget."""
         tab = QWidget()
         form = QFormLayout(tab)
         self.tabs.addTab(tab, name)
         return tab, form
 
     def _make_yolo_tab(self, name: str) -> QWidget:
-        """Create YOLO detection classes tab."""
         tab = QWidget()
         self.tabs.addTab(tab, name)
-        
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Description
+
         description = QLabel(
             "Select which object classes YOLO should detect in your video frames.\n"
             "By default, only 'bicycle' is selected for cycling videos."
@@ -98,125 +97,42 @@ class PreferencesWindow(QDialog):
         description.setWordWrap(True)
         description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
         layout.addWidget(description)
-        
-        # Quick selection buttons
+
         quick_select_layout = QHBoxLayout()
-        
         btn_select_all = QPushButton("Select All")
         btn_select_all.clicked.connect(self._select_all_classes)
-        btn_select_all.setStyleSheet("""
-            QPushButton {
-                background-color: #FFFFFF;
-                color: #333333;
-                padding: 6px 12px;
-                border: 2px solid #DDDDDD;
-                border-radius: 4px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #F8F9FA;
-                border-color: #007AFF;
-            }
-        """)
-        
         btn_select_none = QPushButton("Select None")
         btn_select_none.clicked.connect(self._select_no_classes)
-        btn_select_none.setStyleSheet("""
-            QPushButton {
-                background-color: #FFFFFF;
-                color: #333333;
-                padding: 6px 12px;
-                border: 2px solid #DDDDDD;
-                border-radius: 4px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #F8F9FA;
-                border-color: #FF3B30;
-            }
-        """)
-        
         btn_reset_default = QPushButton("Reset to Default (Bicycle)")
         btn_reset_default.clicked.connect(self._reset_to_default)
-        btn_reset_default.setStyleSheet("""
-            QPushButton {
-                background-color: #F0F9F4;
-                color: #2D7A4F;
-                padding: 6px 12px;
-                border: 2px solid #6EBF8B;
-                border-radius: 4px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #E5F4EC;
-                border-color: #5CAF7B;
-            }
-        """)
-        
         quick_select_layout.addWidget(btn_select_all)
         quick_select_layout.addWidget(btn_select_none)
         quick_select_layout.addWidget(btn_reset_default)
         quick_select_layout.addStretch()
-        
         layout.addLayout(quick_select_layout)
-        
-        # Group box for checkboxes
+
         group_box = QGroupBox("Detection Classes")
-        group_box.setStyleSheet("""
-            QGroupBox {
-                font-size: 13px;
-                font-weight: bold;
-                border: 2px solid #DDD;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 15px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-        
-        # Container for checkboxes - 2 columns
         checkbox_layout = QGridLayout()
-        checkbox_layout.setSpacing(15)
-        checkbox_layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Create checkboxes for cycling-relevant YOLO classes
         all_classes = list(CFG.YOLO_CLASS_MAP.keys())
-        columns = 2
-        
         for idx, class_name in enumerate(all_classes):
-            row = idx // columns
-            col = idx % columns
-            
+            row = idx // 2
+            col = idx % 2
             checkbox = QCheckBox(class_name.title())
-            checkbox.setStyleSheet("font-size: 13px;")
             self.class_checkboxes[class_name] = checkbox
-            
             checkbox_layout.addWidget(checkbox, row, col)
-        
         group_box.setLayout(checkbox_layout)
         layout.addWidget(group_box)
-        
-        # Selected count label
+
         self.selected_count_label = QLabel("Selected: 0 classes")
-        self.selected_count_label.setStyleSheet(
-            "font-size: 12px; font-weight: 600; color: #2D7A4F; padding: 10px;"
-        )
+        self.selected_count_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #2D7A4F; padding: 10px;")
         layout.addWidget(self.selected_count_label)
-        
-        # Add stretch to push everything to the top
         layout.addStretch()
-        
-        # Connect all checkboxes to update count
+
         for checkbox in self.class_checkboxes.values():
             checkbox.stateChanged.connect(self._update_selected_count)
-        
+
         return tab
 
-    # --- Helper methods for adding fields ---
     def _add_line_edit(self, form, label, attr, value):
         widget = _fix_size(QLineEdit(str(value)))
         form.addRow(label, widget)
@@ -243,7 +159,6 @@ class PreferencesWindow(QDialog):
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
-    # --- Settings population ---
     def _create_core_settings(self):
         self._add_doublespinbox(self.core_form, "Extract FPS", "EXTRACT_FPS", CFG.EXTRACT_FPS, 0.5, 10.0, 0.5)
         self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
@@ -282,38 +197,106 @@ class PreferencesWindow(QDialog):
         note = QLabel("M1-specific settings for hardware acceleration")
         note.setStyleSheet("font-style: italic; color: #666;")
         self.m1_form.addRow(note)
-
         self._add_checkbox(self.m1_form, "Use M1 GPU (MPS)", "USE_MPS", CFG.USE_MPS)
         self._add_spinbox(self.m1_form, "YOLO Batch Size (RAM limit)", "YOLO_BATCH_SIZE", CFG.YOLO_BATCH_SIZE, 1, 16)
         self._add_line_edit(self.m1_form, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
 
-    # --- YOLO classes methods ---
+    def _create_paths_settings(self):
+        description = QLabel(
+            "Configure where projects and source videos are stored.\n"
+            "These settings persist across sessions."
+        )
+        description.setWordWrap(True)
+        description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
+        self.paths_form.addRow(description)
+
+        # Projects Root Path
+        projects_layout = QHBoxLayout()
+        self.projects_root_edit = QLineEdit(str(CFG.PROJECTS_ROOT))
+        self.projects_root_edit.setMinimumWidth(400)
+        self.projects_root_edit.setReadOnly(True)
+        projects_browse_btn = QPushButton("Browse...")
+        projects_browse_btn.clicked.connect(self._browse_projects_root)
+        projects_layout.addWidget(self.projects_root_edit)
+        projects_layout.addWidget(projects_browse_btn)
+        self.paths_form.addRow("Projects Output Folder:", projects_layout)
+
+        # Input Base Dir Path
+        input_layout = QHBoxLayout()
+        self.input_base_edit = QLineEdit(str(CFG.INPUT_BASE_DIR))
+        self.input_base_edit.setMinimumWidth(400)
+        self.input_base_edit.setReadOnly(True)
+        input_browse_btn = QPushButton("Browse...")
+        input_browse_btn.clicked.connect(self._browse_input_base)
+        input_layout.addWidget(self.input_base_edit)
+        input_layout.addWidget(input_browse_btn)
+        self.paths_form.addRow("Source Videos Folder:", input_layout)
+
+        help_text = QLabel(
+            "<b>Projects Output:</b> Where all generated content is stored<br>"
+            "<b>Source Videos:</b> Where your raw MP4 and GPX files are located"
+        )
+        help_text.setWordWrap(True)
+        help_text.setStyleSheet("font-size: 11px; color: #888; padding: 10px;")
+        self.paths_form.addRow(help_text)
+
+        reset_layout = QHBoxLayout()
+        reset_btn = QPushButton("Reset All Preferences to Defaults")
+        reset_btn.clicked.connect(self._reset_all_preferences)
+        reset_layout.addStretch()
+        reset_layout.addWidget(reset_btn)
+        reset_layout.addStretch()
+        self.paths_form.addRow("", reset_layout)
+
+    def _browse_projects_root(self):
+        current = self.projects_root_edit.text()
+        folder = QFileDialog.getExistingDirectory(self, "Select Projects Output Folder", current)
+        if folder:
+            self.projects_root_edit.setText(folder)
+
+    def _browse_input_base(self):
+        current = self.input_base_edit.text()
+        folder = QFileDialog.getExistingDirectory(self, "Select Source Videos Folder", current)
+        if folder:
+            self.input_base_edit.setText(folder)
+
+    def _reset_all_preferences(self):
+        reply = QMessageBox.question(
+            self,
+            "Reset All Preferences",
+            "This will reset ALL preferences to their default values.\n\n"
+            "This action cannot be undone. Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            clear_persistent_config()
+            QMessageBox.information(
+                self,
+                "Preferences Reset",
+                "All preferences have been reset to defaults.\n\n"
+                "Please restart the application for changes to take effect."
+            )
+            self.reject()
+
     def _select_all_classes(self):
-        """Select all detection classes."""
         for checkbox in self.class_checkboxes.values():
             checkbox.setChecked(True)
 
     def _select_no_classes(self):
-        """Deselect all detection classes."""
         for checkbox in self.class_checkboxes.values():
             checkbox.setChecked(False)
 
     def _reset_to_default(self):
-        """Reset to default selection (bicycle only)."""
         for class_name, checkbox in self.class_checkboxes.items():
             checkbox.setChecked(class_name == "bicycle")
 
     def _update_selected_count(self):
-        """Update the label showing how many classes are selected."""
         count = sum(1 for cb in self.class_checkboxes.values() if cb.isChecked())
         self.selected_count_label.setText(f"Selected: {count} class{'es' if count != 1 else ''}")
 
-    # --- Value loading and overrides ---
     def load_current_values(self):
-        """Load values from DEFAULT_CONFIG into widgets."""
         cfg = CFG
-        
-        # Load standard config values
         for attr, widget in self.overrides.items():
             val = getattr(cfg, attr, None)
             if val is None:
@@ -326,41 +309,35 @@ class PreferencesWindow(QDialog):
                 widget.setValue(float(val))
             elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(val))
-        
-        # Load YOLO detection classes
+
         current_ids = getattr(cfg, 'YOLO_DETECT_CLASSES', [1])
         for class_name, class_id in CFG.YOLO_CLASS_MAP.items():
             if class_name in self.class_checkboxes:
                 self.class_checkboxes[class_name].setChecked(class_id in current_ids)
-        
         self._update_selected_count()
 
     def get_overrides(self) -> Dict[str, Any]:
-        """Collect all overrides from UI widgets."""
         overrides: Dict[str, Any] = {}
-        
-        # Collect standard overrides
         for attr, widget in self.overrides.items():
             if isinstance(widget, QLineEdit):
-                text = widget.text().strip()
-                current = getattr(CFG, attr, None)
-                if isinstance(current, Path):
-                    overrides[attr] = Path(text)
-                else:
-                    overrides[attr] = text
+                overrides[attr] = widget.text().strip()
             elif isinstance(widget, QSpinBox):
                 overrides[attr] = widget.value()
             elif isinstance(widget, QDoubleSpinBox):
                 overrides[attr] = widget.value()
             elif isinstance(widget, QCheckBox):
                 overrides[attr] = widget.isChecked()
-        
-        # Collect YOLO detection class IDs
+
         selected_ids = [
             CFG.YOLO_CLASS_MAP[class_name]
             for class_name, checkbox in self.class_checkboxes.items()
             if checkbox.isChecked()
         ]
         overrides['YOLO_DETECT_CLASSES'] = selected_ids
-        
+
+        # Only persist the two root paths
+        overrides['PROJECTS_ROOT'] = Path(self.projects_root_edit.text())
+        overrides['INPUT_BASE_DIR'] = Path(self.input_base_edit.text())
+
+        save_persistent_config(overrides)
         return overrides

@@ -1,15 +1,17 @@
 # gitignore
-# Exclude assets (images, audio, etc.)
+# Exclude folder
 assets/
 py_txt/
 dist/
 build/
 
+# Exclude virtual environments
+venv/
+.venv/
+
 # Exclude YOLO model weights
 *.pt
 
-# Exclude py_txt folder (text artifacts)
-source/py_txt/
 
 # Exclude Python cache files
 __pycache__/
@@ -17,17 +19,12 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Exclude virtual environments
-venv/
-.venv/
-
 # Exclude macOS system files
 .DS_Store
 
 # Exclude logs or temp files
 *.log
 *.tmp
-
 
 # Exclude strava config file 
 source/strava/strava_config.py
