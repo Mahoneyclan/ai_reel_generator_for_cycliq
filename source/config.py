@@ -38,13 +38,15 @@ class Config:
         default_factory=lambda: Path(_get_config_value('PROJECTS_ROOT', '/Volumes/GDrive/Fly_Projects'))
     )
 
-
     # --- Core pipeline settings ---
     RIDE_FOLDER: str = ""
     SOURCE_FOLDER: str = ""
-    
-    EXTRACT_FPS: float = field(default_factory=lambda: _get_config_value('EXTRACT_FPS', 1.0))
-    
+
+    # Sampling interval in seconds (time-based, not FPS)
+    EXTRACT_INTERVAL_SECONDS: int = field(
+        default_factory=lambda: _get_config_value('EXTRACT_INTERVAL_SECONDS', 5)
+    )
+
     HIGHLIGHT_TARGET_DURATION_S: float = field(
         default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_S', 180.0)
     )
@@ -88,14 +90,14 @@ class Config:
 
     YOLO_AVAILABLE_CLASSES = [
         "person",
-        "bicycle", 
+        "bicycle",
         "car",
         "motorcycle",
         "truck",
         "traffic light",
         "stop sign"
     ]
-    
+
     # --- Detection settings ---
     YOLO_DETECT_CLASSES: list = field(
         default_factory=lambda: _get_config_value('YOLO_DETECT_CLASSES', [1])
@@ -119,7 +121,7 @@ class Config:
     REQUIRE_GPS_FOR_SELECTION: bool = field(
         default_factory=lambda: _get_config_value('REQUIRE_GPS_FOR_SELECTION', False)
     )
-    
+
     # --- Zone filtering ---
     START_ZONE_DURATION_S: float = field(
         default_factory=lambda: _get_config_value('START_ZONE_DURATION_S', 1200.0)
@@ -130,7 +132,7 @@ class Config:
     MAX_START_ZONE_FRAC: float = field(
         default_factory=lambda: _get_config_value('MAX_START_ZONE_FRAC', 0.10)
     )
-    
+
     END_ZONE_DURATION_S: float = field(
         default_factory=lambda: _get_config_value('END_ZONE_DURATION_S', 1200.0)
     )
@@ -175,47 +177,47 @@ class Config:
     @property
     def PROJECT_DIR(self) -> Path:
         return self.PROJECTS_ROOT / self.RIDE_FOLDER
-    
+
     @property
     def INPUT_DIR(self) -> Path:
         return self.INPUT_BASE_DIR / self.SOURCE_FOLDER
-    
+
     @property
     def INPUT_VIDEOS_DIR(self) -> Path:
         return self.INPUT_DIR
-    
+
     @property
     def INPUT_GPX_FILE(self) -> Path:
         return self.INPUT_DIR / "ride.gpx"
-    
+
     @property
     def FINAL_REEL_PATH(self) -> Path:
         return self.PROJECT_DIR / f"{self.RIDE_FOLDER}.mp4"
-    
+
     @property
     def LOG_DIR(self) -> Path:
         return self.PROJECT_DIR / "logs"
-    
+
     @property
     def WORKING_DIR(self) -> Path:
         return self.PROJECT_DIR / "working"
-    
+
     @property
     def CLIPS_DIR(self) -> Path:
         return self.PROJECT_DIR / "clips"
-    
+
     @property
     def FRAMES_DIR(self) -> Path:
         return self.PROJECT_DIR / "frames"
-    
+
     @property
     def SPLASH_ASSETS_DIR(self) -> Path:
         return self.PROJECT_DIR / "splash_assets"
-    
+
     @property
     def MINIMAP_DIR(self) -> Path:
         return self.PROJECT_DIR / "minimaps"
-    
+
     @property
     def GAUGE_DIR(self) -> Path:
         return self.PROJECT_DIR / "gauges"
@@ -244,9 +246,10 @@ class Config:
     MAP_PADDING_PCT: float = 0.25
     MAP_ZOOM_PIP: int = 14
     MAP_ZOOM_SPLASH: int = 12
-
-    # --- Splash map settings ---
     MAP_SPLASH_SIZE: tuple[int, int] = (2560, 1440)
+    MAP_BASEMAP_PROVIDER: str = field(
+        default_factory=lambda: _get_config_value('MAP_BASEMAP_PROVIDER', 'OpenStreetMap.Mapnik')
+    )
 
     # --- HUD ---
     HUD_ANCHOR: str = "bottom_left"

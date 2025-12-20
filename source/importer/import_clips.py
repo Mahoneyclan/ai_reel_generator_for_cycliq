@@ -46,12 +46,16 @@ def _rsync_copy(src: Path, dst: Path, cam: str) -> Tuple[bool, str, str, float, 
         # Time the copy operation
         start_time = time.time()
         
-        # Add timeout to prevent hanging (30 seconds per file should be plenty)
+        # Increased timeout: 10 minutes per file for large video files
+        # Calculate dynamic timeout based on file size (assume minimum 5MB/s transfer)
+        min_speed = 5 * 1024 * 1024  # 5 MB/s minimum expected speed
+        dynamic_timeout = max(300, file_size / min_speed)  # At least 5 minutes, or longer for huge files
+        
         result = subprocess.run(
             cmd, 
             capture_output=True, 
             text=True,
-            timeout=30
+            timeout=dynamic_timeout
         )
         
         duration = time.time() - start_time
@@ -64,7 +68,7 @@ def _rsync_copy(src: Path, dst: Path, cam: str) -> Tuple[bool, str, str, float, 
         
     except subprocess.TimeoutExpired:
         duration = time.time() - start_time
-        return (False, cam, f"{dst.name}: Timeout - file copy took too long", duration, 0)
+        return (False, cam, f"{dst.name}: Timeout - file copy took too long (>{dynamic_timeout:.0f}s)", duration, 0)
     except Exception as e:
         return (False, cam, f"{dst.name}: {str(e)}", 0, 0)
 
@@ -148,7 +152,7 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
             log_callback(f"Found {file_count} files from {cam_selection}", "info")
 
         if not files_to_copy:
-            log_callback("⚠️  No clips found matching the date", "warning")
+            log_callback("⚠️ No clips found matching the date", "warning")
             log_callback(f"Looking for files from date: {ride_date}", "info")
             return
 
@@ -205,16 +209,16 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
             
             log_callback(f"✓ Import complete! Copied {copied_count} clips", "success")
             log_callback(f"📊 Total size: {_format_size(total_bytes)}", "success")
-            log_callback(f"⏱️  Total time: {total_duration:.1f}s", "success")
+            log_callback(f"⏱️ Total time: {total_duration:.1f}s", "success")
             log_callback(f"⚡ Average speed: {_format_speed(avg_speed)}", "success")
             
             for cam, count in camera_counts.items():
                 log_callback(f"  • {cam}: {count} clips", "success")
         else:
-            log_callback("⚠️  No clips were copied", "warning")
+            log_callback("⚠️ No clips were copied", "warning")
 
         if failed_count > 0:
-            log_callback(f"⚠️  {failed_count} files failed to copy", "warning")
+            log_callback(f"⚠️ {failed_count} files failed to copy", "warning")
 
     except Exception as e:
         log_callback(f"❌ Import failed: {e}", "error")

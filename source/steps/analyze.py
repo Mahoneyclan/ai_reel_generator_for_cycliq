@@ -46,7 +46,7 @@ class FrameAnalyzer:
         self.object_detector = ObjectDetector()
         self.scene_detector = SceneDetector(
             comparison_window_s=scene_comparison_window_s,
-            fps=CFG.EXTRACT_FPS
+            fps=1.0 / float(CFG.EXTRACT_INTERVAL_SECONDS)
         )
         self.gps_enricher = GPSEnricher()
         self.partner_matcher = PartnerMatcher()

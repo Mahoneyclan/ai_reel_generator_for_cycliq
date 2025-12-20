@@ -20,6 +20,7 @@ from ..utils.progress_reporter import progress_iter, report_progress
 log = setup_logger("steps.extract")
 FFMPEG_COMMON = ["-hide_banner", "-loglevel", "error", "-y", "-nostdin"]
 
+
 def _probe_meta(video_path: Path) -> tuple[datetime, float, float]:
     """Extract creation_time, duration, and FPS from video."""
     out = subprocess.check_output([
@@ -39,6 +40,7 @@ def _probe_meta(video_path: Path) -> tuple[datetime, float, float]:
     fps = float(fps_str.split("/")[0]) / float(fps_str.split("/")[1])
     return raw_dt, duration_s, fps
 
+
 def _get_camera_offset(camera: str) -> float:
     """Get time offset for camera from camera_offsets.json (if exists) or config."""
     offsets_file = camera_offsets_path()
@@ -51,8 +53,9 @@ def _get_camera_offset(camera: str) -> float:
                     return float(offsets[camera])
         except Exception as e:
             log.warning(f"[extract] Failed to load camera offsets from JSON: {e}")
-    
+
     return CFG.CAMERA_TIME_OFFSETS.get(camera, 0.0)
+
 
 def _derive_camera_and_clip(vp: Path) -> tuple[str, int, str]:
     """Parse camera name and clip number from filename."""
@@ -65,13 +68,14 @@ def _derive_camera_and_clip(vp: Path) -> tuple[str, int, str]:
     clip_id = f"{clip_num:04d}"
     return camera, clip_num, clip_id
 
+
 def _get_gpx_start_epoch() -> float:
     """Load GPX start epoch for filtering; returns 0 if unavailable."""
     gp = flatten_path()
     if not gp.exists():
         log.warning("[extract] No GPX data available, will extract all frames")
         return 0.0
-    
+
     try:
         with gp.open() as f:
             reader = csv.DictReader(f)
@@ -80,10 +84,15 @@ def _get_gpx_start_epoch() -> float:
                 return float(first["gpx_epoch"])
     except Exception as e:
         log.warning(f"[extract] Could not read GPX start: {e}")
-    
+
     return 0.0
 
-def _extract_single_video(vp: Path, target_fps: float, gpx_start_epoch: float) -> List[Dict[str, str]]:
+
+def _extract_single_video(
+    vp: Path,
+    sampling_interval_s: int,
+    gpx_start_epoch: float
+) -> List[Dict[str, str]]:
     """Generate frame metadata for one video without extracting images, with live progress reporting."""
     camera, clip_num, clip_id = _derive_camera_and_clip(vp)
     raw_dt, duration_s, video_fps = _probe_meta(vp)
@@ -107,61 +116,53 @@ def _extract_single_video(vp: Path, target_fps: float, gpx_start_epoch: float) -
     if duration_s <= 0:
         return []
 
-    # Calculate frame sampling interval
-    frame_interval = max(1, int(video_fps / target_fps))
-    target_frame_duration = 1.0 / target_fps
-
-    # Estimate total frames for progress reporting
-    total_frames = int(duration_s / target_frame_duration)
-
     rows: List[Dict[str, str]] = []
-    frame_idx = 0
+    num_seconds = int(duration_s)
+    effective_fps = 1.0 / float(sampling_interval_s)
 
-    # Wrap iteration with progress_iter for GUI progress bar
-    for frame_idx in progress_iter(range(0, total_frames, frame_interval),
-                                   desc=f"Extract {vp.name}", unit="frame"):
-        session_ts_s = frame_idx * target_frame_duration
-        abs_dt_utc = adjusted_utc + timedelta(seconds=session_ts_s)
+    for sec in progress_iter(
+        range(0, num_seconds, sampling_interval_s),
+        desc=f"Extract {vp.name}",
+        unit="sec"
+    ):
+        abs_dt_utc = adjusted_utc + timedelta(seconds=sec)
         abs_epoch = abs_dt_utc.timestamp()
 
         # Skip frames before GPX start time
         if gpx_start_epoch > 0 and abs_epoch < gpx_start_epoch:
             continue
 
-        virtual_frame_num = frame_idx
-        index = f"{camera}_{clip_id}_{virtual_frame_num:06d}"
+        frame_number = int(sec * video_fps)
+        index = f"{camera}_{clip_id}_{sec:06d}"
 
         rows.append({
             "index": index,
             "camera": camera,
             "clip_num": str(clip_num),
-            "frame_number": str(frame_idx),
+            "frame_number": str(frame_number),
             "video_path": str(vp),
-            "frame_interval": str(frame_interval),
-            "fps": f"{target_fps:.3f}",
-            "session_ts_s": f"{session_ts_s:.3f}",
+            "frame_interval": str(sampling_interval_s),
+            "fps": f"{effective_fps:.3f}",
+            "session_ts_s": f"{sec:.3f}",
             "abs_time_iso": abs_dt_utc.isoformat(),
             "abs_time_epoch": f"{abs_epoch:.3f}",
             "camera_offset_s": f"{camera_offset_s:.3f}",
-            "path": f"{camera}/{clip_id}_{virtual_frame_num:06d}.jpg",
+            "path": f"{camera}/{clip_id}_{sec:06d}.jpg",
             "source": vp.name,
             "raw_creation_time": creation_local.isoformat(),
             "duration_s": f"{duration_s:.3f}",
             "adjusted_start_time": adjusted_local.isoformat(),
         })
 
-        # Optional: debug log every N frames
-        if frame_idx % 500 == 0:
-            log.debug(f"[extract] {vp.name}: processed frame {frame_idx}/{total_frames}")
-
     log.info(f"[extract] Finished extracting {len(rows)} frames from {vp.name}")
     return rows
+
 
 def run() -> Path:
     """Generate frame metadata CSV without writing any image files."""
     out_csv = _mk(extract_path())
     videos = sorted(CFG.INPUT_VIDEOS_DIR.glob("*_*.MP4"))
-    
+
     if not videos:
         log.warning("[extract] No videos found")
         with out_csv.open("w", newline="") as f:
@@ -172,24 +173,28 @@ def run() -> Path:
             ])
             writer.writeheader()
         return out_csv
-    
-    target_fps = CFG.EXTRACT_FPS
+
+    sampling_interval_s = int(CFG.EXTRACT_INTERVAL_SECONDS)
+    effective_fps = 1.0 / float(sampling_interval_s)
     gpx_start_epoch = _get_gpx_start_epoch()
-    
-    log.info(f"[extract] Processing {len(videos)} videos at {target_fps:.1f} FPS (streaming mode)")
-    
+
+    log.info(
+        f"[extract] Processing {len(videos)} videos with sampling interval "
+        f"{sampling_interval_s:d}s (~{effective_fps:.3f} FPS) (streaming mode)"
+    )
+
     # Process videos with progress reporting
     all_rows: List[Dict[str, str]] = []
     for vp in progress_iter(videos, desc="Extracting metadata", unit="video"):
         try:
-            rows = _extract_single_video(vp, target_fps, gpx_start_epoch)
+            rows = _extract_single_video(vp, sampling_interval_s, gpx_start_epoch)
             all_rows.extend(rows)
         except Exception as e:
             log.error(f"[extract] Failed {vp.name}: {e}")
-    
+
     # Write metadata CSV
     report_progress(1, 1, "Writing metadata CSV...")
-    
+
     if all_rows:
         with out_csv.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=list(all_rows[0].keys()))
@@ -205,8 +210,9 @@ def run() -> Path:
                 "path", "source", "raw_creation_time", "duration_s", "adjusted_start_time"
             ])
             writer.writeheader()
-    
+
     return out_csv
+
 
 if __name__ == "__main__":
     run()

@@ -2,7 +2,7 @@
 """
 Native macOS preferences dialog for streaming pipeline.
 Scene scoring removed (requires JPGs). M1 controls added.
-Now includes YOLO detection classes selection and persistent storage.
+Now includes YOLO detection classes selection, score weights, and persistent storage.
 """
 
 from __future__ import annotations
@@ -48,18 +48,21 @@ class PreferencesWindow(QDialog):
 
         # Tabs with form layouts
         self.core_tab, self.core_form = self._make_tab("Core")
-        self.video_tab, self.video_form = self._make_tab("Video")
-        self.detect_tab, self.detect_form = self._make_tab("Detection")
-        self.yolo_tab = self._make_yolo_tab("YOLO Classes")
-        self.m1_tab, self.m1_form = self._make_tab("M1 Performance")
+        self.score_tab, self.score_form = self._make_tab("Score Weights")
         self.paths_tab, self.paths_form = self._make_tab("Paths")
+        self.yolo_tab = self._make_yolo_tab("Detection Classes")
+        self.detect_tab, self.detect_form = self._make_tab("Detection Settings")
+        self.video_tab, self.video_form = self._make_tab("Video Settings")
+        self.m1_tab, self.m1_form = self._make_tab("M1 Performance")
 
         # Populate tabs
         self._create_core_settings()
-        self._create_video_settings()
+        self._create_score_settings()
+        self._create_paths_settings()
         self._create_detection_settings()
         self._create_m1_settings()
-        self._create_paths_settings()
+        self._create_video_settings()
+
         self.load_current_values()
 
         # Buttons
@@ -73,7 +76,10 @@ class PreferencesWindow(QDialog):
         layout.addLayout(btn_layout)
 
         # Global polish: label alignment and growth
-        for form in (self.core_form, self.video_form, self.detect_form, self.m1_form, self.paths_form):
+        for form in (
+            self.core_form, self.video_form, self.detect_form,
+            self.m1_form, self.paths_form, self.score_form
+        ):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setSpacing(8)
@@ -160,16 +166,96 @@ class PreferencesWindow(QDialog):
         self.overrides[attr] = widget
 
     def _create_core_settings(self):
-        self._add_doublespinbox(self.core_form, "Extract FPS", "EXTRACT_FPS", CFG.EXTRACT_FPS, 0.5, 10.0, 0.5)
-        self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
-        self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
-        self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
-        self._add_doublespinbox(self.core_form, "Min Gap Between Clips (s)", "MIN_GAP_BETWEEN_CLIPS", CFG.MIN_GAP_BETWEEN_CLIPS, 30, 300, 10)
-        self._add_doublespinbox(self.core_form, "Scene Comparison Window (s)", "SCENE_COMPARISON_WINDOW_S", CFG.SCENE_COMPARISON_WINDOW_S, 1.0, 15.0, 0.5)
-        self._add_doublespinbox(self.core_form, "Start Zone Duration (s)", "START_ZONE_DURATION_S", CFG.START_ZONE_DURATION_S, 0, 1800, 60)
-        self._add_doublespinbox(self.core_form, "Max Start Zone Fraction", "MAX_START_ZONE_FRAC", CFG.MAX_START_ZONE_FRAC, 0, 1, 0.05)
-        self._add_doublespinbox(self.core_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
-        self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
+        # Sampling interval in seconds (time-based sampling, replaces Extract FPS)
+        self._add_spinbox(
+            self.core_form,
+            "Sampling Interval (s)",
+            "EXTRACT_INTERVAL_SECONDS",
+            int(CFG.EXTRACT_INTERVAL_SECONDS),
+            1,
+            60,
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Target Duration (s)",
+            "HIGHLIGHT_TARGET_DURATION_S",
+            CFG.HIGHLIGHT_TARGET_DURATION_S,
+            30,
+            600,
+            30
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Clip Pre-Roll (s)",
+            "CLIP_PRE_ROLL_S",
+            CFG.CLIP_PRE_ROLL_S,
+            0,
+            2,
+            0.1
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Clip Duration (s)",
+            "CLIP_OUT_LEN_S",
+            CFG.CLIP_OUT_LEN_S,
+            1,
+            10,
+            0.1
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Min Gap Between Clips (s)",
+            "MIN_GAP_BETWEEN_CLIPS",
+            CFG.MIN_GAP_BETWEEN_CLIPS,
+            30,
+            300,
+            10
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Scene Comparison Window (s)",
+            "SCENE_COMPARISON_WINDOW_S",
+            CFG.SCENE_COMPARISON_WINDOW_S,
+            1.0,
+            15.0,
+            0.5
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Start Zone Duration (s)",
+            "START_ZONE_DURATION_S",
+            CFG.START_ZONE_DURATION_S,
+            0,
+            1800,
+            60
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Max Start Zone Fraction",
+            "MAX_START_ZONE_FRAC",
+            CFG.MAX_START_ZONE_FRAC,
+            0,
+            1,
+            0.05
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "End Zone Duration (s)",
+            "END_ZONE_DURATION_S",
+            CFG.END_ZONE_DURATION_S,
+            0,
+            1800,
+            60
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Max End Zone Fraction",
+            "MAX_END_ZONE_FRAC",
+            CFG.MAX_END_ZONE_FRAC,
+            0,
+            1,
+            0.05
+        )
 
     def _create_video_settings(self):
         self._add_line_edit(self.video_form, "Video Codec", "VIDEO_CODEC", CFG.VIDEO_CODEC)
@@ -200,6 +286,24 @@ class PreferencesWindow(QDialog):
         self._add_checkbox(self.m1_form, "Use M1 GPU (MPS)", "USE_MPS", CFG.USE_MPS)
         self._add_spinbox(self.m1_form, "YOLO Batch Size (RAM limit)", "YOLO_BATCH_SIZE", CFG.YOLO_BATCH_SIZE, 1, 16)
         self._add_line_edit(self.m1_form, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
+
+    def _create_score_settings(self):
+        """Create score weights settings tab."""
+        description = QLabel(
+            "Adjust relative weights used in scoring clips.\n"
+            "Values should sum to ~1.0 for balanced scoring."
+        )
+        description.setWordWrap(True)
+        description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
+        self.score_form.addRow(description)
+
+        for key, val in CFG.SCORE_WEIGHTS.items():
+            widget = _fix_size(QDoubleSpinBox())
+            widget.setRange(0.0, 1.0)
+            widget.setSingleStep(0.05)
+            widget.setValue(val)
+            self.score_form.addRow(key.replace("_", " ").title(), widget)
+            self.overrides[f"SCORE_WEIGHTS.{key}"] = widget
 
     def _create_paths_settings(self):
         description = QLabel(
@@ -279,6 +383,7 @@ class PreferencesWindow(QDialog):
             )
             self.reject()
 
+    # --- YOLO helper methods (restored) ---
     def _select_all_classes(self):
         for checkbox in self.class_checkboxes.values():
             checkbox.setChecked(True)
@@ -298,6 +403,12 @@ class PreferencesWindow(QDialog):
     def load_current_values(self):
         cfg = CFG
         for attr, widget in self.overrides.items():
+            if attr.startswith("SCORE_WEIGHTS."):
+                key = attr.split(".", 1)[1]
+                val = CFG.SCORE_WEIGHTS.get(key, 0.0)
+                widget.setValue(float(val))
+                continue
+
             val = getattr(cfg, attr, None)
             if val is None:
                 continue
@@ -338,6 +449,14 @@ class PreferencesWindow(QDialog):
         # Only persist the two root paths
         overrides['PROJECTS_ROOT'] = Path(self.projects_root_edit.text())
         overrides['INPUT_BASE_DIR'] = Path(self.input_base_edit.text())
+
+        # Collect score weights
+        score_weights = {}
+        for attr, widget in self.overrides.items():
+            if attr.startswith("SCORE_WEIGHTS."):
+                key = attr.split(".", 1)[1]
+                score_weights[key] = widget.value()
+        overrides['SCORE_WEIGHTS'] = score_weights
 
         save_persistent_config(overrides)
         return overrides
