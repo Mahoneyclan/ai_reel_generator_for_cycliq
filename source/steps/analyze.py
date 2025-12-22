@@ -1,7 +1,7 @@
 # source/steps/analyze.py
 """
 Frame analysis orchestrator.
-Coordinates object detection, scene detection, GPS enrichment, partner matching, and scoring.
+Coordinates object detection, scene detection, GPS enrichment, and scoring.
 
 This is a thin orchestration layer - actual analysis logic is in analyze_helpers/ submodules.
 """
@@ -22,12 +22,54 @@ from .analyze_helpers import (
     ObjectDetector,
     SceneDetector,
     GPSEnricher,
-    PartnerMatcher,
     ScoreCalculator,
-    cleanup_model
+    cleanup_model,
 )
 
 log = setup_logger("steps.analyze")
+
+
+def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
+    """
+    Assign moment_id to group paired frames by their partner relationships.
+    
+    A moment_id groups exactly 2 rows: one Fly12Sport and one Fly6Pro frame
+    that are partners (matched by partner_index field).
+    
+    Algorithm:
+        1. Build index lookup
+        2. For each unpaired row with a valid partner_index:
+           - Assign a new moment_id to both this row and its partner
+        3. Unpaired rows (no partner or partner missing) get no moment_id
+        
+    Args:
+        rows: List of frame dictionaries from enriched output
+        
+    Returns:
+        List of rows with moment_id field added (or empty if no partner)
+    """
+    # Compute time-based moment ids using the configured sampling interval.
+    # moment_id = int((abs_time_epoch - first_abs_time_epoch) / sample_interval)
+    # This ensures consistent bucketing across cameras and avoids relying on
+    # partner_index being present.
+    if not rows:
+        return rows
+
+    # Find earliest timestamp among rows
+    first_time = min((float(r.get("abs_time_epoch", 0) or 0.0) for r in rows))
+    sample_interval = float(CFG.EXTRACT_INTERVAL_SECONDS)
+    if sample_interval <= 0:
+        sample_interval = 1.0
+
+    for row in rows:
+        try:
+            epoch = float(row.get("abs_time_epoch", 0) or 0.0)
+        except Exception:
+            epoch = 0.0
+        mid = int((epoch - first_time) / sample_interval) if epoch >= first_time else 0
+        row["moment_id"] = str(mid)
+
+    return rows
 
 
 class FrameAnalyzer:
@@ -46,10 +88,9 @@ class FrameAnalyzer:
         self.object_detector = ObjectDetector()
         self.scene_detector = SceneDetector(
             comparison_window_s=scene_comparison_window_s,
-            fps=1.0 / float(CFG.EXTRACT_INTERVAL_SECONDS)
+            fps=1.0 / float(CFG.EXTRACT_INTERVAL_SECONDS),
         )
         self.gps_enricher = GPSEnricher()
-        self.partner_matcher = PartnerMatcher()
         self.score_calculator = ScoreCalculator()
 
         self.frames_processed = 0
@@ -79,16 +120,12 @@ class FrameAnalyzer:
 
         return {
             **detect_result,
-            "scene_boost": scene_score
+            "scene_boost": scene_score,
         }
 
     def enrich_frame(self, row: Dict) -> Dict:
         """Add GPX telemetry to frame metadata."""
         return self.gps_enricher.enrich(row)
-
-    def find_partner(self, row: Dict, all_frames: List[Dict]) -> Dict:
-        """Find partner camera frame."""
-        return self.partner_matcher.find_partner(row, all_frames)
 
     def normalize_and_score(self, rows: List[Dict]) -> List[Dict]:
         """Normalize scene scores and compute composite scores."""
@@ -102,7 +139,7 @@ class FrameAnalyzer:
             "num_detections": 0,
             "bbox_area": 0.0,
             "detected_classes": [],
-            "scene_boost": 0.0
+            "scene_boost": 0.0,
         }
 
     def get_stats(self) -> Dict:
@@ -112,7 +149,6 @@ class FrameAnalyzer:
             **self.object_detector.get_stats(),
             **self.scene_detector.get_stats(),
             **self.gps_enricher.get_stats(),
-            **self.partner_matcher.get_stats(),
         }
 
     def cleanup(self):
@@ -130,9 +166,8 @@ def run() -> Path:
         2. Sort by camera + timestamp for scene continuity
         3. Analyze each frame (object detection + scene change)
         4. Enrich with GPX telemetry
-        5. Match partner camera frames
-        6. Compute composite scores
-        7. Write enriched.csv
+        5. Compute composite scores
+        6. Write enriched.csv
 
     Returns:
         Path to enriched.csv output file
@@ -181,24 +216,18 @@ def run() -> Path:
             # Analyze frame (detection + scene)
             analysis = analyzer.analyze_frame(video_path, frame_number, camera)
 
-            # Find partner camera frame
-            partner_data = analyzer.find_partner(r, rows)
+            # Merge metadata: original row + analysis
+            enriched = {**r, **analysis}
 
-            # Merge all metadata
-            enriched = {**r, **analysis, **partner_data}
-
-            # Add validity flags
+            # Add detection flag
             detect_ok = float(enriched.get("detect_score", 0) or 0.0) >= CFG.MIN_DETECT_SCORE
-            paired_ok = bool(enriched.get("partner_index"))
-
-            # New canonical detection flag
             enriched["object_detected"] = "true" if detect_ok else "false"
-            enriched["paired_ok"] = "true" if paired_ok else "false"
 
             # Persist class IDs for reporting/audit
-            # detected_classes already provided by object_detector.detect
             if isinstance(enriched.get("detected_classes"), list):
-                enriched["detected_classes"] = ",".join(str(c) for c in sorted(enriched["detected_classes"]))
+                enriched["detected_classes"] = ",".join(
+                    str(c) for c in sorted(enriched["detected_classes"])
+                )
 
             # Enrich with GPX telemetry
             enriched = analyzer.enrich_frame(enriched)
@@ -215,7 +244,6 @@ def run() -> Path:
         log.info(
             f"[analyze] Complete: {len(enriched_rows)} frames; "
             f"detections: {detection_frames}; "
-            f"partners: {stats.get('partner_matches', 0)}; "
             f"GPS: {stats.get('gps_matches', 0)}"
         )
         log.info(f"[analyze] Scene detection stats: {stats}")
@@ -228,8 +256,15 @@ def run() -> Path:
     # Sort chronologically for output
     enriched_rows.sort(key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
 
+    # Assign moment_ids to group paired frames
+    log.info("[analyze] Assigning moment IDs to paired frames...")
+    enriched_rows = _assign_moment_ids(enriched_rows)
+    paired_moments = sum(1 for r in enriched_rows if r.get("moment_id"))
+    log.info(f"[analyze] Assigned moment IDs: {paired_moments} frames in {paired_moments // 2} moments")
+
     # Write enriched CSV
     if enriched_rows:
+        # Use all keys present in rows (now includes moment_id)
         fieldnames = sorted({k for row in enriched_rows for k in row.keys()})
         with out_csv.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)

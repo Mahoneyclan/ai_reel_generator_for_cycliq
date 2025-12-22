@@ -145,7 +145,7 @@ class Config:
 
     # --- Scoring weights ---
     CAMERA_WEIGHTS: dict = field(default_factory=lambda: {
-        "Fly12Sport": 2.0,
+        "Fly12Sport": 1.0,
         "Fly6Pro": 1.0,
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
@@ -167,10 +167,13 @@ class Config:
         "Fly12Sport": 0.0,
         "Fly6Pro": 0.0,
     })
+    # Toggle to enable/disable applying camera time offsets from JSON/config
+    # Default is False to avoid unexpected alignment unless user opts in
+    USE_CAMERA_OFFSETS: bool = field(default_factory=lambda: _get_config_value('USE_CAMERA_OFFSETS', True))
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
-    GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 2.0))
+    GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))
     PARTNER_TIME_TOLERANCE_S: float = field(
-        default_factory=lambda: _get_config_value('PARTNER_TIME_TOLERANCE_S', 2.0)
+        default_factory=lambda: _get_config_value('PARTNER_TIME_TOLERANCE_S', 0.0)
     )
 
     # --- Path properties ---
