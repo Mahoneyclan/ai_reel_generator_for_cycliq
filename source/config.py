@@ -168,8 +168,8 @@ class Config:
         "Fly6Pro": 0.0,
     })
     # Toggle to enable/disable applying camera time offsets from JSON/config
-    # Default is False to avoid unexpected alignment unless user opts in
-    USE_CAMERA_OFFSETS: bool = field(default_factory=lambda: _get_config_value('USE_CAMERA_OFFSETS', True))
+    # Camera offsets are always applied; option removed from config
+    USE_CAMERA_OFFSETS: bool = True
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
     GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))
     PARTNER_TIME_TOLERANCE_S: float = field(
