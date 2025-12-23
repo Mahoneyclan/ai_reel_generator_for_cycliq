@@ -118,6 +118,35 @@ class DialogManager:
                     reconfigure_loggers()
                 
                 self.parent.statusBar().showMessage(f"Applied {len(changes_applied)} preference changes")
+
+    def show_general_settings(self):
+        """Show standalone General Settings dialog and apply changes."""
+        from ..general_settings_window import GeneralSettingsWindow
+        from ...utils.log import reconfigure_loggers
+        from ...config import DEFAULT_CONFIG as CFG
+
+        dialog = GeneralSettingsWindow(self.parent)
+        result = dialog.exec()
+
+        if result == GeneralSettingsWindow.Accepted:
+            overrides = dialog._collect_overrides()
+
+            changes_applied = []
+            for key, value in overrides.items():
+                if hasattr(CFG, key):
+                    old_value = getattr(CFG, key)
+                    setattr(CFG, key, value)
+                    if old_value != value:
+                        changes_applied.append(f"{key}: {old_value} → {value}")
+
+            if changes_applied:
+                if hasattr(self.parent, 'log_panel'):
+                    self.parent.log_panel.log("✓ General settings updated:", "success")
+                    for change in changes_applied[:5]:
+                        self.parent.log_panel.log(f"  • {change}", "info")
+                if any("LOG_LEVEL" in change for change in changes_applied):
+                    reconfigure_loggers()
+                self.parent.statusBar().showMessage(f"Applied {len(changes_applied)} general setting changes")
     
     def show_no_project_warning(self):
         """Show warning that no project is selected."""

@@ -63,11 +63,12 @@ class ProjectController:
             # Determine source location
             symlink_path = project_path / "source_videos"
             if symlink_path.exists() and symlink_path.is_symlink():
-                # Project-local symlink
-                CFG.INPUT_BASE_DIR = project_path
-                CFG.SOURCE_FOLDER = "source_videos"
+                # Project-local symlink -> prefer the symlink target as the raw source
                 actual_target = symlink_path.resolve()
-                self.log(f"Using project-local symlink: {symlink_path} → {actual_target}", "info")
+                # Use the symlink target's parent as INPUT_BASE_DIR and its name as SOURCE_FOLDER
+                CFG.INPUT_BASE_DIR = actual_target.parent
+                CFG.SOURCE_FOLDER = actual_target.name
+                self.log(f"Using project-local symlink (target): {symlink_path} → {actual_target}", "info")
                 
             elif (project_path / "source_path.txt").exists():
                 # Imported source reference

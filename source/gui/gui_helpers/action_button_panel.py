@@ -30,6 +30,7 @@ class ActionButtonPanel(QFrame):
     create_clicked = Signal()
     music_clicked = Signal()
     prefs_clicked = Signal()
+    general_clicked = Signal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -83,6 +84,13 @@ class ActionButtonPanel(QFrame):
         )
         prefs_btn.clicked.connect(self.prefs_clicked.emit)
         layout.addWidget(prefs_btn)
+
+        general_btn = self._create_button(
+            "⚙️ General Settings",
+            "Open general program settings (paths, video, M1)"
+        )
+        general_btn.clicked.connect(self.general_clicked.emit)
+        layout.addWidget(general_btn)
         
         layout.addStretch()
     

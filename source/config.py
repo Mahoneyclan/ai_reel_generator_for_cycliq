@@ -110,9 +110,7 @@ class Config:
     MIN_DETECT_SCORE: float = field(
         default_factory=lambda: _get_config_value('MIN_DETECT_SCORE', 0.10)
     )
-    MIN_SPEED_PENALTY: float = field(
-        default_factory=lambda: _get_config_value('MIN_SPEED_PENALTY', 2.0)
-    )
+    # MIN_SPEED_PENALTY removed; speed is normalized without an explicit penalty
 
     # --- Candidate selection ---
     CANDIDATE_FRACTION: float = field(
@@ -126,9 +124,7 @@ class Config:
     START_ZONE_DURATION_S: float = field(
         default_factory=lambda: _get_config_value('START_ZONE_DURATION_S', 1200.0)
     )
-    START_ZONE_PENALTY: float = field(
-        default_factory=lambda: _get_config_value('START_ZONE_PENALTY', 0.5)
-    )
+    # START_ZONE_PENALTY removed; we will only use durations to limit selection
     MAX_START_ZONE_FRAC: float = field(
         default_factory=lambda: _get_config_value('MAX_START_ZONE_FRAC', 0.10)
     )
@@ -136,9 +132,7 @@ class Config:
     END_ZONE_DURATION_S: float = field(
         default_factory=lambda: _get_config_value('END_ZONE_DURATION_S', 1200.0)
     )
-    END_ZONE_PENALTY: float = field(
-        default_factory=lambda: _get_config_value('END_ZONE_PENALTY', 1.0)
-    )
+    # END_ZONE_PENALTY removed; we will only use durations to limit selection
     MAX_END_ZONE_FRAC: float = field(
         default_factory=lambda: _get_config_value('MAX_END_ZONE_FRAC', 0.10)
     )

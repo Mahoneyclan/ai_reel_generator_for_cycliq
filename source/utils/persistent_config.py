@@ -82,7 +82,7 @@ def save_persistent_config(config: Dict[str, Any]) -> None:
     try:
         with USER_CONFIG_PATH.open('w') as f:
             json.dump(serializable_config, f, indent=2, sort_keys=True)
-        print(f"✓ Saved preferences to {USER_CONFIG_PATH}")
+        # Do not print success messages to stdout; saving is silent.
     except Exception as e:
         print(f"Error: Failed to save persistent config: {e}")
         raise
@@ -98,4 +98,4 @@ def clear_persistent_config() -> None:
     """Clear all persistent configuration (reset to defaults)."""
     if USER_CONFIG_PATH.exists():
         USER_CONFIG_PATH.unlink()
-        print(f"✓ Cleared persistent config")
+        # Clearing config is silent.

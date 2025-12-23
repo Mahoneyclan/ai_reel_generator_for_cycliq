@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from ..utils.persistent_config import save_persistent_config, load_persistent_config, clear_persistent_config
 from ..config import DEFAULT_CONFIG as CFG
+from .general_settings_window import GeneralSettingsWindow
 
 
 FIELD_MIN_WIDTH = 220  # baseline width for all input widgets
@@ -32,6 +33,28 @@ def _fix_size(widget):
 
 
 class PreferencesWindow(QDialog):
+    # Tooltips describing effect of changing each preference key
+    PREFERENCE_TOOLTIPS = {
+        'PROJECTS_ROOT': 'Folder where generated projects and working files are stored.',
+        'INPUT_BASE_DIR': 'Base folder containing raw source videos; used when creating or selecting projects.',
+        'VIDEO_CODEC': 'FFmpeg codec used for final MP4 encoding (e.g. libx264).',
+        'BITRATE': 'Target video bitrate for output (e.g. 8M). Higher = larger files.',
+        'MAXRATE': 'Max video bitrate allowed during encoding.',
+        'BUFSIZE': 'FFmpeg buffer size setting for bitrate control.',
+        'MUSIC_VOLUME': 'Volume level for background music in final reels (0.0 - 1.0).',
+        'RAW_AUDIO_VOLUME': 'Volume level for the original ride audio (0.0 - 1.0).',
+        'PIP_SCALE_RATIO': 'Picture-in-picture scale ratio for overlay camera views.',
+        'PIP_MARGIN': 'Margin in pixels between PiP and screen edges.',
+        'MINIMAP_SCALE_RATIO': 'Scale ratio for the minimap overlay.',
+        'MINIMAP_MARGIN': 'Margin in pixels for minimap overlay placement.',
+        'MIN_DETECT_SCORE': 'Minimum detection score required to consider an object detection valid.',
+        'GPX_TOLERANCE': 'Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.',
+        'PARTNER_TIME_TOLERANCE_S': 'Tolerance (seconds) when matching partner rides by time.',
+        'USE_MPS': 'Enable Apple MPS hardware acceleration on M1/M2 Macs when available.',
+        'YOLO_BATCH_SIZE': 'Batch size used for YOLO inference; larger values use more RAM but can be faster.',
+        'FFMPEG_HWACCEL': 'Hardware acceleration setting for FFmpeg (e.g. videotoolbox).',
+        'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.'
+    }
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
@@ -47,21 +70,24 @@ class PreferencesWindow(QDialog):
         layout.addWidget(self.tabs)
 
         # Tabs with form layouts
+        # Core and ride-specific tabs (general settings moved to standalone dialog)
         self.core_tab, self.core_form = self._make_tab("Core")
         self.score_tab, self.score_form = self._make_tab("Score Weights")
-        self.paths_tab, self.paths_form = self._make_tab("Paths")
         self.yolo_tab = self._make_yolo_tab("Detection Classes")
         self.detect_tab, self.detect_form = self._make_tab("Detection Settings")
-        self.video_tab, self.video_form = self._make_tab("Video Settings")
-        self.m1_tab, self.m1_form = self._make_tab("M1 Performance")
 
         # Populate tabs
+        # Core and ride-specific settings
         self._create_core_settings()
         self._create_score_settings()
-        self._create_paths_settings()
         self._create_detection_settings()
-        self._create_m1_settings()
-        self._create_video_settings()
+        # General settings are now in a standalone dialog; add a quick access button below tabs
+        btn_open_general = QPushButton("Open General Settings...")
+        btn_open_general.clicked.connect(self._open_general_settings)
+        general_btn_layout = QHBoxLayout()
+        general_btn_layout.addStretch()
+        general_btn_layout.addWidget(btn_open_general)
+        layout.addLayout(general_btn_layout)
 
         self.load_current_values()
 
@@ -77,8 +103,7 @@ class PreferencesWindow(QDialog):
 
         # Global polish: label alignment and growth
         for form in (
-            self.core_form, self.video_form, self.detect_form,
-            self.m1_form, self.paths_form, self.score_form
+            self.core_form, self.detect_form, self.score_form
         ):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
@@ -141,6 +166,10 @@ class PreferencesWindow(QDialog):
 
     def _add_line_edit(self, form, label, attr, value):
         widget = _fix_size(QLineEdit(str(value)))
+        # Attach tooltip from mapping when available
+        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
+        if tip:
+            widget.setToolTip(tip)
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
@@ -148,6 +177,9 @@ class PreferencesWindow(QDialog):
         widget = _fix_size(QSpinBox())
         widget.setRange(min_val, max_val)
         widget.setValue(value)
+        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
+        if tip:
+            widget.setToolTip(tip)
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
@@ -156,12 +188,18 @@ class PreferencesWindow(QDialog):
         widget.setRange(min_val, max_val)
         widget.setSingleStep(step)
         widget.setValue(value)
+        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
+        if tip:
+            widget.setToolTip(tip)
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
     def _add_checkbox(self, form, label, attr, value):
         widget = _fix_size(QCheckBox())
         widget.setChecked(value)
+        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
+        if tip:
+            widget.setToolTip(tip)
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
@@ -256,36 +294,53 @@ class PreferencesWindow(QDialog):
             1,
             0.05
         )
+        # GPX and partner tolerance belong to core settings (affect alignment)
+        self._add_doublespinbox(
+            self.core_form,
+            "GPX Tolerance (s)",
+            "GPX_TOLERANCE",
+            CFG.GPX_TOLERANCE,
+            0,
+            10,
+            0.5
+        )
+        self._add_doublespinbox(
+            self.core_form,
+            "Partner Time Tolerance (s)",
+            "PARTNER_TIME_TOLERANCE_S",
+            CFG.PARTNER_TIME_TOLERANCE_S,
+            0,
+            10,
+            0.5
+        )
 
-    def _create_video_settings(self):
-        self._add_line_edit(self.video_form, "Video Codec", "VIDEO_CODEC", CFG.VIDEO_CODEC)
-        self._add_line_edit(self.video_form, "Bitrate", "BITRATE", CFG.BITRATE)
-        self._add_line_edit(self.video_form, "Max Rate", "MAXRATE", CFG.MAXRATE)
-        self._add_line_edit(self.video_form, "Buffer Size", "BUFSIZE", CFG.BUFSIZE)
-        self._add_doublespinbox(self.video_form, "Music Volume", "MUSIC_VOLUME", CFG.MUSIC_VOLUME, 0, 1, 0.1)
-        self._add_doublespinbox(self.video_form, "Raw Audio Volume", "RAW_AUDIO_VOLUME", CFG.RAW_AUDIO_VOLUME, 0, 1, 0.1)
-        self._add_doublespinbox(self.video_form, "PiP Scale Ratio", "PIP_SCALE_RATIO", CFG.PIP_SCALE_RATIO, 0, 1, 0.05)
-        self._add_spinbox(self.video_form, "PiP Margin", "PIP_MARGIN", CFG.PIP_MARGIN, 0, 100)
-        self._add_doublespinbox(self.video_form, "Minimap Scale Ratio", "MINIMAP_SCALE_RATIO", CFG.MINIMAP_SCALE_RATIO, 0, 1, 0.05)
-        self._add_spinbox(self.video_form, "Minimap Margin", "MINIMAP_MARGIN", CFG.MINIMAP_MARGIN, 0, 100)
+    def _create_video_settings(self, target_form=None):
+        target = target_form or getattr(self, 'video_form', None) or getattr(self, 'general_form')
+        self._add_line_edit(target, "Video Codec", "VIDEO_CODEC", CFG.VIDEO_CODEC)
+        self._add_line_edit(target, "Bitrate", "BITRATE", CFG.BITRATE)
+        self._add_line_edit(target, "Max Rate", "MAXRATE", CFG.MAXRATE)
+        self._add_line_edit(target, "Buffer Size", "BUFSIZE", CFG.BUFSIZE)
+        self._add_doublespinbox(target, "Music Volume", "MUSIC_VOLUME", CFG.MUSIC_VOLUME, 0, 1, 0.1)
+        self._add_doublespinbox(target, "Raw Audio Volume", "RAW_AUDIO_VOLUME", CFG.RAW_AUDIO_VOLUME, 0, 1, 0.1)
+        self._add_doublespinbox(target, "PiP Scale Ratio", "PIP_SCALE_RATIO", CFG.PIP_SCALE_RATIO, 0, 1, 0.05)
+        self._add_spinbox(target, "PiP Margin", "PIP_MARGIN", CFG.PIP_MARGIN, 0, 100)
+        self._add_doublespinbox(target, "Minimap Scale Ratio", "MINIMAP_SCALE_RATIO", CFG.MINIMAP_SCALE_RATIO, 0, 1, 0.05)
+        self._add_spinbox(target, "Minimap Margin", "MINIMAP_MARGIN", CFG.MINIMAP_MARGIN, 0, 100)
 
     def _create_detection_settings(self):
         self._add_doublespinbox(self.detect_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "Min Speed Penalty", "MIN_SPEED_PENALTY", CFG.MIN_SPEED_PENALTY, 0, 20, 1)
-        self._add_doublespinbox(self.detect_form, "Start Zone Penalty", "START_ZONE_PENALTY", CFG.START_ZONE_PENALTY, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "End Zone Penalty", "END_ZONE_PENALTY", CFG.END_ZONE_PENALTY, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
-        self._add_doublespinbox(self.detect_form, "Partner Time Tolerance (s)", "PARTNER_TIME_TOLERANCE_S", CFG.PARTNER_TIME_TOLERANCE_S, 0, 10, 0.5)
+        # GPX and partner tolerances moved to Core settings
         self._add_doublespinbox(self.detect_form, "YOLO Min Confidence", "YOLO_MIN_CONFIDENCE", CFG.YOLO_MIN_CONFIDENCE, 0, 1, 0.05)
         self._add_spinbox(self.detect_form, "YOLO Image Size", "YOLO_IMAGE_SIZE", CFG.YOLO_IMAGE_SIZE, 320, 1280)
 
-    def _create_m1_settings(self):
+    def _create_m1_settings(self, target_form=None):
+        target = target_form or getattr(self, 'm1_form', None) or getattr(self, 'general_form')
         note = QLabel("M1-specific settings for hardware acceleration")
         note.setStyleSheet("font-style: italic; color: #666;")
-        self.m1_form.addRow(note)
-        self._add_checkbox(self.m1_form, "Use M1 GPU (MPS)", "USE_MPS", CFG.USE_MPS)
-        self._add_spinbox(self.m1_form, "YOLO Batch Size (RAM limit)", "YOLO_BATCH_SIZE", CFG.YOLO_BATCH_SIZE, 1, 16)
-        self._add_line_edit(self.m1_form, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
+        target.addRow(note)
+        self._add_checkbox(target, "Use M1 GPU (MPS)", "USE_MPS", CFG.USE_MPS)
+        self._add_spinbox(target, "YOLO Batch Size (RAM limit)", "YOLO_BATCH_SIZE", CFG.YOLO_BATCH_SIZE, 1, 16)
+        self._add_line_edit(target, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
 
     def _create_score_settings(self):
         """Create score weights settings tab."""
@@ -297,22 +352,32 @@ class PreferencesWindow(QDialog):
         description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
         self.score_form.addRow(description)
 
+        # Create spinboxes for each score weight and wire up subtotal updates
         for key, val in CFG.SCORE_WEIGHTS.items():
             widget = _fix_size(QDoubleSpinBox())
             widget.setRange(0.0, 1.0)
             widget.setSingleStep(0.05)
             widget.setValue(val)
+            widget.valueChanged.connect(self._update_score_total)
             self.score_form.addRow(key.replace("_", " ").title(), widget)
             self.overrides[f"SCORE_WEIGHTS.{key}"] = widget
 
-    def _create_paths_settings(self):
+        # Subtotal label shows live sum of score weights (as percent)
+        self.score_total_label = QLabel("")
+        self.score_total_label.setStyleSheet("font-weight: 700; padding-top: 8px;")
+        self.score_form.addRow("Total:", self.score_total_label)
+        # Initialize subtotal
+        self._update_score_total()
+
+    def _create_paths_settings(self, target_form=None):
+        target = target_form or getattr(self, 'paths_form', None) or self.general_form
         description = QLabel(
             "Configure where projects and source videos are stored.\n"
             "These settings persist across sessions."
         )
         description.setWordWrap(True)
         description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
-        self.paths_form.addRow(description)
+        target.addRow(description)
 
         # Projects Root Path
         projects_layout = QHBoxLayout()
@@ -323,7 +388,7 @@ class PreferencesWindow(QDialog):
         projects_browse_btn.clicked.connect(self._browse_projects_root)
         projects_layout.addWidget(self.projects_root_edit)
         projects_layout.addWidget(projects_browse_btn)
-        self.paths_form.addRow("Projects Output Folder:", projects_layout)
+        target.addRow("Projects Output Folder:", projects_layout)
 
         # Input Base Dir Path
         input_layout = QHBoxLayout()
@@ -334,7 +399,7 @@ class PreferencesWindow(QDialog):
         input_browse_btn.clicked.connect(self._browse_input_base)
         input_layout.addWidget(self.input_base_edit)
         input_layout.addWidget(input_browse_btn)
-        self.paths_form.addRow("Source Videos Folder:", input_layout)
+        target.addRow("Source Videos Folder:", input_layout)
 
         help_text = QLabel(
             "<b>Projects Output:</b> Where all generated content is stored<br>"
@@ -342,7 +407,7 @@ class PreferencesWindow(QDialog):
         )
         help_text.setWordWrap(True)
         help_text.setStyleSheet("font-size: 11px; color: #888; padding: 10px;")
-        self.paths_form.addRow(help_text)
+        target.addRow(help_text)
 
         reset_layout = QHBoxLayout()
         reset_btn = QPushButton("Reset All Preferences to Defaults")
@@ -350,7 +415,7 @@ class PreferencesWindow(QDialog):
         reset_layout.addStretch()
         reset_layout.addWidget(reset_btn)
         reset_layout.addStretch()
-        self.paths_form.addRow("", reset_layout)
+        target.addRow("", reset_layout)
 
     def _browse_projects_root(self):
         current = self.projects_root_edit.text()
@@ -383,6 +448,10 @@ class PreferencesWindow(QDialog):
             )
             self.reject()
 
+    def _open_general_settings(self):
+        dlg = GeneralSettingsWindow(self)
+        dlg.exec()
+
     # --- YOLO helper methods (restored) ---
     def _select_all_classes(self):
         for checkbox in self.class_checkboxes.values():
@@ -399,6 +468,31 @@ class PreferencesWindow(QDialog):
     def _update_selected_count(self):
         count = sum(1 for cb in self.class_checkboxes.values() if cb.isChecked())
         self.selected_count_label.setText(f"Selected: {count} class{'es' if count != 1 else ''}")
+
+    def _update_score_total(self):
+        """Update the subtotal label for score weights (display as percent).
+
+        Colors the label green when total ~= 100%, red otherwise.
+        """
+        total = 0.0
+        for attr, widget in self.overrides.items():
+            if attr.startswith("SCORE_WEIGHTS."):
+                try:
+                    total += float(widget.value())
+                except Exception:
+                    pass
+
+        # Show as percent
+        pct = total * 100.0
+        text = f"{pct:.1f}%"
+        # Color green if approximately 100%, red otherwise
+        if abs(total - 1.0) <= 0.01:
+            css = "color: #1E8E3E; font-weight: 700;"
+        else:
+            css = "color: #C62828; font-weight: 700;"
+        if hasattr(self, 'score_total_label'):
+            self.score_total_label.setText(text)
+            self.score_total_label.setStyleSheet(css)
 
     def load_current_values(self):
         cfg = CFG
@@ -446,9 +540,10 @@ class PreferencesWindow(QDialog):
         ]
         overrides['YOLO_DETECT_CLASSES'] = selected_ids
 
-        # Only persist the two root paths
-        overrides['PROJECTS_ROOT'] = Path(self.projects_root_edit.text())
-        overrides['INPUT_BASE_DIR'] = Path(self.input_base_edit.text())
+        # Only persist the two root paths. General settings are managed in the
+        # standalone General Settings dialog — fall back to CFG values here.
+        overrides['PROJECTS_ROOT'] = Path(getattr(CFG, 'PROJECTS_ROOT', CFG.PROJECTS_ROOT))
+        overrides['INPUT_BASE_DIR'] = Path(getattr(CFG, 'INPUT_BASE_DIR', CFG.INPUT_BASE_DIR))
 
         # Collect score weights
         score_weights = {}

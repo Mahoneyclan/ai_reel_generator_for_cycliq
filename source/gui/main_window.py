@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
         self.action_panel.create_clicked.connect(self._create_project)
         self.action_panel.music_clicked.connect(self._show_music_placeholder)
         self.action_panel.prefs_clicked.connect(self._show_preferences)
+        self.action_panel.general_clicked.connect(self._show_general_settings)
         
         # Pipeline panel (project-specific workflow)
         self.pipeline_panel.gpx_clicked.connect(self._show_gpx_import)
@@ -433,6 +434,11 @@ class MainWindow(QMainWindow):
             return
         
         self.dialog_manager.show_preferences()
+
+    def _show_general_settings(self):
+        """Show general settings dialog (no project required)."""
+        # General settings are program-wide and should be accessible without a project
+        self.dialog_manager.show_general_settings()
     
     def _show_import_raw_video(self):
         """Show raw video import dialog from cameras."""

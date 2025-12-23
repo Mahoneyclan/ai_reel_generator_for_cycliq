@@ -71,13 +71,16 @@ class ScoreCalculator:
             grad_norm = abs(_sf(r.get("gradient_pct"))) / 8.0
             bbox_norm = _sf(r.get("bbox_area")) / 400_000.0
             
-            # Speed normalization with penalties for slow/fast
-            if speed < CFG.MIN_SPEED_PENALTY:
-                speed_norm = (speed / 60.0) * 0.3
-            elif speed > 15:
-                speed_norm = (speed / 60.0) * 1.2
-            else:
-                speed_norm = speed / 60.0
+            # Speed normalization: scale to 0-1 range (no explicit slow-speed penalty)
+            try:
+                speed_norm = float(speed) / 60.0
+            except Exception:
+                speed_norm = 0.0
+            # Clamp between 0 and 1 for sensible contribution
+            if speed_norm < 0.0:
+                speed_norm = 0.0
+            elif speed_norm > 1.0:
+                speed_norm = 1.0
             
             # Composite score with scene boost
             score = (
