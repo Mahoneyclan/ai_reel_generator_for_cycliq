@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..utils.persistent_config import save_persistent_config, load_persistent_config, clear_persistent_config
-from ..config import DEFAULT_CONFIG as CFG
+from ..config import DEFAULT_CONFIG as CFG, DEFAULT_YOLO_CLASS_WEIGHTS
 from .general_settings_window import GeneralSettingsWindow
 
 
@@ -63,6 +63,7 @@ class PreferencesWindow(QDialog):
 
         self.overrides: Dict[str, Any] = {}
         self.class_checkboxes: Dict[str, QCheckBox] = {}
+        self.class_weights_spinboxes: Dict[str, QDoubleSpinBox] = {}
 
         layout = QVBoxLayout(self)
 
@@ -122,8 +123,8 @@ class PreferencesWindow(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
 
         description = QLabel(
-            "Select which object classes YOLO should detect in your video frames.\n"
-            "By default, only 'bicycle' is selected for cycling videos."
+            "Select which object classes to detect and adjust their scoring weights.\n"
+            "Higher weights make a class more likely to be selected for a highlight clip."
         )
         description.setWordWrap(True)
         description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
@@ -134,7 +135,7 @@ class PreferencesWindow(QDialog):
         btn_select_all.clicked.connect(self._select_all_classes)
         btn_select_none = QPushButton("Select None")
         btn_select_none.clicked.connect(self._select_no_classes)
-        btn_reset_default = QPushButton("Reset to Default (Bicycle)")
+        btn_reset_default = QPushButton("Reset to Default")
         btn_reset_default.clicked.connect(self._reset_to_default)
         quick_select_layout.addWidget(btn_select_all)
         quick_select_layout.addWidget(btn_select_none)
@@ -142,16 +143,41 @@ class PreferencesWindow(QDialog):
         quick_select_layout.addStretch()
         layout.addLayout(quick_select_layout)
 
-        group_box = QGroupBox("Detection Classes")
-        checkbox_layout = QGridLayout()
-        all_classes = list(CFG.YOLO_CLASS_MAP.keys())
+        group_box = QGroupBox("Detection Classes and Weights")
+        grid_layout = QGridLayout()
+        grid_layout.setColumnStretch(0, 1) # Class name
+        grid_layout.setColumnStretch(1, 0) # Enabled
+        grid_layout.setColumnStretch(2, 0) # Weight
+
+        # Header
+        grid_layout.addWidget(QLabel("<b>Class</b>"), 0, 0)
+        grid_layout.addWidget(QLabel("<b>Enabled</b>"), 0, 1, Qt.AlignCenter)
+        grid_layout.addWidget(QLabel("<b>Weight</b>"), 0, 2, Qt.AlignCenter)
+
+        all_classes = sorted(list(CFG.YOLO_CLASS_MAP.keys()))
         for idx, class_name in enumerate(all_classes):
-            row = idx // 2
-            col = idx % 2
-            checkbox = QCheckBox(class_name.title())
+            row = idx + 1
+            
+            # Class Name Label
+            label = QLabel(class_name.title())
+            
+            # Enabled CheckBox
+            checkbox = QCheckBox()
+            checkbox.stateChanged.connect(self._update_selected_count)
             self.class_checkboxes[class_name] = checkbox
-            checkbox_layout.addWidget(checkbox, row, col)
-        group_box.setLayout(checkbox_layout)
+            
+            # Weight SpinBox
+            spinbox = QDoubleSpinBox()
+            spinbox.setRange(0.0, 10.0)
+            spinbox.setSingleStep(0.5)
+            spinbox.setDecimals(1)
+            self.class_weights_spinboxes[class_name] = spinbox
+
+            grid_layout.addWidget(label, row, 0)
+            grid_layout.addWidget(checkbox, row, 1, Qt.AlignCenter)
+            grid_layout.addWidget(spinbox, row, 2)
+
+        group_box.setLayout(grid_layout)
         layout.addWidget(group_box)
 
         self.selected_count_label = QLabel("Selected: 0 classes")
@@ -159,14 +185,10 @@ class PreferencesWindow(QDialog):
         layout.addWidget(self.selected_count_label)
         layout.addStretch()
 
-        for checkbox in self.class_checkboxes.values():
-            checkbox.stateChanged.connect(self._update_selected_count)
-
         return tab
 
     def _add_line_edit(self, form, label, attr, value):
         widget = _fix_size(QLineEdit(str(value)))
-        # Attach tooltip from mapping when available
         tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
         if tip:
             widget.setToolTip(tip)
@@ -204,115 +226,18 @@ class PreferencesWindow(QDialog):
         self.overrides[attr] = widget
 
     def _create_core_settings(self):
-        # Sampling interval in seconds (time-based sampling, replaces Extract FPS)
-        self._add_spinbox(
-            self.core_form,
-            "Sampling Interval (s)",
-            "EXTRACT_INTERVAL_SECONDS",
-            int(CFG.EXTRACT_INTERVAL_SECONDS),
-            1,
-            60,
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Target Duration (s)",
-            "HIGHLIGHT_TARGET_DURATION_S",
-            CFG.HIGHLIGHT_TARGET_DURATION_S,
-            30,
-            600,
-            30
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Clip Pre-Roll (s)",
-            "CLIP_PRE_ROLL_S",
-            CFG.CLIP_PRE_ROLL_S,
-            0,
-            2,
-            0.1
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Clip Duration (s)",
-            "CLIP_OUT_LEN_S",
-            CFG.CLIP_OUT_LEN_S,
-            1,
-            10,
-            0.1
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Min Gap Between Clips (s)",
-            "MIN_GAP_BETWEEN_CLIPS",
-            CFG.MIN_GAP_BETWEEN_CLIPS,
-            30,
-            300,
-            10
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Scene Comparison Window (s)",
-            "SCENE_COMPARISON_WINDOW_S",
-            CFG.SCENE_COMPARISON_WINDOW_S,
-            1.0,
-            15.0,
-            0.5
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Start Zone Duration (s)",
-            "START_ZONE_DURATION_S",
-            CFG.START_ZONE_DURATION_S,
-            0,
-            1800,
-            60
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Max Start Zone Fraction",
-            "MAX_START_ZONE_FRAC",
-            CFG.MAX_START_ZONE_FRAC,
-            0,
-            1,
-            0.05
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "End Zone Duration (s)",
-            "END_ZONE_DURATION_S",
-            CFG.END_ZONE_DURATION_S,
-            0,
-            1800,
-            60
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Max End Zone Fraction",
-            "MAX_END_ZONE_FRAC",
-            CFG.MAX_END_ZONE_FRAC,
-            0,
-            1,
-            0.05
-        )
-        # GPX and partner tolerance belong to core settings (affect alignment)
-        self._add_doublespinbox(
-            self.core_form,
-            "GPX Tolerance (s)",
-            "GPX_TOLERANCE",
-            CFG.GPX_TOLERANCE,
-            0,
-            10,
-            0.5
-        )
-        self._add_doublespinbox(
-            self.core_form,
-            "Partner Time Tolerance (s)",
-            "PARTNER_TIME_TOLERANCE_S",
-            CFG.PARTNER_TIME_TOLERANCE_S,
-            0,
-            10,
-            0.5
-        )
+        self._add_spinbox(self.core_form, "Sampling Interval (s)", "EXTRACT_INTERVAL_SECONDS", int(CFG.EXTRACT_INTERVAL_SECONDS), 1, 60)
+        self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
+        self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
+        self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
+        self._add_doublespinbox(self.core_form, "Min Gap Between Clips (s)", "MIN_GAP_BETWEEN_CLIPS", CFG.MIN_GAP_BETWEEN_CLIPS, 30, 300, 10)
+        self._add_doublespinbox(self.core_form, "Scene Comparison Window (s)", "SCENE_COMPARISON_WINDOW_S", CFG.SCENE_COMPARISON_WINDOW_S, 1.0, 15.0, 0.5)
+        self._add_doublespinbox(self.core_form, "Start Zone Duration (s)", "START_ZONE_DURATION_S", CFG.START_ZONE_DURATION_S, 0, 1800, 60)
+        self._add_doublespinbox(self.core_form, "Max Start Zone Fraction", "MAX_START_ZONE_FRAC", CFG.MAX_START_ZONE_FRAC, 0, 1, 0.05)
+        self._add_doublespinbox(self.core_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
+        self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
+        self._add_doublespinbox(self.core_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
+        self._add_doublespinbox(self.core_form, "Partner Time Tolerance (s)", "PARTNER_TIME_TOLERANCE_S", CFG.PARTNER_TIME_TOLERANCE_S, 0, 10, 0.5)
 
     def _create_video_settings(self, target_form=None):
         target = target_form or getattr(self, 'video_form', None) or getattr(self, 'general_form')
@@ -329,7 +254,6 @@ class PreferencesWindow(QDialog):
 
     def _create_detection_settings(self):
         self._add_doublespinbox(self.detect_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
-        # GPX and partner tolerances moved to Core settings
         self._add_doublespinbox(self.detect_form, "YOLO Min Confidence", "YOLO_MIN_CONFIDENCE", CFG.YOLO_MIN_CONFIDENCE, 0, 1, 0.05)
         self._add_spinbox(self.detect_form, "YOLO Image Size", "YOLO_IMAGE_SIZE", CFG.YOLO_IMAGE_SIZE, 320, 1280)
 
@@ -343,16 +267,10 @@ class PreferencesWindow(QDialog):
         self._add_line_edit(target, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
 
     def _create_score_settings(self):
-        """Create score weights settings tab."""
-        description = QLabel(
-            "Adjust relative weights used in scoring clips.\n"
-            "Values should sum to ~1.0 for balanced scoring."
-        )
+        description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")
         description.setWordWrap(True)
         description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
         self.score_form.addRow(description)
-
-        # Create spinboxes for each score weight and wire up subtotal updates
         for key, val in CFG.SCORE_WEIGHTS.items():
             widget = _fix_size(QDoubleSpinBox())
             widget.setRange(0.0, 1.0)
@@ -361,25 +279,17 @@ class PreferencesWindow(QDialog):
             widget.valueChanged.connect(self._update_score_total)
             self.score_form.addRow(key.replace("_", " ").title(), widget)
             self.overrides[f"SCORE_WEIGHTS.{key}"] = widget
-
-        # Subtotal label shows live sum of score weights (as percent)
         self.score_total_label = QLabel("")
         self.score_total_label.setStyleSheet("font-weight: 700; padding-top: 8px;")
         self.score_form.addRow("Total:", self.score_total_label)
-        # Initialize subtotal
         self._update_score_total()
 
     def _create_paths_settings(self, target_form=None):
         target = target_form or getattr(self, 'paths_form', None) or self.general_form
-        description = QLabel(
-            "Configure where projects and source videos are stored.\n"
-            "These settings persist across sessions."
-        )
+        description = QLabel("Configure where projects and source videos are stored.\nThese settings persist across sessions.")
         description.setWordWrap(True)
         description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
         target.addRow(description)
-
-        # Projects Root Path
         projects_layout = QHBoxLayout()
         self.projects_root_edit = QLineEdit(str(CFG.PROJECTS_ROOT))
         self.projects_root_edit.setMinimumWidth(400)
@@ -389,8 +299,6 @@ class PreferencesWindow(QDialog):
         projects_layout.addWidget(self.projects_root_edit)
         projects_layout.addWidget(projects_browse_btn)
         target.addRow("Projects Output Folder:", projects_layout)
-
-        # Input Base Dir Path
         input_layout = QHBoxLayout()
         self.input_base_edit = QLineEdit(str(CFG.INPUT_BASE_DIR))
         self.input_base_edit.setMinimumWidth(400)
@@ -400,15 +308,10 @@ class PreferencesWindow(QDialog):
         input_layout.addWidget(self.input_base_edit)
         input_layout.addWidget(input_browse_btn)
         target.addRow("Source Videos Folder:", input_layout)
-
-        help_text = QLabel(
-            "<b>Projects Output:</b> Where all generated content is stored<br>"
-            "<b>Source Videos:</b> Where your raw MP4 and GPX files are located"
-        )
+        help_text = QLabel("<b>Projects Output:</b> Where all generated content is stored<br><b>Source Videos:</b> Where your raw MP4 and GPX files are located")
         help_text.setWordWrap(True)
         help_text.setStyleSheet("font-size: 11px; color: #888; padding: 10px;")
         target.addRow(help_text)
-
         reset_layout = QHBoxLayout()
         reset_btn = QPushButton("Reset All Preferences to Defaults")
         reset_btn.clicked.connect(self._reset_all_preferences)
@@ -430,29 +333,16 @@ class PreferencesWindow(QDialog):
             self.input_base_edit.setText(folder)
 
     def _reset_all_preferences(self):
-        reply = QMessageBox.question(
-            self,
-            "Reset All Preferences",
-            "This will reset ALL preferences to their default values.\n\n"
-            "This action cannot be undone. Continue?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        reply = QMessageBox.question(self, "Reset All Preferences", "This will reset ALL preferences to their default values.\n\nThis action cannot be undone. Continue?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             clear_persistent_config()
-            QMessageBox.information(
-                self,
-                "Preferences Reset",
-                "All preferences have been reset to defaults.\n\n"
-                "Please restart the application for changes to take effect."
-            )
+            QMessageBox.information(self, "Preferences Reset", "All preferences have been reset to defaults.\n\nPlease restart the application for changes to take effect.")
             self.reject()
 
     def _open_general_settings(self):
         dlg = GeneralSettingsWindow(self)
         dlg.exec()
 
-    # --- YOLO helper methods (restored) ---
     def _select_all_classes(self):
         for checkbox in self.class_checkboxes.values():
             checkbox.setChecked(True)
@@ -462,30 +352,26 @@ class PreferencesWindow(QDialog):
             checkbox.setChecked(False)
 
     def _reset_to_default(self):
+        default_classes = ["bicycle"]
         for class_name, checkbox in self.class_checkboxes.items():
-            checkbox.setChecked(class_name == "bicycle")
+            checkbox.setChecked(class_name in default_classes)
+        
+        for class_name, spinbox in self.class_weights_spinboxes.items():
+            spinbox.setValue(DEFAULT_YOLO_CLASS_WEIGHTS.get(class_name, 1.0))
 
     def _update_selected_count(self):
         count = sum(1 for cb in self.class_checkboxes.values() if cb.isChecked())
         self.selected_count_label.setText(f"Selected: {count} class{'es' if count != 1 else ''}")
 
     def _update_score_total(self):
-        """Update the subtotal label for score weights (display as percent).
-
-        Colors the label green when total ~= 100%, red otherwise.
-        """
         total = 0.0
         for attr, widget in self.overrides.items():
             if attr.startswith("SCORE_WEIGHTS."):
                 try:
                     total += float(widget.value())
-                except Exception:
-                    pass
-
-        # Show as percent
+                except Exception: pass
         pct = total * 100.0
         text = f"{pct:.1f}%"
-        # Color green if approximately 100%, red otherwise
         if abs(total - 1.0) <= 0.01:
             css = "color: #1E8E3E; font-weight: 700;"
         else:
@@ -502,50 +388,41 @@ class PreferencesWindow(QDialog):
                 val = CFG.SCORE_WEIGHTS.get(key, 0.0)
                 widget.setValue(float(val))
                 continue
-
             val = getattr(cfg, attr, None)
-            if val is None:
-                continue
-            if isinstance(widget, QLineEdit):
-                widget.setText(str(val))
-            elif isinstance(widget, QSpinBox):
-                widget.setValue(int(val))
-            elif isinstance(widget, QDoubleSpinBox):
-                widget.setValue(float(val))
-            elif isinstance(widget, QCheckBox):
-                widget.setChecked(bool(val))
+            if val is None: continue
+            if isinstance(widget, QLineEdit): widget.setText(str(val))
+            elif isinstance(widget, QSpinBox): widget.setValue(int(val))
+            elif isinstance(widget, QDoubleSpinBox): widget.setValue(float(val))
+            elif isinstance(widget, QCheckBox): widget.setChecked(bool(val))
 
         current_ids = getattr(cfg, 'YOLO_DETECT_CLASSES', [1])
         for class_name, class_id in CFG.YOLO_CLASS_MAP.items():
             if class_name in self.class_checkboxes:
                 self.class_checkboxes[class_name].setChecked(class_id in current_ids)
+        
+        current_weights = getattr(cfg, 'YOLO_CLASS_WEIGHTS', {})
+        for class_name, spinbox in self.class_weights_spinboxes.items():
+            spinbox.setValue(current_weights.get(class_name, 1.0))
+            
         self._update_selected_count()
 
     def get_overrides(self) -> Dict[str, Any]:
         overrides: Dict[str, Any] = {}
         for attr, widget in self.overrides.items():
-            if isinstance(widget, QLineEdit):
-                overrides[attr] = widget.text().strip()
-            elif isinstance(widget, QSpinBox):
-                overrides[attr] = widget.value()
-            elif isinstance(widget, QDoubleSpinBox):
-                overrides[attr] = widget.value()
-            elif isinstance(widget, QCheckBox):
-                overrides[attr] = widget.isChecked()
+            if isinstance(widget, QLineEdit): overrides[attr] = widget.text().strip()
+            elif isinstance(widget, QSpinBox): overrides[attr] = widget.value()
+            elif isinstance(widget, QDoubleSpinBox): overrides[attr] = widget.value()
+            elif isinstance(widget, QCheckBox): overrides[attr] = widget.isChecked()
 
-        selected_ids = [
-            CFG.YOLO_CLASS_MAP[class_name]
-            for class_name, checkbox in self.class_checkboxes.items()
-            if checkbox.isChecked()
-        ]
+        selected_ids = [CFG.YOLO_CLASS_MAP[class_name] for class_name, checkbox in self.class_checkboxes.items() if checkbox.isChecked()]
         overrides['YOLO_DETECT_CLASSES'] = selected_ids
 
-        # Only persist the two root paths. General settings are managed in the
-        # standalone General Settings dialog — fall back to CFG values here.
+        yolo_weights = {class_name: spinbox.value() for class_name, spinbox in self.class_weights_spinboxes.items()}
+        overrides['YOLO_CLASS_WEIGHTS'] = yolo_weights
+
         overrides['PROJECTS_ROOT'] = Path(getattr(CFG, 'PROJECTS_ROOT', CFG.PROJECTS_ROOT))
         overrides['INPUT_BASE_DIR'] = Path(getattr(CFG, 'INPUT_BASE_DIR', CFG.INPUT_BASE_DIR))
 
-        # Collect score weights
         score_weights = {}
         for attr, widget in self.overrides.items():
             if attr.startswith("SCORE_WEIGHTS."):

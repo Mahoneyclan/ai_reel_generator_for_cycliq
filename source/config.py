@@ -24,6 +24,18 @@ def _get_config_value(key: str, default: Any) -> Any:
     return _PERSISTENT_CONFIG.get(key, default)
 
 
+
+# Default weights for YOLO classes, used if not overridden by user config
+DEFAULT_YOLO_CLASS_WEIGHTS = {
+    "person": 2.0,
+    "bicycle": 3.0,
+    "car": 1.0,
+    "motorcycle": 1.0,
+    "truck": 1.0,
+    "traffic light": 1.0,
+    "stop sign": 1.0,
+}
+
 @dataclass
 class Config:
     # --- Logging ---
@@ -97,6 +109,10 @@ class Config:
         "traffic light",
         "stop sign"
     ]
+
+    YOLO_CLASS_WEIGHTS: dict = field(
+        default_factory=lambda: _get_config_value('YOLO_CLASS_WEIGHTS', DEFAULT_YOLO_CLASS_WEIGHTS)
+    )
 
     # --- Detection settings ---
     YOLO_DETECT_CLASSES: list = field(

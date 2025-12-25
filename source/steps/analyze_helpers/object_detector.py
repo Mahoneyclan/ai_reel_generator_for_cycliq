@@ -106,6 +106,7 @@ class ObjectDetector:
         self.model = get_model()
         self.frames_processed = 0
         self.detections_found = 0
+        self.class_id_to_name = {v: k for k, v in CFG.YOLO_CLASS_MAP.items()}
 
     def detect(self, frame: np.ndarray) -> Dict[str, object]:
         """
@@ -129,7 +130,7 @@ class ObjectDetector:
                 stream=False
             )
 
-            max_conf = 0.0
+            max_weighted_conf = 0.0
             max_area = 0.0
             count = 0
             detected_classes: List[int] = []
@@ -146,10 +147,14 @@ class ObjectDetector:
                         continue
 
                     conf = float(b.conf[0])
+                    class_name = self.class_id_to_name.get(cls)
+                    weight = CFG.YOLO_CLASS_WEIGHTS.get(class_name, 1.0)
+                    weighted_conf = conf * weight
+
                     x1, y1, x2, y2 = b.xyxy[0].tolist()
                     area = max(0.0, (x2 - x1) * (y2 - y1))
 
-                    max_conf = max(max_conf, conf)
+                    max_weighted_conf = max(max_weighted_conf, weighted_conf)
                     max_area = max(max_area, area)
                     count += 1
                     detected_classes.append(cls)
@@ -160,7 +165,7 @@ class ObjectDetector:
                 self.detections_found += 1
 
             return {
-                "detect_score": round(max_conf, 3),
+                "detect_score": round(max_weighted_conf, 3),
                 "num_detections": count,
                 "bbox_area": round(max_area, 1),
                 "detected_classes": detected_classes,
