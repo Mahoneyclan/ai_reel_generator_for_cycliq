@@ -4,6 +4,8 @@ import csv
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional
+from datetime import datetime 
+from zoneinfo import ZoneInfo
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -352,16 +354,14 @@ class ManualSelectionWindow(QDialog):
         layout.addWidget(pip_widget)
 
         # Metadata
-        time_str = (
-            primary_row.get("abs_time_iso")
-            or primary_row.get("adjusted_start_time")
-            or "N/A"
-        )
+        camera_label = primary_row.get("camera", "Camera") 
+        file_name = primary_row.get("path", "").split("/")[-1] 
+        frame_num = primary_row.get("frame_number", "—")
+
         camera_label = primary_row.get("camera", "Camera")
 
         metadata_lines = [
-            f"Time: {time_str}",
-            f"Primary: {camera_label}",
+            f"Camera: {camera_label} | File {file_name} | Frame {frame_num}",
             self._fmt_meta(primary_row),
         ]
 

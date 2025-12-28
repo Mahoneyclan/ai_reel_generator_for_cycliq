@@ -361,6 +361,11 @@ def run() -> Path:
 
     # Ensure chronological ordering for logs / duration reporting
     enriched.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
+
+    # 🔥 FIX: Recompute moment_id using aligned session_ts_s
+    for r in enriched:
+        r["moment_id"] = int(_sf(r.get("session_ts_s")) // CFG.EXTRACT_INTERVAL_SECONDS)
+
     log.info(f"Loaded {len(enriched)} enriched frames")
     log.info(
         f"Time range: {enriched[0].get('abs_time_iso', '?')[:19]} "

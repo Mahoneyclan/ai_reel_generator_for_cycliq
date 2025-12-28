@@ -51,8 +51,16 @@ def _probe_video_metadata(video_path: Path) -> Tuple[datetime, float, float]:
         meta = json.loads(out)
         
         # Extract creation time
-        tags = meta.get("format", {}).get("tags", {}) or {}
-        creation_time_str = tags.get("creation_time")
+        tags_format = meta.get("format", {}).get("tags", {}) or {}
+        tags_stream = meta["streams"][0].get("tags", {}) or {}
+
+        creation_time_str = (
+            tags_stream.get("creation_time") or
+            tags_format.get("creation_time")
+    )
+
+
+
         if not creation_time_str:
             raise RuntimeError("No creation_time in metadata")
         
@@ -150,6 +158,114 @@ def _get_gpx_start_epoch() -> float:
     
     return 0.0
 
+def _compute_session_time_bounds(
+    videos: List[Path],
+    camera_offsets: Dict[str, float],
+) -> Tuple[float, Dict[str, Tuple[float, float]]]:
+    """
+    Compute:
+      - global_session_start_epoch: earliest aligned start across all cameras
+      - per-camera (overlap_start_epoch, overlap_end_epoch) in REAL time
+
+    Time model:
+      real_start_utc  = creation_utc - duration
+      aligned_start_utc = real_start_utc - camera_offset_s
+
+    Overlap is defined in REAL time:
+      real_end_utc    = real_start_utc + duration
+      overlap_start   = max(real_start_utc for all cameras)
+      overlap_end     = min(real_end_utc for all cameras)
+    """
+    if not videos:
+        return 0.0, {}
+
+    # First pass: collect real and aligned ranges per camera
+    per_camera_real: Dict[str, List[Tuple[float, float]]] = {}
+    per_camera_aligned_starts: Dict[str, List[float]] = {}
+
+    for video_path in videos:
+        try:
+            raw_dt, duration_s, _ = _probe_video_metadata(video_path)
+        except Exception as e:
+            log.warning(f"[extract] Skipping {video_path.name} for time bounds: {e}")
+            continue
+
+        creation_local = _fix_utc_bug(raw_dt)
+        creation_utc = creation_local.astimezone(timezone.utc)
+
+        real_start_utc = creation_utc - timedelta(seconds=duration_s)
+        real_end_utc = real_start_utc + timedelta(seconds=duration_s)
+
+        camera_name, _, _ = _parse_camera_and_clip(video_path)
+        camera_offset_s = camera_offsets.get(camera_name, 0.0)
+
+        aligned_start_utc = real_start_utc - timedelta(seconds=camera_offset_s)
+
+        real_start_epoch = real_start_utc.timestamp()
+        real_end_epoch = real_end_utc.timestamp()
+        aligned_start_epoch = aligned_start_utc.timestamp()
+
+        per_camera_real.setdefault(camera_name, []).append(
+            (real_start_epoch, real_end_epoch)
+        )
+        per_camera_aligned_starts.setdefault(camera_name, []).append(
+            aligned_start_epoch
+        )
+
+    if not per_camera_real:
+        return 0.0, {}
+
+    # Global session start: earliest aligned start across all cameras
+    global_session_start_epoch = min(
+        start for starts in per_camera_aligned_starts.values() for start in starts
+    )
+
+    # Compute global REAL overlap window
+    all_real_starts = [s for ranges in per_camera_real.values() for (s, _e) in ranges]
+    all_real_ends = [e for ranges in per_camera_real.values() for (_s, e) in ranges]
+
+    overlap_start_epoch = max(all_real_starts)
+    overlap_end_epoch = min(all_real_ends)
+
+    if overlap_end_epoch <= overlap_start_epoch:
+        log.warning(
+            "[extract] No temporal overlap between cameras "
+            f"(overlap_start={overlap_start_epoch}, overlap_end={overlap_end_epoch})"
+        )
+        # Fallback: no overlap; use individual camera coverage
+        per_camera_overlap = {
+            cam: (min(r[0] for r in ranges), max(r[1] for r in ranges))
+            for cam, ranges in per_camera_real.items()
+        }
+        return global_session_start_epoch, per_camera_overlap
+
+    # Per-camera REAL overlap (intersection of each camera's real coverage with global overlap)
+    per_camera_overlap: Dict[str, Tuple[float, float]] = {}
+    for cam, ranges in per_camera_real.items():
+        cam_starts = []
+        cam_ends = []
+        for (s, e) in ranges:
+            s_i = max(s, overlap_start_epoch)
+            e_i = min(e, overlap_end_epoch)
+            if e_i > s_i:
+                cam_starts.append(s_i)
+                cam_ends.append(e_i)
+        if cam_starts and cam_ends:
+            per_camera_overlap[cam] = (min(cam_starts), max(cam_ends))
+        else:
+            per_camera_overlap[cam] = (overlap_start_epoch, overlap_start_epoch)
+
+    log.info(
+        f"[extract] Global session start epoch (aligned): {global_session_start_epoch:.3f} "
+        f"| REAL overlap window: {overlap_start_epoch:.3f}–{overlap_end_epoch:.3f}"
+    )
+    for cam, (s, e) in per_camera_overlap.items():
+        log.info(
+            f"[extract]   {cam}: REAL overlap {s:.3f}–{e:.3f} ({e - s:.1f}s)"
+        )
+
+    return global_session_start_epoch, per_camera_overlap
+
 
 def _parse_camera_and_clip(video_path: Path) -> Tuple[str, int, str]:
     """
@@ -185,131 +301,71 @@ def _extract_video_metadata(
     video_path: Path,
     sampling_interval_s: int,
     camera_offsets: Dict[str, float],
-    gpx_start_epoch: float
+    gpx_start_epoch: float,
+    _global_session_start_epoch: float,   # unused now
+    _camera_overlap_bounds: Tuple[float, float],  # unused now
 ) -> List[Dict[str, str]]:
     """
-    Generate frame metadata for one video clip.
-    
-    FIXED: Uses natural timestamps and filters edge case frames.
-    
-    Args:
-        video_path: Path to video file
-        sampling_interval_s: Seconds between sampled frames
-        camera_offsets: Camera alignment offsets
-        gpx_start_epoch: GPX start time for filtering
-        
-    Returns:
-        List of frame metadata dicts
+    Generate frame metadata for one video clip using the corrected time model:
+
+        real_start_epoch = creation_time_epoch - duration_s
+        adjusted_sec     = sec + camera_offset_s
+        abs_time_epoch   = real_start_epoch + adjusted_sec
+
+    No overlap filtering. No aligned timeline. No global session.
     """
-    # Parse filename
+
     camera_name, clip_num, clip_id = _parse_camera_and_clip(video_path)
-    
-    # Probe video
+
+    # ------------------------------------------------------------
+    # Probe MP4 metadata
+    # ------------------------------------------------------------
     try:
         raw_dt, duration_s, video_fps = _probe_video_metadata(video_path)
     except Exception as e:
         log.error(f"[extract] Failed to probe {video_path.name}: {e}")
         return []
-    
-    # =========================================================================
-    # TIMESTAMP CORRECTION
-    # =========================================================================
-    
-    # Stage 1: Fix UTC bug
+
+    # Fix Cycliq's UTC bug
     creation_local = _fix_utc_bug(raw_dt)
     creation_utc = creation_local.astimezone(timezone.utc)
-    
-    # Stage 2: Infer recording start (end - duration = start)
-    clip_start_utc = creation_utc - timedelta(seconds=duration_s)
-    
-    # Stage 3: Apply camera offset to create unified real-world timeline
-    # ✅ FIX: Offset is subtracted (earlier offset = camera started later, so shift backward)
-    camera_offset_s = camera_offsets.get(camera_name, 0.0)
-    aligned_start_utc = clip_start_utc - timedelta(seconds=camera_offset_s)
-    
-    # =========================================================================
-    # Calculate absolute time overlap window
-    # =========================================================================
-    
-    # Calculate when ALL cameras can record together (overlap window)
-    # Overlap starts when LAST camera starts (max offset)
-    # Overlap ends when FIRST camera ends (baseline + duration)
-    
-    if camera_offsets:
-        min_offset = min(camera_offsets.values())  # Baseline (earliest start)
-        max_offset = max(camera_offsets.values())  # Latest start
-        
-        # For THIS camera, calculate its absolute timeline
-        this_start_abs = camera_offset_s  # Relative to baseline
-        this_end_abs = camera_offset_s + duration_s
-        
-        # Overlap window in absolute timeline
-        overlap_start_abs = max_offset  # When all cameras have started
-        overlap_end_abs = min_offset + duration_s  # When first camera ends
-        
-        # Convert to session_ts_s for THIS camera
-        # Only keep frames where: overlap_start_abs <= (this_start_abs + sec) <= overlap_end_abs
-        min_sec = max(0, int(overlap_start_abs - this_start_abs))
-        max_sec = min(int(duration_s), int(overlap_end_abs - this_start_abs))
-    else:
-        # No offsets, use all frames
-        min_sec = 0
-        max_sec = int(duration_s)
-    
-    # =========================================================================
-    # Log clip info with overlap window details
-    # =========================================================================
-    
-    frames_skipped_start = min_sec // sampling_interval_s
-    frames_skipped_end = (int(duration_s) - max_sec) // sampling_interval_s
-    frames_kept = (max_sec - min_sec) // sampling_interval_s
-    
-    log.info(
-        f"[extract] {video_path.name} | "
-        f"duration={duration_s:.1f}s | fps={video_fps:.2f} | "
-        f"offset={camera_offset_s:.3f}s | "
-        f"keep=[{min_sec}s-{max_sec}s] ({frames_kept} frames) | "
-        f"skip_start={frames_skipped_start} skip_end={frames_skipped_end}"
-    )
-    
-    if duration_s <= 0:
-        log.warning(f"[extract] {video_path.name} has zero duration - skipping")
-        return []
-    
-    if max_sec <= min_sec:
-        overlap_duration = max_sec - min_sec
-        log.warning(
-            f"[extract] {video_path.name} has no overlap with other cameras "
-            f"(offset={camera_offset_s:.1f}s creates gap)"
-        )
-        return []
-    
-    # =========================================================================
-    # Generate frame metadata with edge case filtering
-    # =========================================================================
-    rows: List[Dict[str, str]] = []
+    creation_epoch = creation_utc.timestamp()
+
+    # True real-world start time (Cycliq creation_time = END of clip)
+    real_start_epoch = creation_epoch - float(duration_s)
+
+    camera_offset_s = float(camera_offsets.get(camera_name, 0.0))
+
+    duration_int = int(duration_s)
     effective_fps = 1.0 / float(sampling_interval_s)
-    
-    for sec in range(0, int(duration_s), sampling_interval_s):
-        # ✅ EDGE CASE FILTER: Skip frames outside overlap window
-        if sec < min_sec or sec >= max_sec:
+
+    log.info(
+        f"[extract] {video_path.name} | duration={duration_s:.1f}s | "
+        f"fps={video_fps:.2f} | offset={camera_offset_s:.3f}s | "
+        f"real_start={datetime.utcfromtimestamp(real_start_epoch).isoformat()}Z"
+    )
+
+    rows: List[Dict[str, str]] = []
+
+    # ------------------------------------------------------------
+    # Sampling loop
+    # ------------------------------------------------------------
+    for sec in range(0, duration_int, sampling_interval_s):
+
+        # Apply offset to sampling point
+        adjusted_sec = float(sec) + camera_offset_s
+
+        # Compute real-world timestamp of the frame
+        abs_time_epoch = real_start_epoch + adjusted_sec
+        abs_time_iso = datetime.utcfromtimestamp(abs_time_epoch).isoformat() + "Z"
+
+        # GPX filtering (optional)
+        if gpx_start_epoch > 0 and abs_time_epoch < gpx_start_epoch:
             continue
-        
-        # Compute absolute time for this frame (using NATURAL timeline)
-        frame_time_utc = aligned_start_utc + timedelta(seconds=sec)
-        frame_epoch = frame_time_utc.timestamp()
-        
-        # Filter: Skip frames before GPX starts
-        if gpx_start_epoch > 0 and frame_epoch < gpx_start_epoch:
-            continue
-        
-        # Compute frame number in original video
+
         frame_number = int(sec * video_fps)
-        
-        # Generate unique index
         index = f"{camera_name}_{clip_id}_{sec:06d}"
-        
-        # Build metadata row
+
         rows.append({
             "index": index,
             "camera": camera_name,
@@ -318,21 +374,25 @@ def _extract_video_metadata(
             "video_path": str(video_path),
             "frame_interval": str(sampling_interval_s),
             "fps": f"{effective_fps:.3f}",
-            "session_ts_s": f"{sec:.3f}",
-            "abs_time_iso": frame_time_utc.isoformat(),
-            "abs_time_epoch": f"{frame_epoch:.3f}",
+
+            # aligned sampling point (sec + offset)
+            "session_ts_s": f"{adjusted_sec:.3f}",
+
+            # real-world timestamp
+            "abs_time_iso": abs_time_iso,
+            "abs_time_epoch": f"{abs_time_epoch:.3f}",
+
             "camera_offset_s": f"{camera_offset_s:.3f}",
             "path": f"{camera_name}/{clip_id}_{sec:06d}.jpg",
             "source": video_path.name,
             "raw_creation_time": creation_local.isoformat(),
             "duration_s": f"{duration_s:.3f}",
-            "adjusted_start_time": clip_start_utc.isoformat(),
+
+            # real start time (UTC)
+            "adjusted_start_time": datetime.utcfromtimestamp(real_start_epoch).isoformat() + "Z",
         })
-    
-    log.info(
-        f"[extract] Generated {len(rows)} frames from {video_path.name} "
-        f"(skipped {frames_skipped_start} at start, {frames_skipped_end} at end due to camera overlap)"
-    )
+
+    log.info(f"[extract] Generated {len(rows)} frames from {video_path.name}")
     return rows
 
 
@@ -415,6 +475,15 @@ def run() -> Path:
         report_progress(2, 5, "Camera offsets disabled - using natural timestamps")
         log.info("[extract] USE_CAMERA_OFFSETS=False - all offsets set to 0")
         camera_offsets = {}
+
+    # Compute global session start and per-camera REAL overlap bounds
+    global_session_start_epoch, per_camera_overlap = _compute_session_time_bounds(
+        videos,
+        camera_offsets,
+    )
+
+
+
     
     gpx_start_epoch = _get_gpx_start_epoch()
     sampling_interval_s = int(CFG.EXTRACT_INTERVAL_SECONDS)
@@ -448,12 +517,21 @@ def run() -> Path:
         )
         
         try:
+            camera_name, _clip_num, _clip_id = _parse_camera_and_clip(video_path)
+            overlap_bounds = per_camera_overlap.get(
+                camera_name,
+                (global_session_start_epoch, float("inf")),
+            )
+
             rows = _extract_video_metadata(
                 video_path,
                 sampling_interval_s,
                 camera_offsets,
-                gpx_start_epoch
+                gpx_start_epoch,
+                global_session_start_epoch,
+                overlap_bounds,
             )
+
             all_rows.extend(rows)
             
         except Exception as e:
