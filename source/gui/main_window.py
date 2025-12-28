@@ -209,14 +209,14 @@ class MainWindow(QMainWindow):
     # --- Pipeline Execution ---
     
     def _run_prepare(self):
-        """Run preparation pipeline (align only)."""
+        """Run preparation pipeline (align and extract)."""
         try:
             self.pipeline_controller.run_prepare()
         except Exception as e:
             self._on_error("prepare", str(e))
     
     def _run_analyze(self):
-        """Run analysis pipeline."""
+        """Run analysis pipeline (enrichment and scoring)."""
         try:
             self.pipeline_controller.run_analyze()
         except Exception as e:
@@ -367,7 +367,7 @@ class MainWindow(QMainWindow):
             "preflight": self.pipeline_panel.btn_prepare,
             "flatten": self.pipeline_panel.btn_prepare,
             "align": self.pipeline_panel.btn_prepare,
-            "extract": self.pipeline_panel.btn_analyze,
+            "extract": self.pipeline_panel.btn_prepare,
             "analyze": self.pipeline_panel.btn_analyze,
             "select": self.pipeline_panel.btn_select,
             "build": self.pipeline_panel.btn_build,
@@ -400,7 +400,7 @@ class MainWindow(QMainWindow):
         
         # Treat GPX as done if flatten.csv exists (import + flatten complete)
         gpx_done = flatten_path().exists()
-        prepare_done = self.pipeline_controller.can_run_analyze()  # camera_offsets.json exists
+        prepare_done = self.pipeline_controller.can_run_analyze()  # extract.csv exists
         analyze_done = self.pipeline_controller.can_run_select()    # enriched.csv exists
         select_done = self.pipeline_controller.can_run_finalize()   # select.csv exists
         build_done = self._check_finalize_done()
@@ -408,7 +408,7 @@ class MainWindow(QMainWindow):
         self.pipeline_panel.update_button_states(
             gpx_enabled=True,
             gpx_done=gpx_done,
-            prepare_enabled=True,          # align-only now
+            prepare_enabled=True,
             prepare_done=prepare_done,
             analyze_enabled=prepare_done,
             analyze_done=analyze_done,
@@ -465,27 +465,6 @@ class MainWindow(QMainWindow):
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "GPS Import Error", f"Failed to open GPS import:\n\n{str(e)}")
 
-    def _update_pipeline_buttons(self):
-        if not self.project_controller.current_project:
-            self.pipeline_panel.enable_all_buttons(False)
-            return
-        gpx_done = flatten_path().exists()
-        prepare_done = self.pipeline_controller.can_run_analyze()
-        analyze_done = self.pipeline_controller.can_run_select()
-        select_done = self.pipeline_controller.can_run_finalize()
-        build_done = self._check_finalize_done()
-        self.pipeline_panel.update_button_states(
-            gpx_enabled=True,
-            gpx_done=gpx_done,
-            prepare_enabled=True,
-            prepare_done=prepare_done,
-            analyze_enabled=prepare_done,
-            analyze_done=analyze_done,
-            select_enabled=analyze_done,
-            select_done=select_done,
-            build_enabled=select_done,
-            build_done=build_done
-        )
     
     def _show_music_placeholder(self):
         """Show music management placeholder."""

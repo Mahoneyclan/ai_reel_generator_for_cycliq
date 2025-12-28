@@ -68,15 +68,15 @@ class PipelinePanel(QWidget):
         layout.addWidget(self.btn_gpx)
 
         self.btn_prepare = self._create_button(
-            "Prepare", 
-            "Validate inputs, parse GPX, and align camera timestamps",
+            "Prepare & Extract",
+            "Validate inputs, align camera timestamps, and extract frame metadata",
             self.prepare_clicked
         )
         layout.addWidget(self.btn_prepare)
 
         self.btn_analyze = self._create_button(
-            "Analyze", 
-            "Extract frame metadata and detect bikes with AI",
+            "Analyze",
+            "Detect bikes with AI and score clips",
             self.analyze_clicked
         )
         layout.addWidget(self.btn_analyze)

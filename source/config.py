@@ -183,7 +183,7 @@ class Config:
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
     GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))
     PARTNER_TIME_TOLERANCE_S: float = field(
-        default_factory=lambda: _get_config_value('PARTNER_TIME_TOLERANCE_S', 0.0)
+        default_factory=lambda: _get_config_value('PARTNER_TIME_TOLERANCE_S', 1.0)
     )
 
     # --- Path properties ---

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Callable, Set
 
 from ...core.pipeline_executor import PipelineExecutor
-from ...io_paths import camera_offsets_path, enrich_path, select_path
+from ...io_paths import extract_path, enrich_path, select_path
 
 
 class PipelineController:
@@ -42,13 +42,13 @@ class PipelineController:
         self.current_project = project_path
     
     def run_prepare(self):
-        """Run preparation steps: preflight → flatten → align."""
+        """Run preparation steps: preflight → flatten → align → extract."""
         if not self.current_project:
             raise ValueError("No project selected")
         self.executor.prepare()
     
     def run_analyze(self):
-        """Run analysis steps: extract → analyze."""
+        """Run analysis step: analyze."""
         if not self.current_project:
             raise ValueError("No project selected")
         self.executor.analyze()
@@ -73,14 +73,14 @@ class PipelineController:
             Dict with step completion flags
         """
         return {
-            "prepare_done": camera_offsets_path().exists(),
+            "prepare_done": extract_path().exists(),
             "analyze_done": enrich_path().exists(),
             "select_done": select_path().exists(),
         }
     
     def can_run_analyze(self) -> bool:
         """Check if analyze step can be run (prepare must be done)."""
-        return camera_offsets_path().exists()
+        return extract_path().exists()
     
     def can_run_select(self) -> bool:
         """Check if select step can be run (analyze must be done)."""

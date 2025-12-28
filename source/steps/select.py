@@ -362,11 +362,18 @@ def run() -> Path:
     # Ensure chronological ordering for logs / duration reporting
     enriched.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
 
-    # 🔥 FIX: Recompute moment_id using aligned session_ts_s
+    # Recompute moment_id using session_ts_s (aligned ride time with camera offsets)
+    # This ensures frames from both cameras at the same ride moment get paired
+    first_session_ts = min(_sf(r.get("session_ts_s")) for r in enriched)
+    sample_interval = float(CFG.EXTRACT_INTERVAL_SECONDS)
+    
     for r in enriched:
-        r["moment_id"] = int(_sf(r.get("session_ts_s")) // CFG.EXTRACT_INTERVAL_SECONDS)
-
+        session_ts = _sf(r.get("session_ts_s"))
+        moment_id = int((session_ts - first_session_ts) / sample_interval)
+        r["moment_id"] = str(moment_id)
+    
     log.info(f"Loaded {len(enriched)} enriched frames")
+    log.info(f"Recomputed moment IDs using session_ts_s (aligned ride time)")
     log.info(
         f"Time range: {enriched[0].get('abs_time_iso', '?')[:19]} "
         f"to {enriched[-1].get('abs_time_iso', '?')[:19]}"

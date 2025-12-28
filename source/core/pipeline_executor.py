@@ -70,13 +70,13 @@ class PipelineExecutor:
     # --- High-level actions ---
 
     def prepare(self):
-        """Run alignment only (flatten is invoked after GPX import)."""
-        for step in ["align"]:
+        """Run alignment and frame extraction."""
+        for step in ["align", "extract"]:
             self._run_step(step)
 
     def analyze(self):
-        """Run extract → analyze."""
-        for step in ["extract", "analyze"]:
+        """Run analysis only (enrichment, scoring)."""
+        for step in ["analyze"]:
             self._run_step(step)
 
     def select(self, project_dir: Path):
