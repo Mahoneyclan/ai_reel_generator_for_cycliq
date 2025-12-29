@@ -302,7 +302,7 @@ def _extract_video_metadata(
     sampling_interval_s: int,
     camera_offsets: Dict[str, float],
     gpx_start_epoch: float,
-    _global_session_start_epoch: float,   # unused now
+    global_session_start_epoch: float,
     _camera_overlap_bounds: Tuple[float, float],  # unused now
 ) -> List[Dict[str, str]]:
     """
@@ -342,7 +342,7 @@ def _extract_video_metadata(
     log.info(
         f"[extract] {video_path.name} | duration={duration_s:.1f}s | "
         f"fps={video_fps:.2f} | offset={camera_offset_s:.3f}s | "
-        f"real_start={datetime.utcfromtimestamp(real_start_epoch).isoformat()}Z"
+        f"real_start={datetime.fromtimestamp(real_start_epoch, tz=timezone.utc).isoformat()}"
     )
 
     rows: List[Dict[str, str]] = []
@@ -357,7 +357,11 @@ def _extract_video_metadata(
 
         # Compute real-world timestamp of the frame
         abs_time_epoch = real_start_epoch + adjusted_sec
-        abs_time_iso = datetime.utcfromtimestamp(abs_time_epoch).isoformat() + "Z"
+        abs_time_iso = datetime.fromtimestamp(abs_time_epoch, tz=timezone.utc).isoformat()
+        
+        # CRITICAL FIX: session_ts_s must be global across all clips, not per-clip
+        # Use the aligned timestamp minus the global session start
+        session_ts_aligned = abs_time_epoch - global_session_start_epoch
 
         # GPX filtering (optional)
         if gpx_start_epoch > 0 and abs_time_epoch < gpx_start_epoch:
@@ -375,8 +379,8 @@ def _extract_video_metadata(
             "frame_interval": str(sampling_interval_s),
             "fps": f"{effective_fps:.3f}",
 
-            # aligned sampling point (sec + offset)
-            "session_ts_s": f"{adjusted_sec:.3f}",
+            # Use global session timestamp (continuous across all clips)
+            "session_ts_s": f"{session_ts_aligned:.3f}",
 
             # real-world timestamp
             "abs_time_iso": abs_time_iso,
