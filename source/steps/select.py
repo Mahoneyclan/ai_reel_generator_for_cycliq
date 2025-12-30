@@ -362,22 +362,10 @@ def run() -> Path:
     # Ensure chronological ordering for logs / duration reporting
     enriched.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
 
-    # Recompute moment_id using session_ts_s (aligned ride time with camera offsets)
-    # This ensures frames from both cameras at the same ride moment get paired
-    first_session_ts = min(_sf(r.get("session_ts_s")) for r in enriched)
-    sample_interval = float(CFG.EXTRACT_INTERVAL_SECONDS)
-    
-    for r in enriched:
-        session_ts = _sf(r.get("session_ts_s"))
-        moment_id = int((session_ts - first_session_ts) / sample_interval)
-        r["moment_id"] = str(moment_id)
-    
+    # DO NOT recompute moment_id here.
+    # analyze.py already assigns correct moment_id using abs_time_epoch.
     log.info(f"Loaded {len(enriched)} enriched frames")
-    log.info(f"Recomputed moment IDs using session_ts_s (aligned ride time)")
-    log.info(
-        f"Time range: {enriched[0].get('abs_time_iso', '?')[:19]} "
-        f"to {enriched[-1].get('abs_time_iso', '?')[:19]}"
-    )
+    log.info("Using moment_id from analyze.py (abs_time_epoch-based)")
 
     first_time = _sf(enriched[0].get("abs_time_epoch"))
     last_time = _sf(enriched[-1].get("abs_time_epoch"))
@@ -458,12 +446,14 @@ def run() -> Path:
     output_rows: List[Dict] = []
     for m in candidate_moments:
         for row in (m["fly12"], m["fly6"]):
-            # Ensure recommended field exists and is set correctly
             row = dict(row)  # avoid mutating original enriched row list
             row["recommended"] = "true" if row["index"] in recommended_indices else "false"
             output_rows.append(row)
 
+    # Sort by aligned world time
     output_rows.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
+
+    # Write select.csv with all fields present in enriched rows
     _write_csv(select_path(), output_rows)
 
     log.info("")
@@ -483,3 +473,4 @@ def run() -> Path:
     log.info("Ready for manual review")
 
     return select_path()
+

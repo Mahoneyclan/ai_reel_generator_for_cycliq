@@ -60,28 +60,30 @@ class MinimapPrerenderer:
     def _render_single(self, row: Dict, clip_idx: int) -> Path | None:
         """
         Render single minimap for a clip.
-        
+
         Args:
-            row: Clip metadata
+            row: Clip metadata (from select.csv)
             clip_idx: Clip index number
-            
+
         Returns:
             Path to rendered minimap PNG, or None if failed
         """
+        # Use GPX epoch as the authoritative ride timeline
         gpx_epoch = row.get("gpx_epoch")
         if not gpx_epoch:
             log.debug(f"[minimap] Clip {clip_idx} has no GPX timestamp")
             return None
-        
+
         try:
             epoch = float(gpx_epoch)
             img = render_overlay_minimap(self.gpx_points, epoch)
-            
+
             minimap_path = self.output_dir / f"minimap_{clip_idx:04d}.png"
             img.save(minimap_path)
-            
+
             return minimap_path
-            
+
         except Exception as e:
             log.warning(f"[minimap] Render failed for clip {clip_idx}: {e}")
             return None
+    

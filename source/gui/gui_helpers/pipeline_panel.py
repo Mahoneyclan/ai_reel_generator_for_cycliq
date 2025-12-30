@@ -3,8 +3,16 @@
 Pipeline steps panel with project-specific workflow.
 MIGRATED from pipeline_panel.py + project-specific buttons from action_button_panel.py
 
-Pipeline workflow: Get GPX → Prepare → Analyze → Select → Build
-Special tools: Analyze Selection, View Log
+Pipeline workflow:
+- Get GPX & Flatten
+- Align & Extract
+- Analyze
+- Select
+- Build
+
+Special tools:
+- Analyze Selection
+- View Log
 
 Signal naming clarification:
 - analyze_clicked = Run the Analyze pipeline step
@@ -22,12 +30,12 @@ class PipelinePanel(QWidget):
     """
 
     # Pipeline step signals (from old pipeline_panel.py)
-    gpx_clicked = Signal()          # NEW: Moved from action_button_panel
-    prepare_clicked = Signal()
-    analyze_clicked = Signal()      # Runs analyze step (NOT selection analysis)
+    gpx_clicked = Signal()          # Get GPX & Flatten
+    prepare_clicked = Signal()      # Align & Extract
+    analyze_clicked = Signal()      # Runs analyze step
     select_clicked = Signal()
     build_clicked = Signal()        # Renamed from finalize_clicked
-    
+
     # Special tool signals (from old action_button_panel.py)
     analyze_selection_clicked = Signal()  # Renamed from analyze_clicked in action_button_panel
     view_log_clicked = Signal()           # Renamed from log_clicked in action_button_panel
@@ -58,40 +66,56 @@ class PipelinePanel(QWidget):
         steps_label.setStyleSheet("font-size: 14px; font-weight: 600; color: #666; padding: 10px 0 5px 0;")
         layout.addWidget(steps_label)
 
-        # Pipeline step buttons
-        # NEW: Get GPX as first step (moved from action_button_panel)
+        # ---------------------------------------------------------------------
+        # Pipeline step buttons (with explicit dependencies and outputs)
+        # ---------------------------------------------------------------------
+
+        # Get GPX & Flatten: download/import GPX and create flatten.csv
         self.btn_gpx = self._create_button(
-            "Get GPX", 
-            "Import GPS data from Strava or Garmin Connect",
+            "Get GPX & Flatten",
+            "Download or import GPX (Strava/Garmin) and generate flatten.csv.\n"
+            "Required before alignment and extraction.\n"
+            "Produces: ride.gpx, flatten.csv",
             self.gpx_clicked
         )
         layout.addWidget(self.btn_gpx)
 
+        # Align & Extract: align cameras and extract frame metadata
         self.btn_prepare = self._create_button(
-            "Prepare & Extract",
-            "Validate inputs, align camera timestamps, and extract frame metadata",
+            "Align & Extract",
+            "Align camera clocks using GPX and generate frame metadata.\n"
+            "Requires: flatten.csv\n"
+            "Produces: camera_offsets.json, extract.csv",
             self.prepare_clicked
         )
         layout.addWidget(self.btn_prepare)
 
+        # Analyze: detection, scene, telemetry, partner matching
         self.btn_analyze = self._create_button(
             "Analyze",
-            "Detect bikes with AI and score clips",
+            "Run object detection, scene detection, telemetry enrichment, and partner matching.\n"
+            "Requires: extract.csv\n"
+            "Produces: enriched.csv",
             self.analyze_clicked
         )
         layout.addWidget(self.btn_analyze)
 
+        # Select: candidate pool + gap filtering + recommended clips
         self.btn_select = self._create_button(
-            "Select", 
-            "AI recommends clips, then you review and finalize selection",
+            "Select",
+            "AI recommends clips based on scores and scene changes.\n"
+            "Requires: enriched.csv\n"
+            "Produces: select.csv",
             self.select_clicked
         )
         layout.addWidget(self.btn_select)
 
-        # Renamed from "Finalize" to "Build" for clarity
+        # Build: render clips, intro/outro, final reel
         self.btn_build = self._create_button(
-            "Build", 
-            "Render clips with overlays, create intro/outro, and assemble final video",
+            "Build",
+            "Render highlight clips with overlays, create intro/outro, and assemble the final video.\n"
+            "Requires: select.csv\n"
+            "Produces: clips/, minimaps/, gauges/, _middle_XX.mp4, _intro.mp4, _outro.mp4, final reel",
             self.build_clicked
         )
         layout.addWidget(self.btn_build)
@@ -107,15 +131,15 @@ class PipelinePanel(QWidget):
         special_layout = QHBoxLayout()
         special_layout.setSpacing(10)
 
-        # Renamed from "analyze_clicked" to "analyze_selection_clicked" to avoid conflict
+        # Selection analysis
         self.analyze_selection_btn = self._create_special_button(
             "📊 Analyze Selection",
-            "Analyze selection pipeline and identify bottlenecks"
+            "Analyze selection pipeline metrics and identify bottlenecks using enriched.csv and select.csv"
         )
         self.analyze_selection_btn.clicked.connect(self.analyze_selection_clicked.emit)
         special_layout.addWidget(self.analyze_selection_btn)
 
-        # Renamed from "log_clicked" to "view_log_clicked" for clarity
+        # View log
         self.view_log_btn = self._create_special_button(
             "📄 View Log",
             "View detailed log files for this project"
@@ -135,7 +159,7 @@ class PipelinePanel(QWidget):
             "select": self.btn_select,
             "build": self.btn_build
         }
-        
+
         self.special_buttons = [self.analyze_selection_btn, self.view_log_btn]
 
     def _create_separator(self) -> QFrame:
@@ -182,6 +206,10 @@ class PipelinePanel(QWidget):
         """)
         return btn
 
+    # -------------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------------
+
     def set_project_info(self, name: str, path: str):
         """Update project info display."""
         self.project_name_label.setText(name)
@@ -191,7 +219,7 @@ class PipelinePanel(QWidget):
         """Enable/disable all project-specific buttons."""
         for btn in self.pipeline_buttons.values():
             btn.setEnabled(enabled)
-        
+
         for btn in self.special_buttons:
             btn.setEnabled(enabled)
 
@@ -208,7 +236,13 @@ class PipelinePanel(QWidget):
         build_enabled: bool = False,
         build_done: bool = False
     ):
-        """Update button states based on pipeline progress."""
+        """
+        Update button states based on pipeline progress and dependencies.
+
+        The convention is:
+            - *_enabled controls whether the user can click the button
+            - *_done toggles the visual "completed" state
+        """
         self._update_button(self.btn_gpx, gpx_enabled, gpx_done)
         self._update_button(self.btn_prepare, prepare_enabled, prepare_done)
         self._update_button(self.btn_analyze, analyze_enabled, analyze_done)
@@ -233,6 +267,10 @@ class PipelinePanel(QWidget):
                     padding-left: 15px;
                 }
             """)
+
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
 
     def _update_button(self, button: QPushButton, enabled: bool, done: bool):
         """Update single button state."""

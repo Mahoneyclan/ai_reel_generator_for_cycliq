@@ -36,15 +36,16 @@ class GaugeRenderer:
     def render_gauges_for_clip(self, row: Dict, clip_idx: int) -> Dict[str, Path]:
         """
         Render all gauge types for a single clip.
-        
+
         Args:
             row: Clip metadata with telemetry data
             clip_idx: Clip index number
-            
+
         Returns:
             Dict mapping gauge_type → image_path
         """
-        # Extract telemetry values
+
+        # Extract telemetry values (clean, minimal schema)
         telemetry = {
             "speed": [float(row.get("speed_kmh") or 0.0)],
             "cadence": [float(row.get("cadence_rpm") or 0.0)],
@@ -52,10 +53,10 @@ class GaugeRenderer:
             "elev": [float(row.get("elevation") or 0.0)],
             "gradient": [float(row.get("gradient_pct") or 0.0)],
         }
-        
+
         # Create clip-specific gauge directory
         clip_gauge_dir = _mk(self.output_dir / f"clip_{clip_idx:04d}")
-        
+
         try:
             gauge_images = gauge_overlay.create_all_gauge_images(
                 telemetry,
@@ -64,11 +65,12 @@ class GaugeRenderer:
                 clip_idx
             )
             return gauge_images
-            
+
         except Exception as e:
             log.error(f"[gauge] Failed to create gauges for clip {clip_idx}: {e}")
             return {}
-    
+
+
     def calculate_gauge_positions(
         self,
         padding: tuple[int, int]

@@ -115,9 +115,13 @@ def _load_recommended_moments() -> List[Dict]:
         log.warning("[build] No recommended moments with both perspectives available")
         return []
 
-    # Sort by time for stable build order
+    # Sort by aligned world time (abs_time_epoch)
     moments.sort(
-        key=lambda m: float(m["main"].get("abs_time_epoch", m["pip"].get("abs_time_epoch", 0)) or 0.0)
+        key=lambda m: float(
+            m["main"].get("abs_time_epoch")
+            or m["pip"].get("abs_time_epoch")
+            or 0.0
+        )
     )
 
     log.info(

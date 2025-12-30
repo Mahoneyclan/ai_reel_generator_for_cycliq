@@ -30,7 +30,7 @@ class ManualSelectionWindow(QDialog):
             * One for Fly12Sport
             * One for Fly6Pro
         - Each row has:
-            * index, camera, abs_time_iso, abs_time_epoch, recommended, ...
+            * index, camera, abs_time_epoch, recommended, ...
         - Frames are extracted as {index}_Primary.jpg in frames_dir().
     """
 
@@ -246,6 +246,7 @@ class ManualSelectionWindow(QDialog):
                     dropped += 1
                     continue
 
+                # Use aligned world time
                 epoch = min(
                     float(fly12_row.get("abs_time_epoch", 0) or 0.0),
                     float(fly6_row.get("abs_time_epoch", 0) or 0.0),
@@ -259,7 +260,7 @@ class ManualSelectionWindow(QDialog):
                     }
                 )
 
-            # Sort moments by time
+            # Sort moments by aligned world time
             moments.sort(key=lambda m: m["epoch"])
             self.moments = moments
 

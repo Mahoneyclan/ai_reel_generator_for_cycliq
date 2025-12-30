@@ -58,15 +58,37 @@ class GPSEnricher:
         return sorted(points, key=lambda p: p["gpx_epoch"])
 
     def enrich(self, row: Dict) -> Dict:
-        """Attach telemetry fields to frame row based on timestamp match."""
-        epoch = float(row.get("abs_time_epoch", 0))
+        """
+        Attach telemetry fields to a frame row using abs_time_epoch.
+
+        The new time model guarantees:
+            - abs_time_epoch is the authoritative world-aligned timestamp
+            - flatten.csv provides gpx_epoch at 1 Hz
+            - We match the nearest GPX epoch within GPX_TOLERANCE
+        """
+
+        try:
+            epoch = float(row.get("abs_time_epoch", 0.0) or 0.0)
+        except Exception:
+            epoch = 0.0
+
+        if not self.points:
+            # No GPX data available
+            row["gpx_missing"] = "true"
+            for k in [
+                "gpx_dt_s", "gpx_epoch", "gpx_time_utc", "lat", "lon",
+                "elevation", "hr_bpm", "cadence_rpm", "speed_kmh", "gradient_pct"
+            ]:
+                row[k] = ""
+            return row
+
+        # Binary search for nearest GPX point
         idx = bisect_left(self.epochs, epoch)
 
         best = None
         best_dt = float("inf")
 
-        # Check idx and neighbors for closest match within tolerance
-        for offset in [-1, 0, 1]:
+        for offset in (-1, 0, 1):
             i = idx + offset
             if 0 <= i < len(self.points):
                 pt = self.points[i]
@@ -91,11 +113,14 @@ class GPSEnricher:
         else:
             self.misses += 1
             row["gpx_missing"] = "true"
-            for k in ["gpx_dt_s", "gpx_epoch", "gpx_time_utc", "lat", "lon",
-                      "elevation", "hr_bpm", "cadence_rpm", "speed_kmh", "gradient_pct"]:
+            for k in [
+                "gpx_dt_s", "gpx_epoch", "gpx_time_utc", "lat", "lon",
+                "elevation", "hr_bpm", "cadence_rpm", "speed_kmh", "gradient_pct"
+            ]:
                 row[k] = ""
 
         return row
+
 
     def get_stats(self) -> Dict:
         """Return enrichment statistics."""

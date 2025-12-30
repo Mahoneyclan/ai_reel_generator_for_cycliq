@@ -169,7 +169,7 @@ def _compute_session_time_bounds(
 
     Time model:
       real_start_utc  = creation_utc - duration
-      aligned_start_utc = real_start_utc - camera_offset_s
+      aligned_start_utc = real_start_utc + camera_offset_s
 
     Overlap is defined in REAL time:
       real_end_utc    = real_start_utc + duration
@@ -303,37 +303,38 @@ def _extract_video_metadata(
     camera_offsets: Dict[str, float],
     gpx_start_epoch: float,
     global_session_start_epoch: float,
-    _camera_overlap_bounds: Tuple[float, float],  # unused now
+    _camera_overlap_bounds: Tuple[float, float],
 ) -> List[Dict[str, str]]:
     """
     Generate frame metadata for one video clip using the corrected time model:
 
-        real_start_epoch = creation_time_epoch - duration_s
-        adjusted_sec     = sec + camera_offset_s
-        abs_time_epoch   = real_start_epoch + adjusted_sec
+        real_start_epoch  = creation_utc - duration_s
+        abs_time_epoch    = real_start_epoch + camera_offset_s + sec
+        session_ts_s      = abs_time_epoch - global_session_start_epoch
 
-    No overlap filtering. No aligned timeline. No global session.
+    The camera_offset_s IS applied to individual frame timestamps so that all
+    cameras share a single global timeline. This makes Fly12/Fly6 alignment,
+    moment bucketing, partner matching, and GPX enrichment consistent.
     """
 
     camera_name, clip_num, clip_id = _parse_camera_and_clip(video_path)
 
-    # ------------------------------------------------------------
-    # Probe MP4 metadata
-    # ------------------------------------------------------------
+    # Probe metadata
     try:
         raw_dt, duration_s, video_fps = _probe_video_metadata(video_path)
     except Exception as e:
         log.error(f"[extract] Failed to probe {video_path.name}: {e}")
         return []
 
-    # Fix Cycliq's UTC bug
+    # Fix Cycliq UTC bug and convert to real UTC
     creation_local = _fix_utc_bug(raw_dt)
     creation_utc = creation_local.astimezone(timezone.utc)
     creation_epoch = creation_utc.timestamp()
 
-    # True real-world start time (Cycliq creation_time = END of clip)
+    # Real-world start time (Cycliq creation_time = END of clip)
     real_start_epoch = creation_epoch - float(duration_s)
 
+    # Camera-to-camera offset (relative to baseline camera)
     camera_offset_s = float(camera_offsets.get(camera_name, 0.0))
 
     duration_int = int(duration_s)
@@ -347,28 +348,22 @@ def _extract_video_metadata(
 
     rows: List[Dict[str, str]] = []
 
-    # ------------------------------------------------------------
     # Sampling loop
-    # ------------------------------------------------------------
-    for sec in range(0, duration_int, sampling_interval_s):
+    # Sampling loop (sec_raw = seconds on the camera’s own timeline)
+    for sec_raw in range(0, duration_int, sampling_interval_s):
+        # 1. Raw timeline → frame number, filename, index
+        frame_number = int(sec_raw * video_fps)
+        index = f"{camera_name}_{clip_id}_{sec_raw:06d}"
 
-        # Apply offset to sampling point
-        adjusted_sec = float(sec) + camera_offset_s
-
-        # Compute real-world timestamp of the frame
-        abs_time_epoch = real_start_epoch + adjusted_sec
+        # 2. Align to world time using camera_offset_s
+        #    This is the ONLY place the offset is applied
+        abs_time_epoch = real_start_epoch + camera_offset_s + float(sec_raw)
         abs_time_iso = datetime.fromtimestamp(abs_time_epoch, tz=timezone.utc).isoformat()
-        
-        # CRITICAL FIX: session_ts_s must be global across all clips, not per-clip
-        # Use the aligned timestamp minus the global session start
+
         session_ts_aligned = abs_time_epoch - global_session_start_epoch
 
-        # GPX filtering (optional)
         if gpx_start_epoch > 0 and abs_time_epoch < gpx_start_epoch:
             continue
-
-        frame_number = int(sec * video_fps)
-        index = f"{camera_name}_{clip_id}_{sec:06d}"
 
         rows.append({
             "index": index,
@@ -379,56 +374,84 @@ def _extract_video_metadata(
             "frame_interval": str(sampling_interval_s),
             "fps": f"{effective_fps:.3f}",
 
-            # Use global session timestamp (continuous across all clips)
             "session_ts_s": f"{session_ts_aligned:.3f}",
-
-            # real-world timestamp
             "abs_time_iso": abs_time_iso,
             "abs_time_epoch": f"{abs_time_epoch:.3f}",
 
             "camera_offset_s": f"{camera_offset_s:.3f}",
-            "path": f"{camera_name}/{clip_id}_{sec:06d}.jpg",
+            "path": f"{camera_name}/{clip_id}_{sec_raw:06d}.jpg",
             "source": video_path.name,
             "raw_creation_time": creation_local.isoformat(),
             "duration_s": f"{duration_s:.3f}",
 
-            # real start time (UTC)
-            "adjusted_start_time": datetime.utcfromtimestamp(real_start_epoch).isoformat() + "Z",
+            "adjusted_start_time": datetime.fromtimestamp(
+                real_start_epoch, tz=timezone.utc
+            ).isoformat().replace("+00:00", "Z"),
         })
+
+
 
     log.info(f"[extract] Generated {len(rows)} frames from {video_path.name}")
     return rows
 
-
 def _write_metadata_csv(output_path: Path, all_rows: List[Dict[str, str]]):
     """
-    Write frame metadata to CSV.
-    
-    Args:
-        output_path: Path to output CSV file
-        all_rows: List of frame metadata dicts
+    Write frame metadata to CSV using the minimal, correct schema.
+
+    Removes deprecated or misleading time fields and ensures downstream
+    steps receive only the fields required for:
+        - analyze.py
+        - select.py
+        - manual_selection_window.py
+        - build.py
     """
+
+    # Minimal schema for extract → analyze → select → build
+    FIELDNAMES = [
+        "index",
+        "camera",
+        "clip_num",
+        "frame_number",
+        "video_path",
+
+        # Time model (clean)
+        "abs_time_epoch",
+        "abs_time_iso",
+        "session_ts_s",
+        "adjusted_start_time",
+
+        # Camera alignment (debug)
+        "camera_offset_s",
+
+        # Clip metadata
+        "duration_s",
+        "source",
+
+        # UI / analysis
+        "fps",
+    ]
+
+    # If no rows, write empty CSV with header
     if not all_rows:
-        # Write empty CSV with headers
         log.warning("[extract] No frames to write - creating empty CSV")
         with output_path.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "index", "camera", "clip_num", "frame_number", "video_path",
-                "frame_interval", "fps", "session_ts_s", "abs_time_iso",
-                "abs_time_epoch", "camera_offset_s", "path", "source",
-                "raw_creation_time", "duration_s", "adjusted_start_time"
-            ])
+            writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
             writer.writeheader()
         return
-    
-    # Write rows
+
+    # Filter rows to minimal schema
+    cleaned_rows = []
+    for row in all_rows:
+        cleaned = {k: row.get(k, "") for k in FIELDNAMES}
+        cleaned_rows.append(cleaned)
+
+    # Write cleaned rows
     with output_path.open("w", newline="") as f:
-        fieldnames = list(all_rows[0].keys())
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         writer.writeheader()
-        writer.writerows(all_rows)
-    
-    log.info(f"[extract] Wrote {len(all_rows)} frame metadata rows to {output_path.name}")
+        writer.writerows(cleaned_rows)
+
+    log.info(f"[extract] Wrote {len(cleaned_rows)} frame metadata rows to {output_path.name}")
 
 
 def run() -> Path:

@@ -31,32 +31,16 @@ log = setup_logger("steps.analyze")
 
 def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
     """
-    Assign moment_id to group paired frames by their partner relationships.
-    
-    A moment_id groups exactly 2 rows: one Fly12Sport and one Fly6Pro frame
-    that are partners (matched by partner_index field).
-    
-    Algorithm:
-        1. Build index lookup
-        2. For each unpaired row with a valid partner_index:
-           - Assign a new moment_id to both this row and its partner
-        3. Unpaired rows (no partner or partner missing) get no moment_id
-        
-    Args:
-        rows: List of frame dictionaries from enriched output
-        
-    Returns:
-        List of rows with moment_id field added (or empty if no partner)
+    Assign moment_id based solely on abs_time_epoch, using a fixed global
+    reference (epoch=0) so that camera start-time differences do not shift
+    bucket boundaries.
+
+    moment_id = floor(abs_time_epoch / sample_interval)
     """
-    # Compute time-based moment ids using the configured sampling interval.
-    # moment_id = int((abs_time_epoch - first_abs_time_epoch) / sample_interval)
-    # This ensures consistent bucketing across cameras and avoids relying on
-    # partner_index being present.
+
     if not rows:
         return rows
 
-    # Find earliest timestamp among rows
-    first_time = min((float(r.get("abs_time_epoch", 0) or 0.0) for r in rows))
     sample_interval = float(CFG.EXTRACT_INTERVAL_SECONDS)
     if sample_interval <= 0:
         sample_interval = 1.0
@@ -66,10 +50,14 @@ def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
             epoch = float(row.get("abs_time_epoch", 0) or 0.0)
         except Exception:
             epoch = 0.0
-        mid = int((epoch - first_time) / sample_interval) if epoch >= first_time else 0
+
+        # Use global epoch reference (0), not first_epoch
+        mid = int(epoch // sample_interval)
+
         row["moment_id"] = str(mid)
 
     return rows
+
 
 
 class FrameAnalyzer:
@@ -225,7 +213,7 @@ def run() -> Path:
 
             # Persist class IDs for reporting/audit
             if isinstance(enriched.get("detected_classes"), list):
-                enriched["detected_classes"] = ",".join(
+                enriched["detected_classes"] = ";".join(
                     str(c) for c in sorted(enriched["detected_classes"])
                 )
 

@@ -6,6 +6,10 @@ Handles PiP, minimap, gauges, and audio muxing.
 Moment-based version:
 - main_row: selected perspective for this moment (recommended=true).
 - pip_row:  opposite camera for same moment (always used as PiP).
+
+FIXED:
+- Clip start time is now computed relative to the source clip's own timeline
+  using abs_time_epoch and adjusted_start_time, NOT global session_ts_s.
 """
 
 from __future__ import annotations
@@ -35,6 +39,10 @@ class ClipRenderer:
         """
         self.output_dir = _mk(output_dir)
 
+    # -------------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------------
+
     def render_clip(
         self,
         main_row: Dict,
@@ -46,21 +54,66 @@ class ClipRenderer:
         """
         Render single clip with all overlays (main + PiP + minimap + gauges).
 
-        Args:
-            main_row: Clip metadata for the main camera (recommended=true)
-            pip_row: Clip metadata for the PiP camera (same moment_id)
-            clip_idx: Clip index number
-            minimap_path: Path to pre-rendered minimap (or None)
-            gauge_renderer: GaugeRenderer instance
+        Time model:
+            abs_time_epoch      = world-aligned timestamp of the moment
+            adjusted_start_time = real start time of the source clip (UTC)
+            clip_start_epoch    = parsed adjusted_start_time
+            offset_in_clip      = abs_time_epoch - clip_start_epoch
+            t_start             = max(0, offset_in_clip - CLIP_PRE_ROLL_S)
 
-        Returns:
-            Path to rendered clip, or None if failed
+        This ensures perfect alignment between Fly12 and Fly6.
         """
+
         main_video = CFG.INPUT_VIDEOS_DIR / main_row["source"]
         pip_video = CFG.INPUT_VIDEOS_DIR / pip_row["source"]
 
-        # Time window based on main camera session timestamp
-        t_start = max(0.0, float(main_row.get("session_ts_s", 0) or 0) - CFG.CLIP_PRE_ROLL_S)
+        # ---------------------------------------------------------------------
+        # Compute t_start using the corrected global time model
+        # ---------------------------------------------------------------------
+        try:
+            # World-aligned timestamp of the moment
+            abs_epoch = float(main_row.get("abs_time_epoch", 0.0) or 0.0)
+
+            # Clip start time (UTC) from extract.py
+            start_iso = main_row.get("adjusted_start_time")
+            if not start_iso:
+                raise ValueError("adjusted_start_time missing in main_row")
+
+            # Normalize and parse ISO timestamp
+            if start_iso.endswith("Z"):
+                start_iso = start_iso.replace("Z", "+00:00")
+            clip_start_dt = datetime.fromisoformat(start_iso)
+            clip_start_epoch = clip_start_dt.timestamp()
+
+            # Offset of this moment inside the source clip
+            offset_in_clip = abs_epoch - clip_start_epoch
+            if offset_in_clip < 0:
+                log.warning(
+                    f"[clip] Negative offset_in_clip ({offset_in_clip:.3f}s) "
+                    f"for clip {clip_idx:04d} ({main_row.get('source')})"
+                )
+                offset_in_clip = 0.0
+
+            # Apply pre-roll in clip-local time
+            t_start = max(0.0, offset_in_clip - CFG.CLIP_PRE_ROLL_S)
+
+            # Optional: sanity check vs clip's reported duration
+            try:
+                clip_duration_s = float(main_row.get("duration_s", 0.0) or 0.0)
+                if clip_duration_s > 0 and t_start >= clip_duration_s:
+                    log.error(
+                        f"[clip] t_start={t_start:.3f}s beyond clip duration "
+                        f"{clip_duration_s:.3f}s for {main_row.get('source')} "
+                        f"(clip_idx={clip_idx})"
+                    )
+                    return None
+            except Exception:
+                pass
+
+        except Exception as e:
+            log.error(f"[clip] Failed to compute t_start for clip {clip_idx}: {e}")
+            return None
+
         duration = CFG.CLIP_OUT_LEN_S
         output_path = self.output_dir / f"clip_{clip_idx:04d}.mp4"
 
@@ -80,13 +133,20 @@ class ClipRenderer:
 
         try:
             subprocess.run(cmd, check=True)
-            log.debug(f"[clip] Encoded clip {clip_idx:04d}")
+            if not output_path.exists():
+                log.error(f"[clip] FFmpeg reported success but {output_path} was not created")
+                return None
+            log.debug(f"[clip] Encoded clip {clip_idx:04d} at t_start={t_start:.3f}s")
         except subprocess.CalledProcessError as e:
             log.error(f"[clip] FFmpeg failed for clip {clip_idx}: {e}")
             return None
 
         # Mux audio from main camera
         return self._mux_audio(output_path, main_video, t_start, duration, clip_idx)
+
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
 
     def _build_ffmpeg_inputs_and_filters(
         self,
