@@ -245,7 +245,7 @@ def detect_camera_creation_time_offset(video_path: Path) -> float:
     
     # Known offsets for Cycliq cameras (empirically determined)
     known_offsets = {
-        "Fly12Sport": 2.0,  # creation_time is end + 2s
+        "Fly12Sport": 3.0,  # creation_time is end + 2s
         "Fly6Pro": 0.0,     # creation_time is exactly at end
     }
     

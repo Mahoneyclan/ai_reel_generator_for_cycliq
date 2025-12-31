@@ -1,470 +1,465 @@
 # Velo Films AI
 
-**Automated cycling highlight reel generator for dual-camera Cycliq setups**
+# Cycliq Video Pipeline
 
-Transform hours of cycling footage into cinematic highlight reels using AI-powered scene detection, bicycle tracking, and GPS telemetry overlays.
+Automated highlight reel generation from dual-camera cycling footage (Cycliq Fly12Sport + Fly6Pro) with GPX telemetry integration.
 
----
+## Overview
 
-## 🎯 Features
+This pipeline processes synchronized front/rear cycling camera footage to create professional highlight reels with:
+- AI-powered scene detection and selection (YOLO object detection)
+- GPS-enriched telemetry overlays (speed, elevation, gradient, heart rate, cadence)
+- Side-by-side picture-in-picture compositing
+- Minimap visualization with route tracking
+- Automated temporal alignment across cameras and GPX data
 
-### Core Pipeline
-- ✅ **Dual-camera sync** - Automatically aligns Fly12 Sport & Fly6 Pro footage
-- ✅ **AI bike detection** - YOLOv8 identifies cyclists and interesting moments
-- ✅ **Scene change detection** - Highlights visual transitions and action
-- ✅ **GPS enrichment** - Overlays speed, heart rate, cadence, elevation, gradient
-- ✅ **Smart selection** - AI pre-selects clips, you review and finalize
-- ✅ **Cinematic output** - PiP, minimaps, gauges, intro/outro with music
+## Features
 
-### User Experience
-- 🖥️ **Native macOS GUI** - Clean, intuitive interface
-- 📊 **Real-time progress** - Live feedback during all operations
-- 🔍 **Analysis tools** - Identify bottlenecks in clip selection
-- 🎬 **Visual review** - Preview all candidate clips before finalizing
-- ⚙️ **Preferences** - Fine-tune detection, scoring, and output settings
+### Intelligent Selection
+- **YOLO-based detection**: Identifies cyclists, vehicles, traffic events
+- **Scene-aware scoring**: Prioritizes high-activity moments (traffic, speed changes, hills)
+- **Partner matching**: Synchronizes front/rear camera clips showing the same moment
+- **Manual override**: GUI for fine-tuning AI selections
 
-### Performance
-- ⚡ **M1 optimized** - Hardware acceleration for encoding & detection
-- 🚀 **Streaming mode** - No intermediate JPEG extraction
-- 🔄 **Parallel import** - 2-3x faster clip copying from cameras
-- 💾 **Memory efficient** - Processes long rides without RAM issues
+### Camera Alignment
+- **Automatic sync**: Handles Cycliq metadata quirks (UTC bug, creation_time offsets)
+- **Per-camera calibration**: Fly12Sport +2s offset, Fly6Pro exact timing
+- **GPX integration**: Aligns video to GPS timeline with configurable tolerance
 
----
+### Professional Output
+- **Dual-view compositing**: Main view + PiP with configurable positioning
+- **Telemetry gauges**: Speed, cadence, heart rate, elevation, gradient
+- **Route minimap**: Live position tracking on OpenStreetMap tiles
+- **Title cards**: Customizable intro/outro with ride statistics
 
-## 📋 Requirements
+## Requirements
 
 ### Hardware
-- **Mac Mini M1** (or any Apple Silicon Mac)
-- **Cycliq cameras**: Fly12 Sport (front) + Fly6 Pro (rear)
-- **Optional**: Garmin/Wahoo GPS device for telemetry
+- **Tested on**: Mac Mini M1 (Apple Silicon)
+- **Storage**: ~10GB per hour of 1440p footage
+- **RAM**: 16GB+ recommended for YOLO processing
 
 ### Software
-- **macOS 12+** (Monterey or later)
-- **Python 3.9+**
-- **FFmpeg** with VideoToolbox support
-- **YOLOv8** (auto-downloads on first run)
-- **Strava Account** (optional, for GPX import)
+- Python 3.9+
+- FFmpeg with VideoToolbox support (hardware encoding)
+- ffprobe (bundled with FFmpeg)
 
 ### Python Dependencies
-```bash
-pip install -r requirements.txt
+```
+PySide6>=6.6.0          # GUI framework
+opencv-python>=4.8.0    # Video processing
+ultralytics>=8.0.0      # YOLO object detection
+gpxpy>=1.5.0            # GPX parsing
+staticmap>=0.5.0        # Minimap generation
+pandas>=2.0.0           # Data processing
+numpy>=1.24.0           # Numerical operations
+Pillow>=10.0.0          # Image manipulation
 ```
 
-**Core packages:**
-- PySide6 (GUI)
-- ultralytics (YOLO)
-- opencv-python
-- pillow
-- gpxpy
-- geopandas
-- contextily
-- matplotlib
-- requests (Strava API)
-
----
-
-## 🚀 Quick Start
-
-### 1. Installation
+## Installation
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/velo_films_ai.git
-cd velo_films_ai
+git clone <repository-url>
+cd cycliq-video-pipeline
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On macOS/Linux
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Install FFmpeg (if not already installed)
-brew install ffmpeg
+# Verify FFmpeg installation
+ffmpeg -version
+ffprobe -version
 ```
 
-### 2. Project Setup
-
-**Option A: Import from Strava (Recommended)**
-
-```bash
-# Launch GUI
-python main.py
-```
-
-1. Click **"Get Strava GPX"**
-2. Follow OAuth login (first time only)
-3. Select ride from your Strava activities
-4. GPX auto-downloads to project folder
-5. Continue with step 3 below
-
-**Option B: Import from Cameras**
-
-```bash
-# Launch GUI
-python main.py
-```
-
-**First-time setup:**
-1. Click **"Import Clips"** to copy footage from cameras
-2. Select cameras (Fly12S, Fly6Pro) and set ride date/name
-3. Wait for import to complete
-4. Select the newly created project from the list
-
-### 3. Run Pipeline
-
-**Step-by-step workflow:**
-
-1. **Prepare** - Validates inputs, aligns camera timestamps
-2. **Analyze** - AI detects bikes, scores scenes, enriches with GPS
-3. **Select** - AI pre-selects clips, you review and finalize
-4. **Build** - Renders clips with overlays and assembles final video
-
-Each step takes 5-15 minutes depending on ride length.
-
-### 4. Output
-
-Final video saved to:
-```
-/Volumes/GDrive/Fly_Projects/[YYYY-MM-DD Ride Name]/[YYYY-MM-DD Ride Name].mp4
-```
-
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-velo_films_ai/
+project/
 ├── source/
-│   ├── config.py              # Global configuration
-│   ├── io_paths.py            # Path helpers
-│   ├── main.py                # GUI entry point
-│   │
-│   ├── core/                  # Pipeline orchestration
-│   │   ├── pipeline_executor.py
-│   │   ├── step_registry.py
-│   │   └── models/
-│   │
-│   ├── steps/                 # Pipeline stages
-│   │   ├── preflight.py       # Input validation
-│   │   ├── flatten.py         # GPX parsing
-│   │   ├── align.py           # Camera sync
-│   │   ├── extract.py         # Frame metadata
-│   │   ├── analyze.py         # AI detection + scoring
-│   │   ├── select.py          # Clip selection
-│   │   ├── build.py           # Clip rendering
-│   │   ├── splash.py          # Intro/outro
-│   │   └── concat.py          # Final assembly
-│   │
-│   ├── gui/                   # User interface
-│   │   ├── main_window.py
-│   │   ├── manual_selection_window.py
-│   │   ├── preferences_window.py
-│   │   ├── import_window.py
-│   │   └── controllers/       # UI logic
-│   │
-│   └── utils/                 # Shared utilities
-│       ├── gpx.py             # GPS handling
-│       ├── video_utils.py     # Video I/O
-│       ├── map_overlay.py     # Minimap rendering
-│       ├── gauge_overlay.py   # HUD gauges
-│       └── progress_reporter.py
-│
-├── assets/                    # Static resources
-│   ├── velo_films.png         # Logo
-│   └── music/                 # Background tracks
-│
-└── tests/                     # Unit tests
+│   ├── core/
+│   │   ├── pipeline_executor.py    # Main pipeline orchestrator
+│   │   └── step_registry.py        # Step function registry
+│   ├── steps/
+│   │   ├── align.py                # Camera alignment
+│   │   ├── extract.py              # Frame metadata generation
+│   │   ├── analyze.py              # YOLO detection + scoring
+│   │   ├── select.py               # AI-powered clip selection
+│   │   └── build.py                # Video composition
+│   ├── utils/
+│   │   ├── video_utils.py          # Video probing, camera offsets
+│   │   ├── gpx_utils.py            # GPS data processing
+│   │   └── overlay_utils.py        # Telemetry rendering
+│   ├── gui/
+│   │   └── manual_selection_window.py  # Manual review interface
+│   └── config.py                   # Configuration management
+├── assets/
+│   ├── music/                      # Background audio
+│   └── fonts/                      # Overlay fonts
+└── README.md
 ```
 
----
+## Usage
 
-## ⚙️ Configuration
-
-### Key Settings (Preferences Window)
-
-**Core Pipeline:**
-- `EXTRACT_FPS` - Frame sampling rate (default: 1.0 fps)
-- `HIGHLIGHT_TARGET_DURATION_S` - Target video length (default: 180s)
-- `MIN_GAP_BETWEEN_CLIPS` - Spacing between clips (default: 45s)
-- `SCENE_COMPARISON_WINDOW_S` - Scene detection sensitivity (default: 8s)
-
-**Detection:**
-- `YOLO_MIN_CONFIDENCE` - Detection threshold (default: 0.10)
-- `YOLO_DETECT_CLASSES` - Object classes to detect (default: bicycle)
-- `MIN_DETECT_SCORE` - Minimum score for clip inclusion (default: 0.10)
-
-**Scoring Weights:**
-```python
-SCORE_WEIGHTS = {
-    "detect_score": 0.20,    # Bike detection confidence
-    "scene_boost": 0.35,     # Scene change magnitude
-    "speed_kmh": 0.25,       # Riding speed
-    "gradient": 0.10,        # Hill gradient
-    "bbox_area": 0.10,       # Detection box size
-}
-```
-
-**M1 Performance:**
-- `USE_MPS` - Enable GPU acceleration (default: True)
-- `YOLO_BATCH_SIZE` - Detection batch size (default: 4)
-- `FFMPEG_HWACCEL` - Hardware encoder (default: videotoolbox)
-
-### Advanced Configuration
-
-Edit `source/config.py` directly for:
-- Camera time offsets
-- PiP/minimap sizing
-- HUD gauge layout
-- Zone penalties (start/end of ride)
-- Music volume levels
-
----
-
-## 🎬 Usage Guide
-
-### Manual Clip Selection
-
-After the **Analyze** step, the **Select** step opens a review window:
-
-1. **Preview Mode**
-   - Each "moment" shows Primary + Partner camera frames
-   - Metadata displayed: time, speed, detection score, scene change
-   - Green border = AI recommended, Gray = candidate
-
-2. **Selection Controls**
-   - Click a perspective to select its frame pair
-   - Only one perspective per moment can be selected
-   - Click again to deselect
-
-3. **Finalization**
-   - Counter shows: "Selected: X clips"
-   - "Use X Clips & Continue" persists selection to `select.csv`
-
-### Analysis Tools
-
-**Selection Analyzer** (after Analyze step):
-- Shows bottlenecks in clip filtering
-- Provides actionable recommendations
-- Displays score distributions
-
-Access via: **Analyze Selection** button
-
-**Log Viewer**:
-- View detailed pipeline logs
-- Filter by step or severity
-- Useful for debugging
-
-Access via: **View Log** button
-
-### Import from Cameras
-
-**Import Clips** workflow:
-1. Mount Fly12S and Fly6Pro (appear as volumes)
-2. Click **Import Clips**
-3. Select cameras to import from
-4. Set ride date and name
-5. Wait for parallel copy (shows progress)
-
-Files copied to: `/Volumes/GDrive/Fly/[YYYY-MM-DD Ride Name]/`
-
----
-
-## 🔧 Troubleshooting
-
-### No Clips Selected
-
-**Symptoms:** Select step completes but `select.csv` is empty
-
-**Solutions:**
-1. Run **Analyze Selection** to identify bottleneck
-2. Lower `MIN_DETECT_SCORE` in Preferences (try 0.05)
-3. Add more YOLO detection classes (person, car, motorcycle)
-4. Reduce `MIN_GAP_BETWEEN_CLIPS` for denser selection
-
-### Camera Time Misalignment
-
-**Symptoms:** Partner frames don't match, PiP shows wrong timing
-
-**Solutions:**
-1. Check `camera_offsets.json` in project's `working/` folder
-2. Manually adjust `CAMERA_TIME_OFFSETS` in Preferences
-3. Re-run **Prepare** step after adjustment
-
-### GPU/MPS Errors
-
-**Symptoms:** "MPS backend not available" or slow YOLO
-
-**Solutions:**
-1. Disable `USE_MPS` in Preferences (M1 Performance tab)
-2. Reduce `YOLO_BATCH_SIZE` to 1 or 2
-3. Update PyTorch: `pip install --upgrade torch torchvision`
-
-### Memory Issues
-
-**Symptoms:** "Killed" or system slowdown during extract/analyze
-
-**Solutions:**
-1. Reduce `EXTRACT_FPS` (try 0.5 fps)
-2. Lower `YOLO_BATCH_SIZE` to 2
-3. Process shorter rides first
-4. Close other apps during pipeline execution
-
-### No GPS Data
-
-**Symptoms:** "⚠️ No GPX files found" in preflight
-
-**Solutions:**
-1. **Import from Strava:** Click "Get Strava GPX" button
-2. **Manual copy:** Ensure `ride.gpx` exists in source folder
-3. Pipeline continues without GPS (minimaps/telemetry disabled)
-4. Manually copy GPX from Garmin/Wahoo to ride folder
-
-### Strava Authentication Failed
-
-**Symptoms:** "Failed to authenticate with Strava"
-
-**Solutions:**
-1. Verify Strava app is configured:
-   - Check `source/strava/strava_config.py`
-   - Set `CLIENT_ID` and `CLIENT_SECRET`
-2. Create Strava app at: https://www.strava.com/settings/api
-3. Set callback domain to `localhost`
-4. Clear old tokens: `rm ~/.velo_films/strava_tokens.json`
-5. See `STRAVA_SETUP.md` for detailed instructions
-
----
-
-## 📊 Output Structure
-
-```
-/Volumes/GDrive/Fly_Projects/[Project Name]/
-├── [Project Name].mp4         # Final highlight reel
-├── logs/                      # Pipeline logs (per step)
-├── working/                   # Pipeline data (CSVs + JSON)
-│   ├── flatten.csv            # GPX timeline (1 Hz)
-│   ├── extract.csv            # Frame metadata
-│   ├── enriched.csv           # AI scores + GPS
-│   ├── select.csv             # Selected clips
-│   └── camera_offsets.json    # Sync offsets
-├── clips/                     # Individual highlight clips
-│   ├── clip_0001.mp4
-│   ├── clip_0002.mp4
-│   └── ...
-├── frames/                    # Extracted preview frames (JPEGs)
-├── splash_assets/             # Intro/outro resources
-├── minimaps/                  # Pre-rendered minimaps (PNGs)
-├── gauges/                    # Pre-rendered gauges (PNGs)
-└── _middle_01.mp4             # Intermediate segments
-    _middle_02.mp4
-    _intro.mp4
-    _outro.mp4
-```
-
-### CSV Schema
-
-**enriched.csv** (main dataset):
-- `index` - Unique frame ID (camera_clip_frame)
-- `camera` - Fly12Sport / Fly6Pro
-- `video_path` - Source MP4 file
-- `frame_number` - Frame index in video
-- `abs_time_epoch` - GPS timestamp
-- `detect_score` - YOLO confidence (0.0-1.0)
-- `scene_boost` - Scene change score (0.0-1.0)
-- `speed_kmh`, `hr_bpm`, `cadence_rpm`, etc. - Telemetry
-- `partner_index` - Paired frame from other camera
-- `score_weighted` - Final composite score
-
-**select.csv** (candidates + recommended):
-- All fields from `enriched.csv`
-- `recommended` - "true" / "false" (AI pre-selection)
-
----
-
-## 🎨 Customization
-
-### Adding Music Tracks
-
-1. Place `.mp3` files in `assets/music/`
-2. Pipeline randomly selects tracks for segments
-3. Volume adjustable via `MUSIC_VOLUME` in Preferences
-
-### Changing Intro/Outro
-
-1. Replace `assets/velo_films.png` with your logo
-2. Edit `assets/intro.mp3` and `assets/outro.mp3`
-3. Modify timing in `source/steps/splash_helpers/intro_builder.py`
-
-### Custom Gauge Layout
-
-Edit `source/utils/gauge_overlay.py`:
-- `SPEED_GAUGE_SIZE` - Main gauge size
-- `SMALL_GAUGE_SIZE` - Telemetry gauge size
-
-Reposition in `source/steps/build_helpers/gauge_renderer.py`:
-- `calculate_gauge_positions()` method
-
-### Scoring Algorithm
-
-Adjust weights in Preferences or `config.py`:
-```python
-SCORE_WEIGHTS = {
-    "detect_score": 0.20,   # Increase for more bike-focused clips
-    "scene_boost": 0.35,    # Increase for more action/transitions
-    "speed_kmh": 0.25,      # Increase for faster riding
-    "gradient": 0.10,       # Increase for climbs
-    "bbox_area": 0.10,      # Increase for closer detections
-}
-```
-
----
-
-## 🧪 Testing
+### Quick Start
 
 ```bash
-# Run unit tests
-pytest tests/
+# Launch GUI
+python -m source.main
 
-# Run specific test module
-pytest tests/test_gpx.py
-
-# Run with coverage
-pytest --cov=source tests/
+# Or run CLI pipeline
+python -m source.steps.align
+python -m source.steps.extract
+python -m source.steps.analyze
+python -m source.steps.select
+python -m source.steps.build
 ```
 
-**Test structure:**
-- `tests/test_gpx.py` - GPS parsing and indexing
-- `tests/test_video_utils.py` - Frame extraction
-- `tests/test_selection.py` - Clip selection logic
-- `tests/test_pipeline.py` - End-to-end integration
+### Pipeline Stages
 
----
+#### 1. **Flatten** - GPX Processing
+```bash
+# Converts GPX to flat CSV timeline with 1-second sampling
+# Outputs: flatten.csv (gpx_epoch, lat, lon, elevation, speed, etc.)
+```
 
-## 🐛 Known Issues
+#### 2. **Align** - Camera Synchronization
+```bash
+# Probes video metadata to determine recording start times
+# Handles Cycliq-specific timing quirks:
+#   - Fly12Sport: creation_time = end + 2s
+#   - Fly6Pro: creation_time = exact end
+# Outputs: camera_offsets.json
+```
 
-1. **Strava GPX Import** - Not yet implemented (coming next)
-2. **Multi-ride Projects** - Currently one project = one ride
-3. **Windows/Linux** - Untested (macOS M1 only for now)
-4. **4K Video** - High memory usage, reduce batch sizes
+**Example output:**
+```json
+{
+  "Fly6Pro": 0.0,
+  "Fly12Sport": 11.0
+}
+```
 
----
+#### 3. **Extract** - Frame Metadata Generation
+```bash
+# Samples frames at 5-second intervals
+# Applies camera offsets for temporal alignment
+# Filters frames before GPX start time
+# Outputs: extract.csv (frame_number, abs_time_epoch, video_path, etc.)
+```
 
-## 🗺️ Roadmap
+#### 4. **Analyze** - AI Detection & Enrichment
+```bash
+# Runs YOLO object detection on sampled frames
+# Enriches with GPX telemetry (speed, gradient, elevation)
+# Calculates scene scores based on activity level
+# Outputs: enrich.csv (detect_score, speed_kmh, gradient, bbox_area, etc.)
+```
 
-### v1.1 (Current)
-- ✅ **Strava GPX import via OAuth** - Download rides directly from Strava
-- ⬜ Batch processing (multiple rides)
-- ⬜ Custom detection zones (highlight specific segments)
+#### 5. **Select** - Clip Selection
+```bash
+# AI pre-selection based on scoring weights
+# Partner matching (finds synchronized front/rear moments)
+# Manual review GUI for fine-tuning
+# Outputs: select.csv (final clip decisions)
+```
 
-### v1.2 (Future)
-- ⬜ Windows/Linux support
-- ⬜ Cloud rendering (offload heavy processing)
-- ⬜ Web dashboard for project management
-- ⬜ Advanced color grading
+**Scoring weights (configurable):**
+```python
+SCORE_WEIGHTS = {
+    "detect_score": 0.20,   # YOLO detections
+    "scene_boost": 0.35,    # High-activity scenes
+    "speed_kmh": 0.25,      # Speed variation
+    "gradient": 0.10,       # Hill climbing
+    "bbox_area": 0.10,      # Object proximity
+}
+```
 
-### v2.0 (Vision)
-- ⬜ Multi-camera support (3+ cameras)
-- ⬜ Live streaming integration
-- ⬜ AI-generated commentary
-- ⬜ Social media auto-posting
+#### 6. **Build** - Video Composition
+```bash
+# Extracts selected clips from source videos
+# Applies PiP compositing (main view + secondary)
+# Outputs: Individual clip files in clips/
+```
+
+#### 7. **Splash** - Title Cards
+```bash
+# Generates intro/outro with ride stats
+# Renders route overview map
+# Outputs: splash_intro.mp4, splash_outro.mp4
+```
+
+#### 8. **Concat** - Final Assembly
+```bash
+# Concatenates: intro + clips + outro
+# Adds background music with ducking
+# Hardware-accelerated encoding (VideoToolbox on M1)
+# Outputs: {project_name}.mp4
+```
+
+## Configuration
+
+### Global Settings (`config.py`)
+
+```python
+# Sampling
+EXTRACT_INTERVAL_SECONDS = 5  # Frame sampling rate
+
+# Target duration
+HIGHLIGHT_TARGET_DURATION_S = 180.0  # 3-minute highlights
+
+# Clip timing
+CLIP_PRE_ROLL_S = 0.2   # Lead-in before scored moment
+CLIP_OUT_LEN_S = 2.8    # Total clip length
+MIN_GAP_BETWEEN_CLIPS = 45.0  # Avoid repetitive clips
+
+# YOLO detection
+YOLO_DETECT_CLASSES = [1]  # 1 = bicycle
+YOLO_MIN_CONFIDENCE = 0.10
+YOLO_BATCH_SIZE = 4
+
+# Camera weights (for multi-camera prioritization)
+CAMERA_WEIGHTS = {
+    "Fly12Sport": 1.0,  # Front camera
+    "Fly6Pro": 1.0,     # Rear camera
+}
+
+# Scene detection
+SCENE_PRIORITY_MODE = True
+SCENE_HIGH_THRESHOLD = 0.50   # High-activity threshold
+SCENE_MAJOR_THRESHOLD = 0.70  # Major event threshold
+
+# Zone filtering (reduce start/end clips)
+START_ZONE_DURATION_S = 1200.0  # First 20 minutes
+MAX_START_ZONE_FRAC = 0.10      # Max 10% of clips from start
+END_ZONE_DURATION_S = 1200.0
+MAX_END_ZONE_FRAC = 0.10
+
+# Hardware acceleration
+USE_MPS = True  # Metal Performance Shaders (M1)
+FFMPEG_HWACCEL = 'videotoolbox'  # Hardware encoding
+```
+
+### Per-Project Settings
+
+Projects are stored in `PROJECTS_ROOT/{ride_name}/`:
+```
+2025-12-28 Highvale Petrie Mt Mee/
+├── source_videos/          # Input: Fly12Sport_*.MP4, Fly6Pro_*.MP4
+├── ride.gpx               # Input: GPS track
+├── working/               # Intermediate CSVs
+│   ├── flatten.csv
+│   ├── camera_offsets.json
+│   ├── extract.csv
+│   ├── enrich.csv
+│   └── select.csv
+├── clips/                 # Individual video clips
+├── frames/                # Extracted JPEG frames (if enabled)
+├── logs/                  # Pipeline logs
+└── {ride_name}.mp4       # Final output
+```
+
+## Camera-Specific Timing
+
+### Cycliq Metadata Quirks
+
+Both Cycliq cameras store `creation_time` in MP4 metadata, but with different behaviors:
+
+| Camera | creation_time | Correction |
+|--------|--------------|------------|
+| **Fly12Sport** | End of recording **+ 2 seconds** | Subtract `duration + 2` |
+| **Fly6Pro** | Exact end of recording | Subtract `duration + 0` |
+
+This is **automatically detected** by `video_utils.detect_camera_creation_time_offset()`.
+
+### Why This Matters
+
+Without correction:
+- Timestamps drift 2 seconds late for Fly12Sport
+- Camera offset incorrectly calculated as 13s (should be 11s)
+- Frame timestamps don't match burnt-in video timestamps
+
+With correction:
+- Frame timestamps align perfectly with burnt-in video display
+- Correct camera offset (11s in test footage)
+- Accurate GPX sync for speed/elevation overlays
+
+## Troubleshooting
+
+### Empty extract.csv
+
+**Symptoms:**
+```
+WARNING: No frames generated (possibly all before GPX start)
+```
+
+**Causes:**
+1. Missing `flatten.csv` - Run flatten step first
+2. Camera offsets not loaded - Run align step first
+3. All video timestamps before GPX start time
+
+**Fix:**
+```bash
+# Ensure steps run in order:
+python -m source.steps.flatten  # Creates flatten.csv
+python -m source.steps.align    # Creates camera_offsets.json
+python -m source.steps.extract  # Should now work
+```
+
+### Camera Alignment Errors
+
+**Symptoms:**
+```
+ERROR: fix_cycliq_utc_bug() missing 2 required positional arguments
+```
+
+**Fix:**
+- Ensure `video_utils.py` is updated with the latest version
+- Check that `align.py` passes `video_path` to `infer_recording_start()`
+
+### Timestamp Mismatch
+
+**Symptoms:**
+- CSV timestamps don't match burnt-in video timestamps
+- Camera offsets seem wrong
+
+**Diagnosis:**
+```bash
+# Extract a test frame and check timestamp
+ffmpeg -i source_videos/Fly12Sport_1131.MP4 -vf "select=eq(n\,450)" -frames:v 1 -update 1 test_frame.jpg
+
+# Check metadata
+ffprobe -v quiet -print_format json -show_entries format_tags=creation_time source_videos/Fly12Sport_1131.MP4
+```
+
+**Expected behavior:**
+- Frame 450 at 30fps = 15 seconds into video
+- If video starts at 19:01:49, frame 450 should show 19:02:04
+- If timestamps don't match, camera offset detection may need updating
+
+### YOLO Performance
+
+**For M1 Macs:**
+```python
+# Enable Metal Performance Shaders
+USE_MPS = True  # in config.py
+```
+
+**For slower machines:**
+```python
+# Reduce batch size
+YOLO_BATCH_SIZE = 1  # Process one frame at a time
+
+# Reduce image size
+YOLO_IMAGE_SIZE = 320  # Faster than 640 (default)
+```
+
+## Technical Details
+
+### Time Model
+
+The pipeline uses a unified time model across all stages:
+
+```
+real_start_epoch = creation_time_utc - (duration + camera_offset)
+abs_time_epoch = real_start_epoch + seconds_into_clip
+session_ts_s = abs_time_epoch - global_session_start_epoch
+```
+
+Where:
+- `creation_time_utc`: From MP4 metadata (after UTC bug fix)
+- `camera_offset`: Per-camera creation_time bias (Fly12Sport: 2s, Fly6Pro: 0s)
+- `global_session_start_epoch`: Earliest aligned camera start time
+- `session_ts_s`: Used for partner matching and GPX lookups
+
+### Partner Matching
+
+Clips are matched across cameras using temporal tolerance:
+
+```python
+PARTNER_TIME_TOLERANCE_S = 1.0  # Must be within 1 second
+
+# Example:
+# Fly12Sport clip at session_ts = 125.3s
+# Fly6Pro clip at session_ts = 125.8s
+# Delta = 0.5s < 1.0s → Match found!
+```
+
+### GPX Enrichment
+
+Frame metadata is enriched with GPS data using nearest-neighbor lookup:
+
+```python
+GPX_TOLERANCE = 1.0  # Match if within 1 second
+
+# For each frame:
+# 1. Find GPX point where abs(gpx_epoch - frame_epoch) < 1.0
+# 2. Copy telemetry: speed, elevation, gradient, lat, lon, hr, cadence
+```
+
+## Development
+
+### Adding New Camera Models
+
+Edit `video_utils.py`:
+
+```python
+def detect_camera_creation_time_offset(video_path: Path) -> float:
+    known_offsets = {
+        "Fly12Sport": 2.0,
+        "Fly6Pro": 0.0,
+        "YourNewCamera": 0.5,  # Add your camera here
+    }
+    return known_offsets.get(camera_name, 0.0)
+```
+
+### Custom Scoring Weights
+
+Edit `config.py`:
+
+```python
+SCORE_WEIGHTS = {
+    "detect_score": 0.30,   # Increase to prioritize detections
+    "scene_boost": 0.20,    # Decrease to reduce scene bias
+    "speed_kmh": 0.30,      # Increase to favor high-speed moments
+    "gradient": 0.10,
+    "bbox_area": 0.10,
+}
+```
+
+### Extending YOLO Classes
+
+```python
+# Detect cars and motorcycles
+YOLO_DETECT_CLASSES = [1, 2, 3]  # bicycle, car, motorcycle
+
+# Custom class weights
+YOLO_CLASS_WEIGHTS = {
+    "bicycle": 3.0,      # Prioritize cyclists
+    "car": 1.0,
+    "motorcycle": 2.0,
+    "truck": 1.0,
+}
+```
+
+## License
 
 
----
+## Acknowledgments
+
+- **YOLO**: Ultralytics YOLOv8 for object detection
+- **FFmpeg**: Video processing and encoding
+- **Cycliq**: Fly12Sport and Fly6Pro camera systems
+- **OpenStreetMap**: Basemap tiles for minimap generation
+
+## Support
+
+For issues, questions, or contributions:
+- Open an issue on GitHub
+- Check logs in `{project}/logs/`
+- Enable debug logging: `LOG_LEVEL = 'DEBUG'` in config.py
 
 **Built with as a hobby for the cycling community**

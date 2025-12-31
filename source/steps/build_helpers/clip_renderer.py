@@ -8,15 +8,15 @@ Moment-based version:
 - pip_row:  opposite camera for same moment (always used as PiP).
 
 FIXED:
-- Clip start time is now computed relative to the source clip's own timeline
-  using abs_time_epoch and adjusted_start_time, NOT global session_ts_s.
+- Each camera gets its own t_start calculated from its own adjusted_start_time
+- This ensures perfect alignment even when cameras have different offsets
 """
 
 from __future__ import annotations
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
@@ -61,68 +61,37 @@ class ClipRenderer:
             offset_in_clip      = abs_time_epoch - clip_start_epoch
             t_start             = max(0, offset_in_clip - CLIP_PRE_ROLL_S)
 
-        This ensures perfect alignment between Fly12 and Fly6.
+        CRITICAL: main and pip videos need separate t_start values
+        because they have different adjusted_start_time values.
         """
 
         main_video = CFG.INPUT_VIDEOS_DIR / main_row["source"]
         pip_video = CFG.INPUT_VIDEOS_DIR / pip_row["source"]
 
         # ---------------------------------------------------------------------
-        # Compute t_start using the corrected global time model
+        # Compute t_start for BOTH cameras (they may differ!)
         # ---------------------------------------------------------------------
-        try:
-            # World-aligned timestamp of the moment
-            abs_epoch = float(main_row.get("abs_time_epoch", 0.0) or 0.0)
+        t_start_main = self._compute_t_start(main_row, clip_idx, "main")
+        t_start_pip = self._compute_t_start(pip_row, clip_idx, "pip")
 
-            # Clip start time (UTC) from extract.py
-            start_iso = main_row.get("adjusted_start_time")
-            if not start_iso:
-                raise ValueError("adjusted_start_time missing in main_row")
-
-            # Normalize and parse ISO timestamp
-            if start_iso.endswith("Z"):
-                start_iso = start_iso.replace("Z", "+00:00")
-            clip_start_dt = datetime.fromisoformat(start_iso)
-            clip_start_epoch = clip_start_dt.timestamp()
-
-            # Offset of this moment inside the source clip
-            offset_in_clip = abs_epoch - clip_start_epoch
-            if offset_in_clip < 0:
-                log.warning(
-                    f"[clip] Negative offset_in_clip ({offset_in_clip:.3f}s) "
-                    f"for clip {clip_idx:04d} ({main_row.get('source')})"
-                )
-                offset_in_clip = 0.0
-
-            # Apply pre-roll in clip-local time
-            t_start = max(0.0, offset_in_clip - CFG.CLIP_PRE_ROLL_S)
-
-            # Optional: sanity check vs clip's reported duration
-            try:
-                clip_duration_s = float(main_row.get("duration_s", 0.0) or 0.0)
-                if clip_duration_s > 0 and t_start >= clip_duration_s:
-                    log.error(
-                        f"[clip] t_start={t_start:.3f}s beyond clip duration "
-                        f"{clip_duration_s:.3f}s for {main_row.get('source')} "
-                        f"(clip_idx={clip_idx})"
-                    )
-                    return None
-            except Exception:
-                pass
-
-        except Exception as e:
-            log.error(f"[clip] Failed to compute t_start for clip {clip_idx}: {e}")
+        if t_start_main is None:
+            log.error(f"[clip] Failed to compute t_start for main camera (clip {clip_idx})")
             return None
+
+        if t_start_pip is None:
+            log.warning(f"[clip] Failed to compute t_start for pip camera (clip {clip_idx})")
+            t_start_pip = t_start_main  # Fallback to main timing
 
         duration = CFG.CLIP_OUT_LEN_S
         output_path = self.output_dir / f"clip_{clip_idx:04d}.mp4"
 
-        # Build ffmpeg command
+        # Build ffmpeg command with separate timing for each camera
         inputs, filter_complex, final_stream = self._build_ffmpeg_inputs_and_filters(
             main_video=main_video,
             pip_video=pip_video,
+            t_start_main=t_start_main,
+            t_start_pip=t_start_pip,
             minimap_path=minimap_path,
-            t_start=t_start,
             duration=duration,
             main_row=main_row,
             clip_idx=clip_idx,
@@ -136,37 +105,107 @@ class ClipRenderer:
             if not output_path.exists():
                 log.error(f"[clip] FFmpeg reported success but {output_path} was not created")
                 return None
-            log.debug(f"[clip] Encoded clip {clip_idx:04d} at t_start={t_start:.3f}s")
+            log.debug(
+                f"[clip] Encoded clip {clip_idx:04d} "
+                f"(main@{t_start_main:.3f}s, pip@{t_start_pip:.3f}s)"
+            )
         except subprocess.CalledProcessError as e:
             log.error(f"[clip] FFmpeg failed for clip {clip_idx}: {e}")
             return None
 
         # Mux audio from main camera
-        return self._mux_audio(output_path, main_video, t_start, duration, clip_idx)
+        return self._mux_audio(output_path, main_video, t_start_main, duration, clip_idx)
 
     # -------------------------------------------------------------------------
     # Internal helpers
     # -------------------------------------------------------------------------
 
+    def _compute_t_start(
+        self,
+        row: Dict,
+        clip_idx: int,
+        camera_role: str
+    ) -> Optional[float]:
+        """
+        Compute extraction start time for a single camera.
+
+        Args:
+            row: CSV row containing abs_time_epoch and adjusted_start_time
+            clip_idx: Clip number (for logging)
+            camera_role: "main" or "pip" (for logging)
+
+        Returns:
+            t_start in seconds, or None if calculation fails
+        """
+        try:
+            # World-aligned timestamp of the moment
+            abs_epoch = float(row.get("abs_time_epoch", 0.0) or 0.0)
+
+            # Clip start time (UTC) from extract.py
+            start_iso = row.get("adjusted_start_time")
+            if not start_iso:
+                raise ValueError(f"adjusted_start_time missing in {camera_role}_row")
+
+            # Normalize and parse ISO timestamp
+            if start_iso.endswith("Z"):
+                start_iso = start_iso.replace("Z", "+00:00")
+            clip_start_dt = datetime.fromisoformat(start_iso)
+            clip_start_epoch = clip_start_dt.timestamp()
+
+            # Offset of this moment inside the source clip
+            offset_in_clip = abs_epoch - clip_start_epoch
+            if offset_in_clip < 0:
+                log.warning(
+                    f"[clip] Negative offset_in_clip ({offset_in_clip:.3f}s) "
+                    f"for {camera_role} camera in clip {clip_idx:04d} ({row.get('source')})"
+                )
+                offset_in_clip = 0.0
+
+            # Apply pre-roll in clip-local time
+            t_start = max(0.0, offset_in_clip - CFG.CLIP_PRE_ROLL_S)
+
+            # Optional: sanity check vs clip's reported duration
+            try:
+                clip_duration_s = float(row.get("duration_s", 0.0) or 0.0)
+                if clip_duration_s > 0 and t_start >= clip_duration_s:
+                    log.error(
+                        f"[clip] t_start={t_start:.3f}s beyond clip duration "
+                        f"{clip_duration_s:.3f}s for {camera_role} camera "
+                        f"({row.get('source')}) in clip_idx={clip_idx}"
+                    )
+                    return None
+            except Exception:
+                pass
+
+            return t_start
+
+        except Exception as e:
+            log.error(
+                f"[clip] Failed to compute t_start for {camera_role} camera "
+                f"in clip {clip_idx}: {e}"
+            )
+            return None
+
     def _build_ffmpeg_inputs_and_filters(
         self,
         main_video: Path,
         pip_video: Optional[Path],
+        t_start_main: float,
+        t_start_pip: float,
         minimap_path: Optional[Path],
-        t_start: float,
         duration: float,
         main_row: Dict,
         clip_idx: int,
         gauge_renderer: GaugeRenderer,
-    ) -> tuple[List[str], List[str], str]:
+    ) -> Tuple[List[str], List[str], str]:
         """
         Build ffmpeg inputs and filter_complex for all overlays.
 
-        Always uses pip_video as PiP if provided.
+        CRITICAL: Uses separate t_start values for main and pip cameras.
         """
         inputs: List[str] = [
             "-ss",
-            f"{t_start:.3f}",
+            f"{t_start_main:.3f}",
             "-t",
             f"{duration:.3f}",
             "-i",
@@ -175,12 +214,12 @@ class ClipRenderer:
         filters: List[str] = []
         current_stream = "[0:v]"
 
-        # PiP overlay (always, if pip_video exists)
+        # PiP overlay (with its own t_start!)
         if pip_video and pip_video.exists():
             inputs.extend(
                 [
                     "-ss",
-                    f"{t_start:.3f}",
+                    f"{t_start_pip:.3f}",  # ✓ CORRECT - uses pip timing!
                     "-t",
                     f"{duration:.3f}",
                     "-i",
