@@ -19,8 +19,7 @@ Stage 3: GPX Sanity Checks
 from __future__ import annotations
 import json
 import csv
-import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Tuple, List, Optional
 
@@ -28,90 +27,17 @@ from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import flatten_path, camera_offsets_path, _mk
 from ..utils.log import setup_logger
 from ..utils.progress_reporter import report_progress
+from ..utils.video_utils import (
+    probe_video_metadata,
+    fix_cycliq_utc_bug,
+    infer_recording_start,
+    extract_camera_name
+)
 
 log = setup_logger("steps.align")
 
 # Sanity threshold for detecting potential issues
 SANITY_THRESHOLD_S = 3600.0  # 1 hour - warn if camera starts are this far apart
-
-
-def _probe_video_metadata(video_path: Path) -> Tuple[datetime, float]:
-    """
-    Extract raw creation_time and duration from video metadata.
-    
-    Args:
-        video_path: Path to MP4 file
-        
-    Returns:
-        Tuple of (raw_creation_datetime, duration_seconds)
-        
-    Raises:
-        RuntimeError: If metadata cannot be extracted
-    """
-    try:
-        out = subprocess.check_output([
-            "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-show_entries", "format=duration:format_tags=creation_time",
-            str(video_path)
-        ], stderr=subprocess.DEVNULL)
-        
-        meta = json.loads(out)
-        tags = meta.get("format", {}).get("tags", {}) or {}
-        creation_time_str = tags.get("creation_time")
-        
-        if not creation_time_str:
-            raise RuntimeError(f"No creation_time in metadata")
-        
-        # Parse ISO format, handle both with and without 'Z' suffix
-        raw_dt = datetime.fromisoformat(creation_time_str.replace("Z", "+00:00"))
-        duration_s = float(meta["format"]["duration"])
-        
-        return raw_dt, duration_s
-        
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffprobe failed: {e}")
-    except (KeyError, ValueError, json.JSONDecodeError) as e:
-        raise RuntimeError(f"Invalid metadata format: {e}")
-
-
-def _fix_utc_bug(raw_dt: datetime) -> datetime:
-    """
-    Stage 1: Fix Cycliq's UTC bug.
-    
-    Cycliq cameras store local time but mark it with 'Z' (UTC indicator).
-    This function corrects the timezone interpretation.
-    
-    Args:
-        raw_dt: Raw datetime from video metadata
-        
-    Returns:
-        Corrected datetime in proper timezone
-    """
-    if CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z:
-        # Raw time is actually local time, not UTC - reinterpret with correct timezone
-        creation_local = raw_dt.replace(tzinfo=CFG.CAMERA_CREATION_TIME_TZ)
-    else:
-        # Raw time is genuinely UTC, convert to local
-        creation_local = raw_dt.astimezone(CFG.CAMERA_CREATION_TIME_TZ)
-    
-    return creation_local
-
-
-def _infer_recording_start(creation_time_utc: datetime, duration_s: float) -> datetime:
-    """
-    Stage 3 component: Infer recording start time.
-    
-    Camera metadata contains end time (or near-end), not start time.
-    GPX records start time. To align them, we must infer start from end.
-    
-    Args:
-        creation_time_utc: Corrected creation time in UTC
-        duration_s: Video duration in seconds
-        
-    Returns:
-        Inferred recording start time in UTC
-    """
-    return creation_time_utc - timedelta(seconds=duration_s)
 
 
 def _get_gpx_start_time() -> Optional[datetime]:
@@ -149,25 +75,6 @@ def _get_gpx_start_time() -> Optional[datetime]:
         return None
 
 
-def _extract_camera_name(video_path: Path) -> str:
-    """
-    Extract camera identifier from video filename.
-    
-    Expected format: CameraName_NNNN.MP4
-    
-    Args:
-        video_path: Path to video file
-        
-    Returns:
-        Camera name (everything before the last underscore)
-    """
-    stem = video_path.stem
-    parts = stem.split("_")
-    
-    # Join all parts except the last (which is the clip number)
-    return "_".join(parts[:-1]) if len(parts) > 1 else parts[0]
-
-
 def _probe_camera_with_fallback(
     camera_name: str,
     video_files: List[Path]
@@ -186,14 +93,22 @@ def _probe_camera_with_fallback(
     for video_file in video_files:
         try:
             # Extract metadata
-            raw_dt, duration_s = _probe_video_metadata(video_file)
+            raw_dt, duration_s = probe_video_metadata(video_file)
             
-            # Stage 1: Fix UTC bug
-            creation_local = _fix_utc_bug(raw_dt)
+            # Fix UTC bug
+            creation_local = fix_cycliq_utc_bug(
+                raw_dt,
+                CFG.CAMERA_CREATION_TIME_TZ,
+                CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
+            )
             creation_utc = creation_local.astimezone(timezone.utc)
             
-            # Stage 3: Infer recording start
-            recording_start_utc = _infer_recording_start(creation_utc, duration_s)
+            # Infer recording start (now with video_path for offset detection)
+            recording_start_utc = infer_recording_start(
+                creation_utc,
+                duration_s,
+                video_path=video_file
+            )
             
             log.debug(
                 f"[align] {camera_name}: Probed {video_file.name} → "
@@ -242,14 +157,14 @@ def run() -> Dict[str, float]:
                 json.dump(empty_offsets, f, indent=2, sort_keys=True)
             log.info(f"[align] Wrote empty offsets file: {offsets_file}")
         else:
-            log.info("[align] USE_CAMERA_OFFSETS is False — not writing camera_offsets.json")
+            log.info("[align] USE_CAMERA_OFFSETS is False – not writing camera_offsets.json")
 
         return empty_offsets
     
     # Group videos by camera
     videos_by_camera: Dict[str, List[Path]] = {}
     for video in videos:
-        camera_name = _extract_camera_name(video)
+        camera_name = extract_camera_name(video)
         videos_by_camera.setdefault(camera_name, []).append(video)
     
     log.info(f"[align] Found {len(videos)} videos from {len(videos_by_camera)} cameras")
@@ -257,7 +172,7 @@ def run() -> Dict[str, float]:
         log.info(f"[align]   - {cam}: {len(files)} clips")
     
     # =========================================================================
-    # STAGE 1 & 3: UTC Bug Fix + Recording Start Inference
+    # STAGE 1: UTC Bug Fix + Recording Start Inference
     # =========================================================================
     report_progress(2, 6, "Computing corrected recording start times...")
     
@@ -388,7 +303,7 @@ def run() -> Dict[str, float]:
         CFG.CAMERA_TIME_OFFSETS.update(camera_offsets)
         log.info("[align] Offsets applied to config for current pipeline run")
     else:
-        log.info("[align] USE_CAMERA_OFFSETS is False — skipping write/apply of camera offsets")
+        log.info("[align] USE_CAMERA_OFFSETS is False – skipping write/apply of camera offsets")
     
     report_progress(6, 6, "Alignment complete")
     

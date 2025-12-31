@@ -11,7 +11,6 @@ FIXED: Camera offset handling
 from __future__ import annotations
 import csv
 import json
-import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -20,88 +19,14 @@ from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import extract_path, flatten_path, camera_offsets_path, _mk
 from ..utils.log import setup_logger
 from ..utils.progress_reporter import progress_iter, report_progress
+from ..utils.video_utils import (
+    probe_video_metadata,
+    fix_cycliq_utc_bug,
+    infer_recording_start,
+    parse_camera_and_clip
+)
 
 log = setup_logger("steps.extract")
-
-# FFmpeg constants
-FFMPEG_COMMON = ["-hide_banner", "-loglevel", "error", "-y", "-nostdin"]
-
-
-def _probe_video_metadata(video_path: Path) -> Tuple[datetime, float, float]:
-    """
-    Extract creation_time, duration, and FPS from video.
-    
-    Args:
-        video_path: Path to MP4 file
-        
-    Returns:
-        Tuple of (raw_creation_datetime, duration_seconds, fps)
-        
-    Raises:
-        RuntimeError: If metadata extraction fails
-    """
-    try:
-        out = subprocess.check_output([
-            "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-show_entries", "format=duration:format_tags=creation_time",
-            "-show_streams", "-select_streams", "v:0",
-            str(video_path)
-        ], stderr=subprocess.DEVNULL)
-        
-        meta = json.loads(out)
-        
-        # Extract creation time
-        tags_format = meta.get("format", {}).get("tags", {}) or {}
-        tags_stream = meta["streams"][0].get("tags", {}) or {}
-
-        creation_time_str = (
-            tags_stream.get("creation_time") or
-            tags_format.get("creation_time")
-    )
-
-
-
-        if not creation_time_str:
-            raise RuntimeError("No creation_time in metadata")
-        
-        raw_dt = datetime.fromisoformat(creation_time_str.rstrip("Z"))
-        
-        # Extract duration
-        duration_s = float(meta["format"]["duration"])
-        
-        # Extract FPS
-        fps_str = meta["streams"][0].get("r_frame_rate", "30/1")
-        num, denom = fps_str.split("/")
-        fps = float(num) / float(denom)
-        
-        return raw_dt, duration_s, fps
-        
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffprobe failed: {e}")
-    except (KeyError, ValueError, json.JSONDecodeError) as e:
-        raise RuntimeError(f"Invalid metadata: {e}")
-
-
-def _fix_utc_bug(raw_dt: datetime) -> datetime:
-    """
-    Stage 1: Fix Cycliq's UTC bug.
-    
-    Camera stores local time but marks it with 'Z' (UTC indicator).
-    
-    Args:
-        raw_dt: Raw datetime from video metadata
-        
-    Returns:
-        Corrected datetime with proper timezone
-    """
-    if CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z:
-        # Raw time is local, not UTC - reinterpret
-        creation_local = raw_dt.replace(tzinfo=CFG.CAMERA_CREATION_TIME_TZ)
-    else:
-        # Raw time is genuinely UTC
-        creation_local = raw_dt.astimezone(CFG.CAMERA_CREATION_TIME_TZ)
-    
-    return creation_local
 
 
 def _load_camera_offsets() -> Dict[str, float]:
@@ -158,6 +83,7 @@ def _get_gpx_start_epoch() -> float:
     
     return 0.0
 
+
 def _compute_session_time_bounds(
     videos: List[Path],
     camera_offsets: Dict[str, float],
@@ -185,18 +111,26 @@ def _compute_session_time_bounds(
 
     for video_path in videos:
         try:
-            raw_dt, duration_s, _ = _probe_video_metadata(video_path)
+            # Use utils function with include_fps=True to get all 3 values
+            raw_dt, duration_s, fps = probe_video_metadata(video_path, include_fps=True)
         except Exception as e:
             log.warning(f"[extract] Skipping {video_path.name} for time bounds: {e}")
             continue
 
-        creation_local = _fix_utc_bug(raw_dt)
+        # Fix UTC bug using utils function
+        creation_local = fix_cycliq_utc_bug(
+            raw_dt,
+            CFG.CAMERA_CREATION_TIME_TZ,
+            CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
+        )
         creation_utc = creation_local.astimezone(timezone.utc)
 
-        real_start_utc = creation_utc - timedelta(seconds=duration_s)
+        # Infer recording start using utils function with video_path
+        real_start_utc = infer_recording_start(creation_utc, duration_s, video_path=video_path)
         real_end_utc = real_start_utc + timedelta(seconds=duration_s)
 
-        camera_name, _, _ = _parse_camera_and_clip(video_path)
+        # Parse camera name using utils function
+        camera_name, _, _ = parse_camera_and_clip(video_path)
         camera_offset_s = camera_offsets.get(camera_name, 0.0)
 
         aligned_start_utc = real_start_utc - timedelta(seconds=camera_offset_s)
@@ -267,36 +201,6 @@ def _compute_session_time_bounds(
     return global_session_start_epoch, per_camera_overlap
 
 
-def _parse_camera_and_clip(video_path: Path) -> Tuple[str, int, str]:
-    """
-    Parse camera name and clip number from video filename.
-    
-    Expected format: CameraName_NNNN.MP4
-    
-    Args:
-        video_path: Path to video file
-        
-    Returns:
-        Tuple of (camera_name, clip_number, clip_id_padded)
-    """
-    stem = video_path.stem
-    parts = stem.split("_")
-    
-    # Camera name is everything except last part
-    camera_name = "_".join(parts[:-1]) if len(parts) > 1 else parts[0]
-    
-    # Clip number is last part
-    try:
-        clip_num = int(parts[-1])
-    except (ValueError, IndexError):
-        clip_num = 0
-    
-    # Zero-padded clip ID
-    clip_id = f"{clip_num:04d}"
-    
-    return camera_name, clip_num, clip_id
-
-
 def _extract_video_metadata(
     video_path: Path,
     sampling_interval_s: int,
@@ -317,22 +221,29 @@ def _extract_video_metadata(
     moment bucketing, partner matching, and GPX enrichment consistent.
     """
 
-    camera_name, clip_num, clip_id = _parse_camera_and_clip(video_path)
+    # Parse camera name using utils function
+    camera_name, clip_num, clip_id = parse_camera_and_clip(video_path)
 
-    # Probe metadata
+    # Probe metadata using utils function with include_fps=True
     try:
-        raw_dt, duration_s, video_fps = _probe_video_metadata(video_path)
+        raw_dt, duration_s, video_fps = probe_video_metadata(video_path, include_fps=True)
     except Exception as e:
         log.error(f"[extract] Failed to probe {video_path.name}: {e}")
         return []
 
-    # Fix Cycliq UTC bug and convert to real UTC
-    creation_local = _fix_utc_bug(raw_dt)
+    # Fix Cycliq UTC bug using utils function
+    creation_local = fix_cycliq_utc_bug(
+        raw_dt,
+        CFG.CAMERA_CREATION_TIME_TZ,
+        CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
+    )
     creation_utc = creation_local.astimezone(timezone.utc)
     creation_epoch = creation_utc.timestamp()
 
     # Real-world start time (Cycliq creation_time = END of clip)
-    real_start_epoch = creation_epoch - float(duration_s)
+    # Using utils function with video_path for camera offset detection
+    real_start_utc = infer_recording_start(creation_utc, duration_s, video_path=video_path)
+    real_start_epoch = real_start_utc.timestamp()
 
     # Camera-to-camera offset (relative to baseline camera)
     camera_offset_s = float(camera_offsets.get(camera_name, 0.0))
@@ -343,25 +254,26 @@ def _extract_video_metadata(
     log.info(
         f"[extract] {video_path.name} | duration={duration_s:.1f}s | "
         f"fps={video_fps:.2f} | offset={camera_offset_s:.3f}s | "
-        f"real_start={datetime.fromtimestamp(real_start_epoch, tz=timezone.utc).isoformat()}"
+        f"real_start={real_start_utc.isoformat()}"
     )
 
     rows: List[Dict[str, str]] = []
 
-    # Sampling loop
-    # Sampling loop (sec_raw = seconds on the camera’s own timeline)
+    # Sampling loop (sec_raw = seconds on the camera's own timeline)
     for sec_raw in range(0, duration_int, sampling_interval_s):
         # 1. Raw timeline → frame number, filename, index
         frame_number = int(sec_raw * video_fps)
         index = f"{camera_name}_{clip_id}_{sec_raw:06d}"
 
-        # 2. Align to world time using camera_offset_s
-        #    This is the ONLY place the offset is applied
-        abs_time_epoch = real_start_epoch + camera_offset_s + float(sec_raw)
+        # 2. Real-world timestamp for this frame
+        #    camera_offset is NOT applied here - it was only used to compute global_session_start
+        #    real_start_epoch already represents when this camera started recording
+        abs_time_epoch = real_start_epoch + float(sec_raw)
         abs_time_iso = datetime.fromtimestamp(abs_time_epoch, tz=timezone.utc).isoformat()
 
         session_ts_aligned = abs_time_epoch - global_session_start_epoch
 
+        # Filter frames before GPX start
         if gpx_start_epoch > 0 and abs_time_epoch < gpx_start_epoch:
             continue
 
@@ -384,15 +296,12 @@ def _extract_video_metadata(
             "raw_creation_time": creation_local.isoformat(),
             "duration_s": f"{duration_s:.3f}",
 
-            "adjusted_start_time": datetime.fromtimestamp(
-                real_start_epoch, tz=timezone.utc
-            ).isoformat().replace("+00:00", "Z"),
+            "adjusted_start_time": real_start_utc.isoformat().replace("+00:00", "Z"),
         })
-
-
 
     log.info(f"[extract] Generated {len(rows)} frames from {video_path.name}")
     return rows
+
 
 def _write_metadata_csv(output_path: Path, all_rows: List[Dict[str, str]]):
     """
@@ -508,9 +417,6 @@ def run() -> Path:
         videos,
         camera_offsets,
     )
-
-
-
     
     gpx_start_epoch = _get_gpx_start_epoch()
     sampling_interval_s = int(CFG.EXTRACT_INTERVAL_SECONDS)
@@ -544,7 +450,7 @@ def run() -> Path:
         )
         
         try:
-            camera_name, _clip_num, _clip_id = _parse_camera_and_clip(video_path)
+            camera_name, _clip_num, _clip_id = parse_camera_and_clip(video_path)
             overlap_bounds = per_camera_overlap.get(
                 camera_name,
                 (global_session_start_epoch, float("inf")),
