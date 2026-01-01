@@ -62,11 +62,11 @@ class Config:
     HIGHLIGHT_TARGET_DURATION_S: float = field(
         default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_S', 180.0)
     )
-    CLIP_PRE_ROLL_S: float = field(default_factory=lambda: _get_config_value('CLIP_PRE_ROLL_S', 0.2))
-    CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 2.8))
+    CLIP_PRE_ROLL_S: float = field(default_factory=lambda: _get_config_value('CLIP_PRE_ROLL_S', 0.5))
+    CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 3.5))
 
     MIN_GAP_BETWEEN_CLIPS: float = field(
-        default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 45.0)
+        default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 30.0)
     )
 
     # --- Scene-aware selection ---
@@ -162,8 +162,8 @@ class Config:
         "detect_score": 0.20,
         "scene_boost": 0.35,
         "speed_kmh": 0.25,
-        "gradient": 0.10,
-        "bbox_area": 0.10,
+        "gradient": 0.05,
+        "bbox_area": 0.15,
     })
 
     # --- M1 hardware acceleration ---

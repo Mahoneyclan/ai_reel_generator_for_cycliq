@@ -3,16 +3,15 @@
 Main application window - UI orchestration only.
 Business logic delegated to helper modules.
 
-Layout:
-1. Action bar (top) - project-independent actions
-2. Project/Pipeline splitter (middle) - main workspace
-3. Progress bar (below splitter) - step progress
-4. Activity log (bottom) - status messages
+MUSIC NOTE: Music stored in PROJECT_ROOT/assets/music/
+Intro/outro audio stored separately in assets/
 """
 
 from pathlib import Path
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QSplitter, QProgressBar
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
 
 from .gui_helpers import (
     ProjectListPanel,
@@ -140,7 +139,7 @@ class MainWindow(QMainWindow):
         # Action panel (top bar - project-independent)
         self.action_panel.import_clicked.connect(self._show_import_raw_video)
         self.action_panel.create_clicked.connect(self._create_project)
-        self.action_panel.music_clicked.connect(self._show_music_placeholder)
+        self.action_panel.music_clicked.connect(self._open_music_folder)
         self.action_panel.prefs_clicked.connect(self._show_preferences)
         self.action_panel.general_clicked.connect(self._show_general_settings)
 
@@ -491,6 +490,35 @@ class MainWindow(QMainWindow):
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "GPS Import Error", f"Failed to open GPS import:\n\n{str(e)}")
 
-    def _show_music_placeholder(self):
-        """Show music management placeholder."""
-        self.log_panel.log("Music management coming soon", "info")
+    def _open_music_folder(self):
+        """
+        Open the music folder (assets/music) in the system file browser.
+        Creates the folder if it doesn't exist.
+        
+        Music for middle segments: PROJECT_ROOT/assets/music/
+        Intro/outro audio: stored separately in assets/
+        """
+        try:
+            # Music directory: PROJECT_ROOT/assets/music/
+            music_dir = CFG.PROJECT_ROOT / "assets" / "music"
+            
+            # Create directory if it doesn't exist
+            music_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Open in system file browser
+            url = QUrl.fromLocalFile(str(music_dir))
+            if QDesktopServices.openUrl(url):
+                self.log_panel.log(f"Opened music folder: {music_dir}", "success")
+                self.log_panel.log("💡 Add full-length music files here (MP3, WAV, M4A, etc.)", "info")
+                self.log_panel.log("   Music plays continuously across all middle segments", "info")
+            else:
+                # Fallback: show path in log
+                self.log_panel.log(f"Music folder: {music_dir}", "info")
+                self.log_panel.log("💡 Add full-length music files to this directory", "info")
+                
+        except Exception as e:
+            log.error(f"Failed to open music folder: {e}")
+            self.log_panel.log(f"Error opening music folder: {e}", "error")
+            # Still show the path even if we can't open it
+            music_dir = CFG.PROJECT_ROOT / "assets" / "music"
+            self.log_panel.log(f"Music folder location: {music_dir}", "info")

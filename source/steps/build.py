@@ -227,7 +227,7 @@ def run() -> Path:
 
     segment_paths = segment_concatenator.concatenate_into_segments(
         clips=individual_clips,
-        music_path=CFG.MUSIC_DIR,  # Pass music directory
+        # >>> to be removed. music_path=CFG.MUSIC_DIR,  # Pass music directory
         music_volume=CFG.MUSIC_VOLUME,
         raw_audio_volume=CFG.RAW_AUDIO_VOLUME,
     )
