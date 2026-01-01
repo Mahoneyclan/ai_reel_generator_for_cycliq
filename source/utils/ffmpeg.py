@@ -8,7 +8,6 @@ Thin wrappers for common ffmpeg ops: encode stills, mux audio.
 from __future__ import annotations
 import subprocess
 from pathlib import Path
-from ..config import DEFAULT_CONFIG as CFG
 
 AUDIO_SAMPLE_RATE = "48000"
 

@@ -8,24 +8,15 @@ from __future__ import annotations
 import csv
 import gpxpy
 from datetime import timezone
-from math import radians, sin, cos, sqrt, atan2
 
 from ..config import DEFAULT_CONFIG as CFG
+from ..utils.gpx import _haversine_m
 from ..io_paths import flatten_path, _mk
 from ..utils.log import setup_logger
 from ..utils.progress_reporter import report_progress
 
 log = setup_logger("steps.flatten")
 RESAMPLE_INTERVAL_S = 1.0
-
-def _haversine_m(lat1, lon1, lat2, lon2):
-    """Compute distance in meters between two lat/lon points."""
-    R = 6371000.0
-    a1, b1 = radians(lat1), radians(lon1)
-    a2, b2 = radians(lat2), radians(lon2)
-    dA, dB = a2 - a1, b2 - b1
-    h = sin(dA/2)**2 + cos(a1)*cos(a2)*sin(dB/2)**2
-    return 2 * R * atan2(sqrt(h), sqrt(1 - h))
 
 def run():
     """Parse GPX with safe failure handling and auto-detection."""

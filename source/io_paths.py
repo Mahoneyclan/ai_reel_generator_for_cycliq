@@ -28,7 +28,6 @@ def _mk(path: Path) -> Path:
 # --- Working CSVs / JSON (in project folder) ---
 def flatten_path() -> Path: return CFG.WORKING_DIR / "flatten.csv"
 def extract_path() -> Path: return CFG.WORKING_DIR / "extract.csv"
-def detect_path() -> Path: return CFG.WORKING_DIR / "detect.csv"
 def enrich_path() -> Path: return CFG.WORKING_DIR / "enriched.csv"
 def select_path() -> Path: return CFG.WORKING_DIR / "select.csv"
 def camera_offsets_path() -> Path: return CFG.WORKING_DIR / "camera_offsets.json"
