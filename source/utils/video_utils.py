@@ -227,28 +227,27 @@ def extract_camera_name(video_path: Path) -> str:
 def detect_camera_creation_time_offset(video_path: Path) -> float:
     """
     Detect how many seconds the creation_time is offset from actual end time.
-    
+
     Different Cycliq camera models have different behaviors:
     - Fly12Sport: creation_time = end of recording + 2 seconds
     - Fly6Pro: creation_time = exact end of recording
-    
+
     This offset must be added to duration before subtracting from creation_time
     to get the correct recording start time.
-    
+
     Args:
         video_path: Path to video file
-        
+
     Returns:
         Offset in seconds to add to duration
     """
+    from ..config import DEFAULT_CONFIG as CFG
+
     camera_name = extract_camera_name(video_path)
-    
-    # Known offsets for Cycliq cameras (empirically determined)
-    known_offsets = {
-        "Fly12Sport": 3.0,  # creation_time is end + 2s
-        "Fly6Pro": 0.0,     # creation_time is exactly at end
-    }
-    
+
+    # Known offsets for Cycliq cameras (loaded from config, editable via preferences)
+    known_offsets = CFG.KNOWN_OFFSETS
+
     offset = known_offsets.get(camera_name, 0.0)
     
     if offset > 0:

@@ -180,6 +180,15 @@ class Config:
         "Fly6Pro": 0.0,
     })
 
+    # Known creation_time offsets per camera model (seconds to add to duration)
+    # Different Cycliq cameras record creation_time at different points relative to recording end
+    KNOWN_OFFSETS: dict = field(default_factory=lambda: _get_config_value(
+        'KNOWN_OFFSETS', {
+            "Fly12Sport": 2.0,  # creation_time is end + 2s
+            "Fly6Pro": 0.0,     # creation_time is exactly at end
+        }
+    ))
+
     # Whether to load and apply camera offsets from camera_offsets.json
     USE_CAMERA_OFFSETS: bool = True
 

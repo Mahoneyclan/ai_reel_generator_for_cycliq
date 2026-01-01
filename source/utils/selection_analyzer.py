@@ -38,12 +38,32 @@ def analyze_selection() -> str:
 
     total = len(enriched)
     object_detected = sum(1 for r in enriched if r.get("object_detected") == "true")
-    paired_ok = sum(1 for r in enriched if r.get("paired_ok") == "true")
+    
+    # Check camera pairing - frames are "paired" if their moment_id appears across multiple cameras
+    moment_camera_sets = {}  # {moment_id: set of cameras}
+    for r in enriched:
+        moment_id = r.get("moment_id")
+        camera = r.get("camera")
+        if moment_id and camera:
+            if moment_id not in moment_camera_sets:
+                moment_camera_sets[moment_id] = set()
+            moment_camera_sets[moment_id].add(camera)
+    
+    # Count frames where the moment_id has multiple cameras
+    paired_ok = sum(
+        1 for r in enriched 
+        if r.get("moment_id") in moment_camera_sets 
+        and len(moment_camera_sets[r.get("moment_id")]) >= 2
+    )
+    
     gps_matched = sum(1 for r in enriched if r.get("gpx_missing") == "false")
 
+    # Count frames that pass both object detection AND camera pairing filters
     pass_filters = sum(
         1 for r in enriched
-        if r.get("object_detected") == "true" and r.get("paired_ok") == "true"
+        if r.get("object_detected") == "true"
+        and r.get("moment_id") in moment_camera_sets
+        and len(moment_camera_sets[r.get("moment_id")]) >= 2
     )
 
     # Detection score distribution
@@ -66,12 +86,18 @@ def analyze_selection() -> str:
     target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
     preselected = sum(1 for r in selected if r.get("recommended") == "true")
 
-    # Per-class breakdown
+    # Per-class breakdown - FIXED to handle semicolon delimiters and invalid data
     class_counts = Counter()
     for r in enriched:
-        classes = (r.get("detected_classes") or "").split(",")
+        classes_str = r.get("detected_classes") or ""
+        # Handle both comma and semicolon delimiters
+        if ";" in classes_str:
+            classes = classes_str.split(";")
+        else:
+            classes = classes_str.split(",")
         for c in classes:
-            if c:
+            c = c.strip()  # Remove whitespace
+            if c and c.isdigit():  # Only count valid numeric class IDs
                 class_counts[c] += 1
 
     def _bar(n: int, scale: int = 40) -> str:

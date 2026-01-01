@@ -35,6 +35,8 @@ def _fix_size(widget):
 class PreferencesWindow(QDialog):
     # Tooltips describing effect of changing each preference key
     PREFERENCE_TOOLTIPS = {
+        'KNOWN_OFFSETS': 'Seconds to add to video duration when calculating recording start time. '
+                         'Different cameras record creation_time at different points relative to recording end.',
         'PROJECTS_ROOT': 'Folder where generated projects and working files are stored.',
         'INPUT_BASE_DIR': 'Base folder containing raw source videos; used when creating or selecting projects.',
         'VIDEO_CODEC': 'FFmpeg codec used for final MP4 encoding (e.g. libx264).',
@@ -64,6 +66,7 @@ class PreferencesWindow(QDialog):
         self.overrides: Dict[str, Any] = {}
         self.class_checkboxes: Dict[str, QCheckBox] = {}
         self.class_weights_spinboxes: Dict[str, QDoubleSpinBox] = {}
+        self.known_offsets_spinboxes: Dict[str, QDoubleSpinBox] = {}
 
         layout = QVBoxLayout(self)
 
@@ -239,6 +242,9 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.core_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
         self._add_doublespinbox(self.core_form, "Partner Time Tolerance (s)", "PARTNER_TIME_TOLERANCE_S", CFG.PARTNER_TIME_TOLERANCE_S, 0, 10, 0.5)
 
+        # Camera creation_time offsets section
+        self._create_known_offsets_settings()
+
     def _create_video_settings(self, target_form=None):
         target = target_form or getattr(self, 'video_form', None) or getattr(self, 'general_form')
         self._add_line_edit(target, "Video Codec", "VIDEO_CODEC", CFG.VIDEO_CODEC)
@@ -256,6 +262,34 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.detect_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
         self._add_doublespinbox(self.detect_form, "YOLO Min Confidence", "YOLO_MIN_CONFIDENCE", CFG.YOLO_MIN_CONFIDENCE, 0, 1, 0.05)
         self._add_spinbox(self.detect_form, "YOLO Image Size", "YOLO_IMAGE_SIZE", CFG.YOLO_IMAGE_SIZE, 320, 1280)
+
+    def _create_known_offsets_settings(self):
+        """Add camera creation_time offset settings to Core tab."""
+        separator = QLabel("")
+        self.core_form.addRow(separator)
+
+        header = QLabel("<b>Camera Creation Time Offsets</b>")
+        header.setToolTip(self.PREFERENCE_TOOLTIPS.get('KNOWN_OFFSETS', ''))
+        self.core_form.addRow(header)
+
+        description = QLabel(
+            "Seconds added to video duration when calculating recording start time.\n"
+            "Different cameras record creation_time at different points."
+        )
+        description.setWordWrap(True)
+        description.setStyleSheet("font-size: 11px; color: #666; padding: 2px 0 6px 0;")
+        self.core_form.addRow(description)
+
+        # Create spinbox for each known camera
+        for camera_name, offset_val in CFG.KNOWN_OFFSETS.items():
+            widget = _fix_size(QDoubleSpinBox())
+            widget.setRange(-10.0, 10.0)
+            widget.setSingleStep(0.5)
+            widget.setDecimals(1)
+            widget.setValue(float(offset_val))
+            widget.setToolTip(f"Creation time offset for {camera_name} camera (seconds)")
+            self.core_form.addRow(f"{camera_name} Offset (s):", widget)
+            self.known_offsets_spinboxes[camera_name] = widget
 
     def _create_m1_settings(self, target_form=None):
         target = target_form or getattr(self, 'm1_form', None) or getattr(self, 'general_form')
@@ -403,7 +437,12 @@ class PreferencesWindow(QDialog):
         current_weights = getattr(cfg, 'YOLO_CLASS_WEIGHTS', {})
         for class_name, spinbox in self.class_weights_spinboxes.items():
             spinbox.setValue(current_weights.get(class_name, 1.0))
-            
+
+        # Load known offsets
+        current_offsets = getattr(cfg, 'KNOWN_OFFSETS', {})
+        for camera_name, spinbox in self.known_offsets_spinboxes.items():
+            spinbox.setValue(current_offsets.get(camera_name, 0.0))
+
         self._update_selected_count()
 
     def get_overrides(self) -> Dict[str, Any]:
@@ -419,6 +458,10 @@ class PreferencesWindow(QDialog):
 
         yolo_weights = {class_name: spinbox.value() for class_name, spinbox in self.class_weights_spinboxes.items()}
         overrides['YOLO_CLASS_WEIGHTS'] = yolo_weights
+
+        # Save known offsets
+        known_offsets = {camera_name: spinbox.value() for camera_name, spinbox in self.known_offsets_spinboxes.items()}
+        overrides['KNOWN_OFFSETS'] = known_offsets
 
         overrides['PROJECTS_ROOT'] = Path(getattr(CFG, 'PROJECTS_ROOT', CFG.PROJECTS_ROOT))
         overrides['INPUT_BASE_DIR'] = Path(getattr(CFG, 'INPUT_BASE_DIR', CFG.INPUT_BASE_DIR))
