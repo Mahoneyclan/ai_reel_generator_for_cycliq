@@ -2,15 +2,18 @@
 """
 Extract frame metadata from MP4s without writing JPGs.
 
-FIXED: Camera offset handling
-- Uses natural timestamps (doesn't shift start times)
-- Filters edge case frames that have no partner camera
-- Allows proper moment bucketing by abs_time_epoch
+ALIGNED SAMPLING:
+- All cameras sample at times on a global grid (multiples of sample_interval
+  from global_session_start_epoch)
+- This ensures frames from different cameras at the same real-world moment
+  have IDENTICAL abs_time_epoch values
+- Enables exact moment_id matching without tolerance-based heuristics
 """
 
 from __future__ import annotations
 import csv
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -210,15 +213,24 @@ def _extract_video_metadata(
     _camera_overlap_bounds: Tuple[float, float],
 ) -> List[Dict[str, str]]:
     """
-    Generate frame metadata for one video clip using the corrected time model:
+    Generate frame metadata for one video clip with ALIGNED sampling.
 
-        real_start_epoch  = creation_utc - duration_s
-        abs_time_epoch    = real_start_epoch + camera_offset_s + sec
+    Aligned Sampling Model:
+        All cameras sample at times that fall on a global grid defined by
+        global_session_start_epoch and sampling_interval_s. This ensures
+        frames from different cameras at the same real-world moment have
+        IDENTICAL abs_time_epoch values, enabling exact moment_id matching.
+
+        Global grid: global_session_start + N * sampling_interval (for N = 0, 1, 2...)
+
+        For each camera:
+            time_since_global_start = real_start_epoch - global_session_start_epoch
+            first_sec_raw = next grid point >= time_since_global_start
+            Sample at: first_sec_raw, first_sec_raw + interval, ...
+
+    Time fields:
+        abs_time_epoch    = real_start_epoch + sec_raw (always on global grid)
         session_ts_s      = abs_time_epoch - global_session_start_epoch
-
-    The camera_offset_s IS applied to individual frame timestamps so that all
-    cameras share a single global timeline. This makes Fly12/Fly6 alignment,
-    moment bucketing, partner matching, and GPX enrichment consistent.
     """
 
     # Parse camera name using utils function
@@ -238,7 +250,6 @@ def _extract_video_metadata(
         CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
     )
     creation_utc = creation_local.astimezone(timezone.utc)
-    creation_epoch = creation_utc.timestamp()
 
     # Real-world start time (Cycliq creation_time = END of clip)
     # Using utils function with video_path for camera offset detection
@@ -251,23 +262,44 @@ def _extract_video_metadata(
     duration_int = int(duration_s)
     effective_fps = 1.0 / float(sampling_interval_s)
 
+    # =========================================================================
+    # ALIGNED SAMPLING: Compute first_sec_raw so samples fall on global grid
+    # =========================================================================
+    # Time from global session start to this clip's start
+    time_since_global_start = real_start_epoch - global_session_start_epoch
+
+    # Find first sampling point that falls on the global grid
+    # Grid points are at: 0, interval, 2*interval, 3*interval, ... from global start
+    # We need the first grid point >= time_since_global_start
+    remainder = time_since_global_start % sampling_interval_s
+    if remainder < 0.001:  # Effectively zero (floating point tolerance)
+        first_sec_raw = 0
+    else:
+        first_sec_raw = int(sampling_interval_s - remainder)
+
+    # Ensure first_sec_raw doesn't exceed clip duration
+    if first_sec_raw >= duration_int:
+        log.warning(
+            f"[extract] {video_path.name}: first aligned sample ({first_sec_raw}s) "
+            f"exceeds duration ({duration_int}s) - no samples from this clip"
+        )
+        return []
+
     log.info(
         f"[extract] {video_path.name} | duration={duration_s:.1f}s | "
         f"fps={video_fps:.2f} | offset={camera_offset_s:.3f}s | "
-        f"real_start={real_start_utc.isoformat()}"
+        f"first_sec={first_sec_raw}s | real_start={real_start_utc.isoformat()}"
     )
 
     rows: List[Dict[str, str]] = []
 
-    # Sampling loop (sec_raw = seconds on the camera's own timeline)
-    for sec_raw in range(0, duration_int, sampling_interval_s):
+    # Sampling loop with aligned start (samples fall on global grid)
+    for sec_raw in range(first_sec_raw, duration_int, sampling_interval_s):
         # 1. Raw timeline → frame number, filename, index
         frame_number = int(sec_raw * video_fps)
         index = f"{camera_name}_{clip_id}_{sec_raw:06d}"
 
-        # 2. Real-world timestamp for this frame
-        #    camera_offset is NOT applied here - it was only used to compute global_session_start
-        #    real_start_epoch already represents when this camera started recording
+        # 2. Real-world timestamp for this frame (now aligned to global grid)
         abs_time_epoch = real_start_epoch + float(sec_raw)
         abs_time_iso = datetime.fromtimestamp(abs_time_epoch, tz=timezone.utc).isoformat()
 
@@ -299,7 +331,7 @@ def _extract_video_metadata(
             "adjusted_start_time": real_start_utc.isoformat().replace("+00:00", "Z"),
         })
 
-    log.info(f"[extract] Generated {len(rows)} frames from {video_path.name}")
+    log.info(f"[extract] Generated {len(rows)} aligned frames from {video_path.name}")
     return rows
 
 

@@ -39,7 +39,6 @@ class PreferencesWindow(QDialog):
                          'Different cameras record creation_time at different points relative to recording end.',
         'MIN_DETECT_SCORE': 'Minimum detection score required to consider an object detection valid.',
         'GPX_TOLERANCE': 'Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.',
-        'PARTNER_TIME_TOLERANCE_S': 'Tolerance (seconds) when matching partner rides by time.',
         'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.'
     }
     def __init__(self, parent=None):
@@ -208,7 +207,6 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.core_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
         self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
         self._add_doublespinbox(self.core_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
-        self._add_doublespinbox(self.core_form, "Partner Time Tolerance (s)", "PARTNER_TIME_TOLERANCE_S", CFG.PARTNER_TIME_TOLERANCE_S, 0, 10, 0.5)
 
         # Camera creation_time offsets section
         self._create_known_offsets_settings()
