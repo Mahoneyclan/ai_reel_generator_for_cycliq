@@ -69,19 +69,35 @@ def load_persistent_config() -> Dict[str, Any]:
 
 
 def save_persistent_config(config: Dict[str, Any]) -> None:
-    """Save persistent user configuration."""
+    """Save persistent user configuration.
+
+    Merges provided config with existing config, so different windows
+    can save their own settings without overwriting each other.
+    """
     # Ensure directory exists
     USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Convert all values to JSON-serializable format
-    serializable_config = {
-        key: _serialize_value(value) 
+
+    # Load existing config and merge with new values
+    existing_config = load_persistent_config()
+
+    # Convert existing Path objects back to strings for merging
+    existing_serialized = {
+        key: _serialize_value(value)
+        for key, value in existing_config.items()
+    }
+
+    # Convert new values to JSON-serializable format
+    new_serialized = {
+        key: _serialize_value(value)
         for key, value in config.items()
     }
-    
+
+    # Merge: new values override existing
+    merged_config = {**existing_serialized, **new_serialized}
+
     try:
         with USER_CONFIG_PATH.open('w') as f:
-            json.dump(serializable_config, f, indent=2, sort_keys=True)
+            json.dump(merged_config, f, indent=2, sort_keys=True)
         # Do not print success messages to stdout; saving is silent.
     except Exception as e:
         print(f"Error: Failed to save persistent config: {e}")

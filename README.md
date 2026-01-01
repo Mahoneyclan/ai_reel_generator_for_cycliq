@@ -2,35 +2,30 @@
 
 # Cycliq Video Pipeline
 
-Automated highlight reel generation from dual-camera cycling footage (Cycliq Fly12Sport + Fly6Pro) with GPX telemetry integration.
+⏺ AI Reel Generator for Cycliq
 
-## Overview
+  This project is an automated highlight reel generator for dual-camera cycling footage. It processes synchronized video from Cycliq action cameras (Fly12Sport front + Fly6Pro rear) combined with GPS telemetry to create professional highlight reels.
 
-This pipeline processes synchronized front/rear cycling camera footage to create professional highlight reels with:
-- AI-powered scene detection and selection (YOLO object detection)
-- GPS-enriched telemetry overlays (speed, elevation, gradient, heart rate, cadence)
-- Side-by-side picture-in-picture compositing
-- Minimap visualization with route tracking
-- Automated temporal alignment across cameras and GPX data
+  Key Features
 
-## Features
+  - AI Scene Detection - Uses YOLO v8 to identify cyclists, vehicles, and interesting traffic events
+  - Multi-Camera Sync - Automatically aligns front/rear cameras with Cycliq-specific timing offsets
+  - Telemetry Overlays - Speed, cadence, heart rate, elevation gradient displays
+  - Route Minimap - Live position tracking on OpenStreetMap
+  - Picture-in-Picture - Dual-view compositing of front/rear footage
+  - Manual Review GUI - Fine-tune AI-selected clips before final render
 
-### Intelligent Selection
-- **YOLO-based detection**: Identifies cyclists, vehicles, traffic events
-- **Scene-aware scoring**: Prioritizes high-activity moments (traffic, speed changes, hills)
-- **Partner matching**: Synchronizes front/rear camera clips showing the same moment
-- **Manual override**: GUI for fine-tuning AI selections
+  8-Step Pipeline
 
-### Camera Alignment
-- **Automatic sync**: Handles Cycliq metadata quirks (UTC bug, creation_time offsets)
-- **Per-camera calibration**: Fly12Sport +2s offset, Fly6Pro exact timing
-- **GPX integration**: Aligns video to GPS timeline with configurable tolerance
+  1. Flatten → 2. Align → 3. Extract → 4. Analyze → 5. Select → 6. Build → 7. Splash → 8. Concat
 
-### Professional Output
-- **Dual-view compositing**: Main view + PiP with configurable positioning
-- **Telemetry gauges**: Speed, cadence, heart rate, elevation, gradient
-- **Route minimap**: Live position tracking on OpenStreetMap tiles
-- **Title cards**: Customizable intro/outro with ride statistics
+  Tech Stack
+
+  - Python, PyTorch, YOLO v8, OpenCV, FFmpeg, PySide6
+  - Hardware-accelerated encoding optimized for Apple Silicon
+  - Strava/Garmin integration for activity data
+
+
 
 ## Requirements
 
@@ -78,28 +73,61 @@ ffprobe -version
 ## Project Structure
 
 ```
-project/
-├── source/
-│   ├── core/
-│   │   ├── pipeline_executor.py    # Main pipeline orchestrator
-│   │   └── step_registry.py        # Step function registry
-│   ├── steps/
-│   │   ├── align.py                # Camera alignment
-│   │   ├── extract.py              # Frame metadata generation
-│   │   ├── analyze.py              # YOLO detection + scoring
-│   │   ├── select.py               # AI-powered clip selection
-│   │   └── build.py                # Video composition
-│   ├── utils/
-│   │   ├── video_utils.py          # Video probing, camera offsets
-│   │   ├── gpx_utils.py            # GPS data processing
-│   │   └── overlay_utils.py        # Telemetry rendering
-│   ├── gui/
-│   │   └── manual_selection_window.py  # Manual review interface
-│   └── config.py                   # Configuration management
-├── assets/
-│   ├── music/                      # Background audio
-│   └── fonts/                      # Overlay fonts
-└── README.md
+  ai_reel_generator_for_cycliq/
+  ├── source/                 # Main application code
+  ├── assets/                 # Static media (music, logos)
+  ├── py_txt/                 # Auto-generated source code exports
+  ├── .venv/                  # Python virtual environment
+  ├── run_gui.py              # GUI entry point
+  ├── requirements.txt        # Dependencies
+  ├── yolov8n.pt / yolov8s.pt # YOLO models for object detection
+  └── README.md, STRAVA_SETUP.md
+
+  source/ Breakdown
+
+  source/
+  ├── core/                   # Pipeline infrastructure
+  │   ├── pipeline_executor.py
+  │   └── step_registry.py
+  │
+  ├── steps/                  # 8 pipeline stages
+  │   ├── preflight.py        # Pre-processing validation
+  │   ├── flatten.py          # GPX to flat timeline
+  │   ├── align.py            # Camera synchronization
+  │   ├── extract.py          # Frame sampling
+  │   ├── analyze.py          # YOLO detection + scoring
+  │   ├── select.py           # Clip selection + manual review
+  │   ├── build.py            # PiP compositing + overlays
+  │   ├── splash.py           # Title cards
+  │   ├── concat.py           # Final assembly with music
+  │   ├── analyze_helpers/    # Detection, scoring, matching
+  │   ├── build_helpers/      # Rendering, gauges, minimaps
+  │   └── splash_helpers/     # Intro/outro builders
+  │
+  ├── utils/                  # Shared utilities
+  │   ├── video_utils.py      # Video processing (modified)
+  │   ├── ffmpeg.py           # FFmpeg wrapper
+  │   ├── gpx.py              # GPS parsing
+  │   ├── music.py            # Audio handling
+  │   └── gauge_overlay.py, map_overlay.py
+  │
+  ├── gui/                    # PySide6 interface
+  │   ├── main_window.py      # Main app window
+  │   ├── manual_selection_window.py  # Clip review UI
+  │   ├── controllers/        # UI event handling
+  │   └── gui_helpers/        # Panels and widgets
+  │
+  ├── strava/                 # Strava API integration
+  ├── garmin/                 # Garmin integration
+  └── importer/               # Video import handling
+
+  assets/
+
+  assets/
+  ├── music/                  # 6 background tracks
+  ├── intro.mp3 / outro.mp3   # Audio clips
+  └── velo_films.png          # Branding logo
+
 ```
 
 ## Usage
@@ -108,14 +136,8 @@ project/
 
 ```bash
 # Launch GUI
-python -m source.main
+python run_gui.py
 
-# Or run CLI pipeline
-python -m source.steps.align
-python -m source.steps.extract
-python -m source.steps.analyze
-python -m source.steps.select
-python -m source.steps.build
 ```
 
 ### Pipeline Stages
@@ -287,58 +309,7 @@ With correction:
 - Correct camera offset (11s in test footage)
 - Accurate GPX sync for speed/elevation overlays
 
-## Troubleshooting
 
-### Empty extract.csv
-
-**Symptoms:**
-```
-WARNING: No frames generated (possibly all before GPX start)
-```
-
-**Causes:**
-1. Missing `flatten.csv` - Run flatten step first
-2. Camera offsets not loaded - Run align step first
-3. All video timestamps before GPX start time
-
-**Fix:**
-```bash
-# Ensure steps run in order:
-python -m source.steps.flatten  # Creates flatten.csv
-python -m source.steps.align    # Creates camera_offsets.json
-python -m source.steps.extract  # Should now work
-```
-
-### Camera Alignment Errors
-
-**Symptoms:**
-```
-ERROR: fix_cycliq_utc_bug() missing 2 required positional arguments
-```
-
-**Fix:**
-- Ensure `video_utils.py` is updated with the latest version
-- Check that `align.py` passes `video_path` to `infer_recording_start()`
-
-### Timestamp Mismatch
-
-**Symptoms:**
-- CSV timestamps don't match burnt-in video timestamps
-- Camera offsets seem wrong
-
-**Diagnosis:**
-```bash
-# Extract a test frame and check timestamp
-ffmpeg -i source_videos/Fly12Sport_1131.MP4 -vf "select=eq(n\,450)" -frames:v 1 -update 1 test_frame.jpg
-
-# Check metadata
-ffprobe -v quiet -print_format json -show_entries format_tags=creation_time source_videos/Fly12Sport_1131.MP4
-```
-
-**Expected behavior:**
-- Frame 450 at 30fps = 15 seconds into video
-- If video starts at 19:01:49, frame 450 should show 19:02:04
-- If timestamps don't match, camera offset detection may need updating
 
 ### YOLO Performance
 

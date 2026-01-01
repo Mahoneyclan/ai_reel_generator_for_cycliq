@@ -14,10 +14,10 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget, QWidget, QFormLayout,
     QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
     QPushButton, QHBoxLayout, QLabel, QSizePolicy, QGridLayout,
-    QGroupBox, QFileDialog, QMessageBox
+    QGroupBox
 )
 
-from ..utils.persistent_config import save_persistent_config, load_persistent_config, clear_persistent_config
+from ..utils.persistent_config import save_persistent_config
 from ..config import DEFAULT_CONFIG as CFG, DEFAULT_YOLO_CLASS_WEIGHTS
 from .general_settings_window import GeneralSettingsWindow
 
@@ -37,24 +37,9 @@ class PreferencesWindow(QDialog):
     PREFERENCE_TOOLTIPS = {
         'KNOWN_OFFSETS': 'Seconds to add to video duration when calculating recording start time. '
                          'Different cameras record creation_time at different points relative to recording end.',
-        'PROJECTS_ROOT': 'Folder where generated projects and working files are stored.',
-        'INPUT_BASE_DIR': 'Base folder containing raw source videos; used when creating or selecting projects.',
-        'VIDEO_CODEC': 'FFmpeg codec used for final MP4 encoding (e.g. libx264).',
-        'BITRATE': 'Target video bitrate for output (e.g. 8M). Higher = larger files.',
-        'MAXRATE': 'Max video bitrate allowed during encoding.',
-        'BUFSIZE': 'FFmpeg buffer size setting for bitrate control.',
-        'MUSIC_VOLUME': 'Volume level for background music in final reels (0.0 - 1.0).',
-        'RAW_AUDIO_VOLUME': 'Volume level for the original ride audio (0.0 - 1.0).',
-        'PIP_SCALE_RATIO': 'Picture-in-picture scale ratio for overlay camera views.',
-        'PIP_MARGIN': 'Margin in pixels between PiP and screen edges.',
-        'MINIMAP_SCALE_RATIO': 'Scale ratio for the minimap overlay.',
-        'MINIMAP_MARGIN': 'Margin in pixels for minimap overlay placement.',
         'MIN_DETECT_SCORE': 'Minimum detection score required to consider an object detection valid.',
         'GPX_TOLERANCE': 'Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.',
         'PARTNER_TIME_TOLERANCE_S': 'Tolerance (seconds) when matching partner rides by time.',
-        'USE_MPS': 'Enable Apple MPS hardware acceleration on M1/M2 Macs when available.',
-        'YOLO_BATCH_SIZE': 'Batch size used for YOLO inference; larger values use more RAM but can be faster.',
-        'FFMPEG_HWACCEL': 'Hardware acceleration setting for FFmpeg (e.g. videotoolbox).',
         'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.'
     }
     def __init__(self, parent=None):
@@ -190,14 +175,6 @@ class PreferencesWindow(QDialog):
 
         return tab
 
-    def _add_line_edit(self, form, label, attr, value):
-        widget = _fix_size(QLineEdit(str(value)))
-        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
-        if tip:
-            widget.setToolTip(tip)
-        form.addRow(label, widget)
-        self.overrides[attr] = widget
-
     def _add_spinbox(self, form, label, attr, value, min_val, max_val):
         widget = _fix_size(QSpinBox())
         widget.setRange(min_val, max_val)
@@ -213,15 +190,6 @@ class PreferencesWindow(QDialog):
         widget.setRange(min_val, max_val)
         widget.setSingleStep(step)
         widget.setValue(value)
-        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
-        if tip:
-            widget.setToolTip(tip)
-        form.addRow(label, widget)
-        self.overrides[attr] = widget
-
-    def _add_checkbox(self, form, label, attr, value):
-        widget = _fix_size(QCheckBox())
-        widget.setChecked(value)
         tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
         if tip:
             widget.setToolTip(tip)
@@ -244,19 +212,6 @@ class PreferencesWindow(QDialog):
 
         # Camera creation_time offsets section
         self._create_known_offsets_settings()
-
-    def _create_video_settings(self, target_form=None):
-        target = target_form or getattr(self, 'video_form', None) or getattr(self, 'general_form')
-        self._add_line_edit(target, "Video Codec", "VIDEO_CODEC", CFG.VIDEO_CODEC)
-        self._add_line_edit(target, "Bitrate", "BITRATE", CFG.BITRATE)
-        self._add_line_edit(target, "Max Rate", "MAXRATE", CFG.MAXRATE)
-        self._add_line_edit(target, "Buffer Size", "BUFSIZE", CFG.BUFSIZE)
-        self._add_doublespinbox(target, "Music Volume", "MUSIC_VOLUME", CFG.MUSIC_VOLUME, 0, 1, 0.1)
-        self._add_doublespinbox(target, "Raw Audio Volume", "RAW_AUDIO_VOLUME", CFG.RAW_AUDIO_VOLUME, 0, 1, 0.1)
-        self._add_doublespinbox(target, "PiP Scale Ratio", "PIP_SCALE_RATIO", CFG.PIP_SCALE_RATIO, 0, 1, 0.05)
-        self._add_spinbox(target, "PiP Margin", "PIP_MARGIN", CFG.PIP_MARGIN, 0, 100)
-        self._add_doublespinbox(target, "Minimap Scale Ratio", "MINIMAP_SCALE_RATIO", CFG.MINIMAP_SCALE_RATIO, 0, 1, 0.05)
-        self._add_spinbox(target, "Minimap Margin", "MINIMAP_MARGIN", CFG.MINIMAP_MARGIN, 0, 100)
 
     def _create_detection_settings(self):
         self._add_doublespinbox(self.detect_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
@@ -291,15 +246,6 @@ class PreferencesWindow(QDialog):
             self.core_form.addRow(f"{camera_name} Offset (s):", widget)
             self.known_offsets_spinboxes[camera_name] = widget
 
-    def _create_m1_settings(self, target_form=None):
-        target = target_form or getattr(self, 'm1_form', None) or getattr(self, 'general_form')
-        note = QLabel("M1-specific settings for hardware acceleration")
-        note.setStyleSheet("font-style: italic; color: #666;")
-        target.addRow(note)
-        self._add_checkbox(target, "Use M1 GPU (MPS)", "USE_MPS", CFG.USE_MPS)
-        self._add_spinbox(target, "YOLO Batch Size (RAM limit)", "YOLO_BATCH_SIZE", CFG.YOLO_BATCH_SIZE, 1, 16)
-        self._add_line_edit(target, "FFmpeg HW Accel", "FFMPEG_HWACCEL", CFG.FFMPEG_HWACCEL)
-
     def _create_score_settings(self):
         description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")
         description.setWordWrap(True)
@@ -317,61 +263,6 @@ class PreferencesWindow(QDialog):
         self.score_total_label.setStyleSheet("font-weight: 700; padding-top: 8px;")
         self.score_form.addRow("Total:", self.score_total_label)
         self._update_score_total()
-
-    def _create_paths_settings(self, target_form=None):
-        target = target_form or getattr(self, 'paths_form', None) or self.general_form
-        description = QLabel("Configure where projects and source videos are stored.\nThese settings persist across sessions.")
-        description.setWordWrap(True)
-        description.setStyleSheet("font-size: 12px; color: #666; padding: 10px;")
-        target.addRow(description)
-        projects_layout = QHBoxLayout()
-        self.projects_root_edit = QLineEdit(str(CFG.PROJECTS_ROOT))
-        self.projects_root_edit.setMinimumWidth(400)
-        self.projects_root_edit.setReadOnly(True)
-        projects_browse_btn = QPushButton("Browse...")
-        projects_browse_btn.clicked.connect(self._browse_projects_root)
-        projects_layout.addWidget(self.projects_root_edit)
-        projects_layout.addWidget(projects_browse_btn)
-        target.addRow("Projects Output Folder:", projects_layout)
-        input_layout = QHBoxLayout()
-        self.input_base_edit = QLineEdit(str(CFG.INPUT_BASE_DIR))
-        self.input_base_edit.setMinimumWidth(400)
-        self.input_base_edit.setReadOnly(True)
-        input_browse_btn = QPushButton("Browse...")
-        input_browse_btn.clicked.connect(self._browse_input_base)
-        input_layout.addWidget(self.input_base_edit)
-        input_layout.addWidget(input_browse_btn)
-        target.addRow("Source Videos Folder:", input_layout)
-        help_text = QLabel("<b>Projects Output:</b> Where all generated content is stored<br><b>Source Videos:</b> Where your raw MP4 and GPX files are located")
-        help_text.setWordWrap(True)
-        help_text.setStyleSheet("font-size: 11px; color: #888; padding: 10px;")
-        target.addRow(help_text)
-        reset_layout = QHBoxLayout()
-        reset_btn = QPushButton("Reset All Preferences to Defaults")
-        reset_btn.clicked.connect(self._reset_all_preferences)
-        reset_layout.addStretch()
-        reset_layout.addWidget(reset_btn)
-        reset_layout.addStretch()
-        target.addRow("", reset_layout)
-
-    def _browse_projects_root(self):
-        current = self.projects_root_edit.text()
-        folder = QFileDialog.getExistingDirectory(self, "Select Projects Output Folder", current)
-        if folder:
-            self.projects_root_edit.setText(folder)
-
-    def _browse_input_base(self):
-        current = self.input_base_edit.text()
-        folder = QFileDialog.getExistingDirectory(self, "Select Source Videos Folder", current)
-        if folder:
-            self.input_base_edit.setText(folder)
-
-    def _reset_all_preferences(self):
-        reply = QMessageBox.question(self, "Reset All Preferences", "This will reset ALL preferences to their default values.\n\nThis action cannot be undone. Continue?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            clear_persistent_config()
-            QMessageBox.information(self, "Preferences Reset", "All preferences have been reset to defaults.\n\nPlease restart the application for changes to take effect.")
-            self.reject()
 
     def _open_general_settings(self):
         dlg = GeneralSettingsWindow(self)
