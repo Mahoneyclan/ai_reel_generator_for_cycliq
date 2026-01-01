@@ -13,6 +13,10 @@ from bisect import bisect_left
 import math
 import xml.etree.ElementTree as ET
 
+from .log import setup_logger
+
+log = setup_logger("utils.gpx")
+
 @dataclass
 class GpxPoint:
     """Single GPS trackpoint with telemetry."""
@@ -114,8 +118,8 @@ def load_gpx(path: str) -> List[GpxPoint]:
                     hr = int(ext.text)
                 elif "cad" in tag or "cadence" in tag:
                     cad = int(ext.text)
-            except:
-                pass
+            except (ValueError, TypeError, AttributeError) as e:
+                log.debug(f"[gpx] Could not parse extension {tag}: {e}")
         
         pts.append(GpxPoint(lat, lon, ele, when, 0.0, when.timestamp(), hr, cad))
     

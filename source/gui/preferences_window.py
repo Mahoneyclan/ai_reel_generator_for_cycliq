@@ -292,7 +292,9 @@ class PreferencesWindow(QDialog):
             if attr.startswith("SCORE_WEIGHTS."):
                 try:
                     total += float(widget.value())
-                except Exception: pass
+                except (ValueError, AttributeError):
+                    # Widget may not have value() or value may not be numeric
+                    pass
         pct = total * 100.0
         text = f"{pct:.1f}%"
         if abs(total - 1.0) <= 0.01:

@@ -102,11 +102,15 @@ def run():
                 for c in ext:
                     tag = (c.tag or "").lower()
                     if "hr" in tag and c.text:
-                        try: hr = int(c.text)
-                        except: pass
+                        try:
+                            hr = int(c.text)
+                        except (ValueError, TypeError):
+                            log.debug(f"[flatten] Could not parse HR value: {c.text!r}")
                     if "cad" in tag and c.text:
-                        try: cad = int(c.text)
-                        except: pass
+                        try:
+                            cad = int(c.text)
+                        except (ValueError, TypeError):
+                            log.debug(f"[flatten] Could not parse cadence value: {c.text!r}")
 
         corrected_epoch = best.time.timestamp() + CFG.GPX_TIME_OFFSET_S
 
