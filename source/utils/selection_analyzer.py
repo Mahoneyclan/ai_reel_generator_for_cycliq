@@ -5,31 +5,17 @@ Summarizes detection, scene, speed, and selection outcomes.
 """
 
 from __future__ import annotations
-import csv
 from collections import Counter
 from pathlib import Path
 from typing import Dict, List
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import enrich_path, select_path
-from ..utils.log import setup_logger
+from .log import setup_logger
+from .common import safe_float as _sf, read_csv as _load_csv
 from ..steps.analyze_helpers.score_calculator import ScoreCalculator
 
 log = setup_logger("utils.selection_analyzer")
-
-
-def _sf(v, d=0.0) -> float:
-    try:
-        return float(v) if v not in ("", None) else d
-    except Exception:
-        return d
-
-
-def _load_csv(path: Path) -> List[Dict]:
-    if not path.exists():
-        return []
-    with path.open() as f:
-        return list(csv.DictReader(f))
 
 
 def analyze_selection() -> str:

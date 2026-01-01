@@ -14,13 +14,13 @@ FIXED:
 
 from __future__ import annotations
 import subprocess
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
+from ...utils.common import parse_iso_time
 from ...io_paths import _mk
 from .gauge_renderer import GaugeRenderer
 
@@ -146,10 +146,10 @@ class ClipRenderer:
             if not start_iso:
                 raise ValueError(f"adjusted_start_time missing in {camera_role}_row")
 
-            # Normalize and parse ISO timestamp
-            if start_iso.endswith("Z"):
-                start_iso = start_iso.replace("Z", "+00:00")
-            clip_start_dt = datetime.fromisoformat(start_iso)
+            # Parse ISO timestamp using shared utility
+            clip_start_dt = parse_iso_time(start_iso)
+            if clip_start_dt is None:
+                raise ValueError(f"Could not parse adjusted_start_time: {start_iso}")
             clip_start_epoch = clip_start_dt.timestamp()
 
             # Offset of this moment inside the source clip

@@ -7,13 +7,14 @@ Includes GPXIndex for fast O(log n) timestamp lookups via binary search.
 
 from __future__ import annotations
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Optional
-from datetime import datetime, timezone
 from bisect import bisect_left
 import math
 import xml.etree.ElementTree as ET
 
 from .log import setup_logger
+from .common import parse_iso_time
 
 log = setup_logger("utils.gpx")
 
@@ -108,7 +109,9 @@ def load_gpx(path: str) -> List[GpxPoint]:
         t = trkpt.findtext("ns:time", namespaces=ns)
         if not t:
             continue
-        when = datetime.fromisoformat(t.replace("Z", "+00:00")).astimezone(timezone.utc)
+        when = parse_iso_time(t)
+        if when is None:
+            continue
         
         hr = cad = None
         for ext in trkpt.findall("ns:extensions/ns:*", ns):

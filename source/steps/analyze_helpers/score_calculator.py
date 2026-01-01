@@ -9,16 +9,9 @@ from typing import Dict, List
 
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
+from ...utils.common import safe_float as _sf
 
 log = setup_logger("steps.analyze_helpers.score_calculator")
-
-
-def _sf(v, d=0.0) -> float:
-    """Safe float conversion."""
-    try:
-        return float(v) if v not in ("", None) else d
-    except Exception:
-        return d
 
 
 class ScoreCalculator:

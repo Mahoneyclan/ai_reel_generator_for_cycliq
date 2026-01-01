@@ -33,24 +33,10 @@ import math
 
 from ..io_paths import enrich_path, select_path, frames_dir, _mk
 from ..utils.log import setup_logger
+from ..utils.common import safe_float as _sf, read_csv as _load_csv
 from ..config import DEFAULT_CONFIG as CFG
 
 log = setup_logger("steps.select")
-
-
-def _sf(v, d=0.0) -> float:
-    """Safe float conversion with default."""
-    try:
-        return float(v) if v not in ("", None) else d
-    except Exception:
-        return d
-
-
-def _load_csv(path: Path) -> List[Dict]:
-    if not path.exists():
-        return []
-    with path.open() as f:
-        return list(csv.DictReader(f))
 
 
 def _write_csv(path: Path, rows: List[Dict]):
