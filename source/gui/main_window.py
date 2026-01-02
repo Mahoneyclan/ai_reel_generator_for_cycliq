@@ -23,6 +23,46 @@ from .gui_helpers import (
     StepStatusTracker
 )
 from .controllers import ProjectController, PipelineController
+
+# Progress bar styles (avoid duplication)
+_PROGRESS_STYLE_NORMAL = """
+    QProgressBar {
+        border: 2px solid #DDDDDD;
+        border-radius: 6px;
+        text-align: center;
+        height: 28px;
+        background-color: #F5F5F5;
+        font-size: 12px;
+        font-weight: 600;
+        color: #333333;
+        margin: 0px 10px 10px 10px;
+    }
+    QProgressBar::chunk {
+        background-color: qlineargradient(
+            x1:0, y1:0, x2:1, y2:0,
+            stop:0 #007AFF, stop:1 #00C7FF
+        );
+        border-radius: 4px;
+    }
+"""
+
+_PROGRESS_STYLE_ERROR = """
+    QProgressBar {
+        border: 2px solid #FF3B30;
+        border-radius: 6px;
+        text-align: center;
+        height: 28px;
+        background-color: #FFF0F0;
+        font-size: 12px;
+        font-weight: 600;
+        color: #FF3B30;
+        margin: 0px 10px 10px 10px;
+    }
+    QProgressBar::chunk {
+        background-color: #FF3B30;
+        border-radius: 4px;
+    }
+"""
 from .gpx_import_window import GPXImportWindow
 
 from ..config import DEFAULT_CONFIG as CFG
@@ -95,26 +135,7 @@ class MainWindow(QMainWindow):
 
         # 3. PROGRESS BAR (below workspace, above log)
         self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #DDDDDD;
-                border-radius: 6px;
-                text-align: center;
-                height: 28px;
-                background-color: #F5F5F5;
-                font-size: 12px;
-                font-weight: 600;
-                color: #333333;
-                margin: 0px 10px 10px 10px;
-            }
-            QProgressBar::chunk {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #007AFF, stop:1 #00C7FF
-                );
-                border-radius: 4px;
-            }
-        """)
+        self.progress_bar.setStyleSheet(_PROGRESS_STYLE_NORMAL)
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
@@ -256,20 +277,12 @@ class MainWindow(QMainWindow):
         self._update_button_in_progress(step_name)
 
     def _on_step_progress(self, step_name: str, current: int, total: int, message: str):
-        """Handle step progress updates with descriptive messages."""
-        self.status_manager.show_progress(step_name, current, total)
-
-        # Update progress bar
+        """Handle step progress updates. Status bar stays at 'Running: XXX'."""
+        # Update progress bar only (status bar keeps "Running: XXX" from _on_step_started)
         if total > 0:
             pct = int((current / total) * 100)
             self.progress_bar.setValue(pct)
             self.progress_bar.setFormat(f"{step_name}: {message}")
-
-            # Update status bar with visual progress
-            bar_length = 20
-            filled = int(bar_length * current / total)
-            bar = "█" * filled + "░" * (bar_length - filled)
-            self.statusBar().showMessage(f"{step_name}: {bar} {pct}%")
 
     def _on_step_completed(self, step_name: str, result):
         """Handle step completion."""
@@ -300,23 +313,7 @@ class MainWindow(QMainWindow):
         self.log_panel.log(f"✗ {step_name} failed: {error_message}", "error")
 
         # Update progress bar to show error
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #FF3B30;
-                border-radius: 6px;
-                text-align: center;
-                height: 28px;
-                background-color: #FFF5F5;
-                font-size: 12px;
-                font-weight: 600;
-                color: #D32F2F;
-                margin: 0px 10px 10px 10px;
-            }
-            QProgressBar::chunk {
-                background-color: #FF3B30;
-                border-radius: 4px;
-            }
-        """)
+        self.progress_bar.setStyleSheet(_PROGRESS_STYLE_ERROR)
         self.progress_bar.setFormat(f"{step_name}: Failed ✗")
 
         # Hide after 3 seconds and restore style
@@ -327,26 +324,7 @@ class MainWindow(QMainWindow):
 
     def _restore_progress_bar_style(self):
         """Restore normal progress bar style and hide."""
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #DDDDDD;
-                border-radius: 6px;
-                text-align: center;
-                height: 28px;
-                background-color: #F5F5F5;
-                font-size: 12px;
-                font-weight: 600;
-                color: #333333;
-                margin: 0px 10px 10px 10px;
-            }
-            QProgressBar::chunk {
-                background-color: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #007AFF, stop:1 #00C7FF
-                );
-                border-radius: 4px;
-            }
-        """)
+        self.progress_bar.setStyleSheet(_PROGRESS_STYLE_NORMAL)
         self.progress_bar.setVisible(False)
 
     def _on_build_completed(self):
