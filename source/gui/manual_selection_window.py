@@ -357,14 +357,12 @@ class ManualSelectionWindow(QDialog):
         layout.addWidget(pip_widget)
 
         # Metadata
-        camera_label = primary_row.get("camera", "Camera") 
-        file_name = primary_row.get("path", "").split("/")[-1] 
+        camera_label = primary_row.get("camera", "Camera")
+        source_file = primary_row.get("source", "")  # Video filename e.g. "Fly12Sport_1234.MP4"
         frame_num = primary_row.get("frame_number", "—")
 
-        camera_label = primary_row.get("camera", "Camera")
-
         metadata_lines = [
-            f"Camera: {camera_label} | File {file_name} | Frame {frame_num}",
+            f"Camera: {camera_label} | File: {source_file} | Frame {frame_num}",
             self._fmt_meta(primary_row),
         ]
 
