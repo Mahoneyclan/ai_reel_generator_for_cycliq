@@ -50,37 +50,72 @@ def _write_csv(path: Path, rows: List[Dict]):
 
 
 def extract_frame_images(rows: List[Dict]) -> int:
-    """Extract frame images from videos for manual review."""
+    """
+    Extract frame images from videos for manual review.
+
+    Optimized: Groups frames by video file to minimize open/close overhead.
+    Each video is opened once and all its frames are extracted before closing.
+    """
     from ..io_paths import frames_dir, _mk
     import cv2
+    from collections import defaultdict
 
     frames_dir_path = _mk(frames_dir())
     extracted_count = 0
 
-    log.info(f"Extracting {len(rows)} frame images for manual review...")
-
+    # Filter to only rows that need extraction
+    pending_rows = []
     for row in rows:
         index = row["index"]
-        video_path = Path(row["video_path"])
-        frame_number = int(float(row["frame_number"]))
-
         primary_out = frames_dir_path / f"{index}_Primary.jpg"
-        if primary_out.exists():
-            continue
+        if not primary_out.exists():
+            pending_rows.append(row)
+
+    if not pending_rows:
+        log.info("All frame images already extracted")
+        return 0
+
+    log.info(f"Extracting {len(pending_rows)} frame images for manual review...")
+
+    # Group rows by video file for batch extraction
+    by_video: Dict[str, List[Dict]] = defaultdict(list)
+    for row in pending_rows:
+        video_path = row["video_path"]
+        by_video[video_path].append(row)
+
+    log.info(f"Batching across {len(by_video)} video files...")
+
+    # Process each video file once
+    for video_path_str, video_rows in by_video.items():
+        video_path = Path(video_path_str)
+
+        # Sort by frame number for sequential access (better I/O performance)
+        video_rows.sort(key=lambda r: int(float(r["frame_number"])))
 
         try:
             cap = cv2.VideoCapture(str(video_path))
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, frame = cap.read()
+            if not cap.isOpened():
+                log.error(f"Failed to open video: {video_path.name}")
+                continue
+
+            for row in video_rows:
+                index = row["index"]
+                frame_number = int(float(row["frame_number"]))
+                primary_out = frames_dir_path / f"{index}_Primary.jpg"
+
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+                ret, frame = cap.read()
+
+                if ret and frame is not None:
+                    cv2.imwrite(str(primary_out), frame)
+                    extracted_count += 1
+                else:
+                    log.warning(f"Failed to extract frame {frame_number} from {video_path.name}")
+
             cap.release()
 
-            if ret and frame is not None:
-                cv2.imwrite(str(primary_out), frame)
-                extracted_count += 1
-            else:
-                log.warning(f"Failed to extract frame {frame_number} from {video_path.name}")
         except Exception as e:
-            log.error(f"Error extracting {index}: {e}")
+            log.error(f"Error processing {video_path.name}: {e}")
 
     log.info(f"Extracted {extracted_count} new frame images to {frames_dir_path}")
     return extracted_count

@@ -14,7 +14,7 @@ from source.utils.progress_reporter import progress_iter
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import extract_path, enrich_path, _mk
-from ..utils.video_utils import extract_frame_safe
+from ..utils.video_utils import VideoCache
 from ..utils.log import setup_logger
 
 # Import analysis components
@@ -64,6 +64,9 @@ class FrameAnalyzer:
     """
     Combined frame analyzer using modular components.
     Extracts frames once and runs all analysis passes.
+
+    Optimized: Uses VideoCache to keep videos open while processing
+    consecutive frames from the same file.
     """
 
     def __init__(self, scene_comparison_window_s: float = 5.0):
@@ -81,11 +84,17 @@ class FrameAnalyzer:
         self.gps_enricher = GPSEnricher()
         self.score_calculator = ScoreCalculator()
 
+        # Video cache for efficient frame extraction
+        self.video_cache = VideoCache()
+
         self.frames_processed = 0
 
     def analyze_frame(self, video_path: Path, frame_number: int, camera: str) -> Dict[str, object]:
         """
         Analyze single frame: detection + scene scoring.
+
+        Uses VideoCache for efficient extraction when processing
+        consecutive frames from the same video file.
 
         Args:
             video_path: Path to source video file
@@ -95,8 +104,8 @@ class FrameAnalyzer:
         Returns:
             Dict with detection and scene analysis results
         """
-        # Extract frame once from video stream
-        frame = extract_frame_safe(video_path, frame_number)
+        # Extract frame using cache (reuses open video for consecutive frames)
+        frame = self.video_cache.extract_frame(video_path, frame_number)
         if frame is None:
             return self._empty_result()
 
@@ -141,6 +150,7 @@ class FrameAnalyzer:
 
     def cleanup(self):
         """Clean up all components."""
+        self.video_cache.close()  # Close cached video and log stats
         self.scene_detector.cleanup()
         log.info(f"[analyze] Processed {self.frames_processed} frames")
 

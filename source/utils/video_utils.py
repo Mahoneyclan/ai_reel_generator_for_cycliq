@@ -91,6 +91,112 @@ def extract_frame_safe(video_path: Path, frame_number: int) -> Optional[np.ndarr
         return None
 
 
+class VideoCache:
+    """
+    Caches open video files to avoid repeated open/close overhead.
+
+    Optimized for sequential access patterns where consecutive frames
+    come from the same video file (e.g., after sorting by camera/timestamp).
+
+    Usage:
+        cache = VideoCache()
+        try:
+            for row in sorted_rows:
+                frame = cache.extract_frame(Path(row["video_path"]), int(row["frame_number"]))
+                # process frame...
+        finally:
+            cache.close()
+    """
+
+    def __init__(self):
+        self._current_path: Optional[Path] = None
+        self._current_cap: Optional[cv2.VideoCapture] = None
+        self._hits = 0
+        self._misses = 0
+
+    def extract_frame(self, video_path: Path, frame_number: int) -> Optional[np.ndarray]:
+        """
+        Extract frame, reusing open video if same as last request.
+
+        Args:
+            video_path: Path to video file
+            frame_number: Zero-based frame index
+
+        Returns:
+            RGB numpy array (H, W, 3) or None if extraction fails
+        """
+        # Check if we need to switch videos
+        if self._current_path != video_path:
+            self._switch_video(video_path)
+            self._misses += 1
+        else:
+            self._hits += 1
+
+        if self._current_cap is None:
+            return None
+
+        try:
+            # Seek and extract
+            self._current_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = self._current_cap.read()
+
+            if not ret:
+                log.warning(f"Failed to read frame {frame_number} from {video_path.name}")
+                return None
+
+            # Convert BGR to RGB
+            return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        except Exception as e:
+            log.error(f"Frame extraction failed for {video_path.name}: {e}")
+            return None
+
+    def _switch_video(self, video_path: Path):
+        """Close current video and open new one."""
+        # Close existing
+        if self._current_cap is not None:
+            self._current_cap.release()
+            log.debug(f"[VideoCache] Closed {self._current_path.name if self._current_path else 'None'}")
+
+        # Open new
+        self._current_path = video_path
+        try:
+            self._current_cap = cv2.VideoCapture(str(video_path))
+            if not self._current_cap.isOpened():
+                log.error(f"[VideoCache] Failed to open {video_path.name}")
+                self._current_cap = None
+            else:
+                log.debug(f"[VideoCache] Opened {video_path.name}")
+        except Exception as e:
+            log.error(f"[VideoCache] Error opening {video_path.name}: {e}")
+            self._current_cap = None
+
+    def close(self):
+        """Release resources and log cache statistics."""
+        if self._current_cap is not None:
+            self._current_cap.release()
+            self._current_cap = None
+
+        total = self._hits + self._misses
+        if total > 0:
+            hit_rate = (self._hits / total) * 100
+            log.info(
+                f"[VideoCache] Stats: {self._hits} hits, {self._misses} misses "
+                f"({hit_rate:.1f}% hit rate)"
+            )
+
+        self._current_path = None
+        self._hits = 0
+        self._misses = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+
 # ============================================================================
 # Video Metadata Utilities (shared by align.py and extract.py)
 # ============================================================================
