@@ -35,6 +35,7 @@ from ..io_paths import enrich_path, select_path, frames_dir, _mk
 from ..utils.log import setup_logger
 from ..utils.common import safe_float as _sf, read_csv as _load_csv
 from ..config import DEFAULT_CONFIG as CFG
+from ..models import get_registry
 
 log = setup_logger("steps.select")
 
@@ -120,13 +121,14 @@ def _group_rows_by_moment(rows: List[Dict]) -> List[Dict]:
 
     for mid, group in by_moment.items():
         # Expect at most one row per camera per moment
+        registry = get_registry()
         fly12_row = None
         fly6_row = None
         for r in group:
             cam = r.get("camera", "")
-            if cam == "Fly12Sport":
+            if registry.is_front_camera(cam):
                 fly12_row = r
-            elif cam == "Fly6Pro":
+            elif registry.is_rear_camera(cam):
                 fly6_row = r
 
         if not fly12_row or not fly6_row:

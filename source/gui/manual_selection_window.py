@@ -17,6 +17,7 @@ from PySide6.QtGui import QPixmap, QPainter
 from source.config import DEFAULT_CONFIG as CFG
 from source.io_paths import select_path, frames_dir, _mk
 from source.utils.log import setup_logger
+from source.models import get_registry
 
 log = setup_logger("gui.manual_selection_window")
 
@@ -230,6 +231,7 @@ class ManualSelectionWindow(QDialog):
             moments: List[Dict] = []
             dropped = 0
 
+            registry = get_registry()
             for mid, group in by_moment.items():
                 # Expect one Fly12 and one Fly6 row
                 fly12_row: Optional[Dict] = None
@@ -237,9 +239,9 @@ class ManualSelectionWindow(QDialog):
 
                 for r in group:
                     cam = r.get("camera", "")
-                    if cam == "Fly12Sport":
+                    if registry.is_front_camera(cam):
                         fly12_row = r
-                    elif cam == "Fly6Pro":
+                    elif registry.is_rear_camera(cam):
                         fly6_row = r
 
                 if not fly12_row or not fly6_row:

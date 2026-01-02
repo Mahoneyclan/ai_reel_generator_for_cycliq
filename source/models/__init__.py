@@ -2,5 +2,6 @@
 """Data models for the AI Reel Generator."""
 
 from .time_model import TimeModel
+from .camera_registry import CameraRegistry, CameraType, get_registry
 
-__all__ = ["TimeModel"]
+__all__ = ["TimeModel", "CameraRegistry", "CameraType", "get_registry"]

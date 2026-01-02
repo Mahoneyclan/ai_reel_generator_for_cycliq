@@ -241,20 +241,19 @@ def detect_camera_creation_time_offset(video_path: Path) -> float:
     Returns:
         Offset in seconds to add to duration
     """
-    from ..config import DEFAULT_CONFIG as CFG
+    from ..models import get_registry
 
     camera_name = extract_camera_name(video_path)
+    registry = get_registry()
 
-    # Known offsets for Cycliq cameras (loaded from config, editable via preferences)
-    known_offsets = CFG.KNOWN_OFFSETS
+    # Get known offset for this camera model
+    offset = registry.get_known_offset(camera_name)
 
-    offset = known_offsets.get(camera_name, 0.0)
-    
     if offset > 0:
         log.debug(
             f"[video_utils] {camera_name} has {offset}s creation_time offset"
         )
-    
+
     return offset
 
 
