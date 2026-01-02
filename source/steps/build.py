@@ -317,5 +317,3 @@ def run() -> Path:
     return out_dir
 
 
-if __name__ == "__main__":
-    run()

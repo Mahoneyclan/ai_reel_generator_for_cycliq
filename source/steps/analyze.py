@@ -273,5 +273,3 @@ def run() -> Path:
     return out_csv
 
 
-if __name__ == "__main__":
-    run()

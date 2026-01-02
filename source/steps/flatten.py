@@ -167,5 +167,3 @@ def run():
     log.info(f"[flatten] ✓ Wrote {len(rows)} resampled points to {out}")
     return out
 
-if __name__ == "__main__":
-    run()

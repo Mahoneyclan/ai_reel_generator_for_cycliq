@@ -110,5 +110,3 @@ def run() -> Path:
     return out
 
 
-if __name__ == "__main__":
-    run()

@@ -159,5 +159,3 @@ def _cleanup_temp_files():
         log.debug(f"[splash] Cleaned up {removed_count} temporary items")
 
 
-if __name__ == "__main__":
-    run()
