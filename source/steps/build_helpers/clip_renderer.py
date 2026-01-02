@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
-from ...utils.common import parse_iso_time
+from ...models import TimeModel
 from ...io_paths import _mk
 from .gauge_renderer import GaugeRenderer
 
@@ -127,7 +127,7 @@ class ClipRenderer:
         camera_role: str
     ) -> Optional[float]:
         """
-        Compute extraction start time for a single camera.
+        Compute extraction start time for a single camera using TimeModel.
 
         Args:
             row: CSV row containing abs_time_epoch and adjusted_start_time
@@ -137,54 +137,35 @@ class ClipRenderer:
         Returns:
             t_start in seconds, or None if calculation fails
         """
-        try:
-            # World-aligned timestamp of the moment
-            abs_epoch = float(row.get("abs_time_epoch", 0.0) or 0.0)
-
-            # Clip start time (UTC) from extract.py
-            start_iso = row.get("adjusted_start_time")
-            if not start_iso:
-                raise ValueError(f"adjusted_start_time missing in {camera_role}_row")
-
-            # Parse ISO timestamp using shared utility
-            clip_start_dt = parse_iso_time(start_iso)
-            if clip_start_dt is None:
-                raise ValueError(f"Could not parse adjusted_start_time: {start_iso}")
-            clip_start_epoch = clip_start_dt.timestamp()
-
-            # Offset of this moment inside the source clip
-            offset_in_clip = abs_epoch - clip_start_epoch
-            if offset_in_clip < 0:
-                log.warning(
-                    f"[clip] Negative offset_in_clip ({offset_in_clip:.3f}s) "
-                    f"for {camera_role} camera in clip {clip_idx:04d} ({row.get('source')})"
-                )
-                offset_in_clip = 0.0
-
-            # Apply pre-roll in clip-local time
-            t_start = max(0.0, offset_in_clip - CFG.CLIP_PRE_ROLL_S)
-
-            # Optional: sanity check vs clip's reported duration
-            try:
-                clip_duration_s = float(row.get("duration_s", 0.0) or 0.0)
-                if clip_duration_s > 0 and t_start >= clip_duration_s:
-                    log.error(
-                        f"[clip] t_start={t_start:.3f}s beyond clip duration "
-                        f"{clip_duration_s:.3f}s for {camera_role} camera "
-                        f"({row.get('source')}) in clip_idx={clip_idx}"
-                    )
-                    return None
-            except Exception:
-                pass
-
-            return t_start
-
-        except Exception as e:
+        # Use TimeModel to encapsulate time calculations
+        tm = TimeModel.from_row(row)
+        if tm is None:
             log.error(
-                f"[clip] Failed to compute t_start for {camera_role} camera "
-                f"in clip {clip_idx}: {e}"
+                f"[clip] Failed to create TimeModel for {camera_role} camera "
+                f"in clip {clip_idx} ({row.get('source')})"
             )
             return None
+
+        # Check for negative offset (misalignment)
+        if tm.offset_in_clip < 0:
+            log.warning(
+                f"[clip] Negative offset_in_clip ({tm.offset_in_clip:.3f}s) "
+                f"for {camera_role} camera in clip {clip_idx:04d} ({row.get('source')})"
+            )
+
+        # Compute t_start with pre-roll
+        t_start = tm.t_start(CFG.CLIP_PRE_ROLL_S)
+
+        # Validate seek position against clip duration
+        if tm.duration_s > 0 and t_start >= tm.duration_s:
+            log.error(
+                f"[clip] t_start={t_start:.3f}s beyond clip duration "
+                f"{tm.duration_s:.3f}s for {camera_role} camera "
+                f"({row.get('source')}) in clip_idx={clip_idx}"
+            )
+            return None
+
+        return t_start
 
     def _build_ffmpeg_inputs_and_filters(
         self,
