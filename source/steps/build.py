@@ -10,14 +10,16 @@ Moment-based version:
 
 from __future__ import annotations
 import csv
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional, Tuple
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import select_path, clips_dir, minimap_dir, gauge_dir, _mk
 from ..utils.log import setup_logger
 from ..utils.gpx import load_gpx
-from ..utils.progress_reporter import progress_iter
+from ..utils.progress_reporter import progress_iter, report_progress
 
 # Import build helpers
 from .build_helpers import (
@@ -142,6 +144,56 @@ def _load_gpx_points():
         return []
 
 
+def _render_single_clip(
+    clip_renderer: ClipRenderer,
+    gauge_renderer: GaugeRenderer,
+    moment: Dict,
+    idx: int,
+    minimap_path: Optional[Path],
+) -> Tuple[int, Optional[Path]]:
+    """
+    Render a single clip (thread-safe for parallel execution).
+
+    Args:
+        clip_renderer: ClipRenderer instance
+        gauge_renderer: GaugeRenderer instance
+        moment: Moment dict with main/pip rows
+        idx: Clip index (1-based)
+        minimap_path: Optional path to pre-rendered minimap
+
+    Returns:
+        Tuple of (clip_idx, output_path or None if failed)
+    """
+    main_row = moment["main"]
+    pip_row = moment["pip"]
+
+    try:
+        clip_path = clip_renderer.render_clip(
+            main_row=main_row,
+            pip_row=pip_row,
+            clip_idx=idx,
+            minimap_path=minimap_path,
+            gauge_renderer=gauge_renderer,
+        )
+        return (idx, clip_path)
+
+    except Exception as e:
+        log.error(f"[build] Failed to render clip {idx}: {e}")
+        return (idx, None)
+
+
+def _get_max_workers() -> int:
+    """
+    Determine optimal number of parallel FFmpeg workers.
+
+    Uses half of available CPUs to avoid overloading the system,
+    with a minimum of 1 and maximum of 8 workers.
+    """
+    cpu_count = os.cpu_count() or 4
+    workers = max(1, min(8, cpu_count // 2))
+    return workers
+
+
 def run() -> Path:
     """
     Main build pipeline: render clips → concatenate segments → add music.
@@ -180,43 +232,60 @@ def run() -> Path:
     log.info("[build] Computing gauge maxes...")
     gauge_renderer = GaugeRenderer(gauge_path, select_path())
 
-    # Step 3: Render individual clips
-    log.info(f"[build] Rendering {len(recommended_moments)} clips with overlays (main+PiP)...")
+    # Step 3: Render individual clips (parallel)
     clip_renderer = ClipRenderer(out_dir)
-    individual_clips: List[Path] = []
+    max_workers = _get_max_workers()
+    total_clips = len(recommended_moments)
 
-    for idx, moment in enumerate(
-        progress_iter(recommended_moments, desc="Encoding clips", unit="clip"), start=1
-    ):
-        main_row = moment["main"]
-        pip_row = moment["pip"]
+    log.info(
+        f"[build] Rendering {total_clips} clips with overlays "
+        f"(main+PiP, {max_workers} parallel workers)..."
+    )
 
-        try:
-            # Get pre-rendered minimap (if available)
-            minimap_path_for_clip = minimap_paths.get(idx)
+    # Collect results indexed by clip_idx for proper ordering
+    clip_results: Dict[int, Optional[Path]] = {}
+    completed = 0
 
-            # Render clip with all overlays
-            clip_path = clip_renderer.render_clip(
-                main_row=main_row,
-                pip_row=pip_row,
-                clip_idx=idx,
-                minimap_path=minimap_path_for_clip,
-                gauge_renderer=gauge_renderer,
-            )
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all clip rendering tasks
+        futures = {
+            executor.submit(
+                _render_single_clip,
+                clip_renderer,
+                gauge_renderer,
+                moment,
+                idx,
+                minimap_paths.get(idx),
+            ): idx
+            for idx, moment in enumerate(recommended_moments, start=1)
+        }
 
+        # Process completed clips as they finish
+        for future in as_completed(futures):
+            clip_idx, clip_path = future.result()
+            clip_results[clip_idx] = clip_path
+            completed += 1
+
+            # Report progress
             if clip_path:
-                individual_clips.append(clip_path)
+                log.debug(f"[build] Completed clip {clip_idx}/{total_clips}")
             else:
-                log.warning(f"[build] Clip {idx} failed to render")
+                log.warning(f"[build] Clip {clip_idx} failed to render")
 
-        except Exception as e:
-            log.error(f"[build] Failed to render clip {idx}: {e}", exc_info=True)
+            report_progress(completed, total_clips, f"Rendered {completed}/{total_clips} clips")
+
+    # Collect successful clips in order
+    individual_clips: List[Path] = [
+        clip_results[idx]
+        for idx in sorted(clip_results.keys())
+        if clip_results[idx] is not None
+    ]
 
     if not individual_clips:
         log.error("[build] No clips were successfully rendered")
         return out_dir
 
-    log.info(f"[build] Successfully rendered {len(individual_clips)} clips")
+    log.info(f"[build] Successfully rendered {len(individual_clips)}/{total_clips} clips")
 
     # Step 4: Concatenate into segments with music
     log.info("[build] Concatenating clips into segments...")
