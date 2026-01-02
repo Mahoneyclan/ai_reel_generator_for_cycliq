@@ -1,18 +1,16 @@
 # source/gui/gui_helpers/action_button_panel.py
 """
 Top action bar panel with project-independent actions.
-MIGRATED from action_button_panel.py - kept only non-project buttons.
 
 Buttons that DON'T require a project:
 - Import Raw Video
 - Create Ride Project
 - Add Music
-- Preferences
+- Settings (global app config)
 
-Moved to pipeline_steps_panel.py:
-- Get GPX (project-specific)
-- Analyze Selection (project-specific)
-- View Log (project-specific)
+Project-specific buttons are in pipeline_panel.py:
+- Pipeline steps (GPX, Align, Analyze, Select, Build)
+- Project Tools (Analyze Selection, View Log, Project Settings)
 """
 
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame
@@ -25,12 +23,11 @@ class ActionButtonPanel(QFrame):
     These work WITHOUT a project selected.
     """
     
-    # Project-independent signals (from old action_button_panel.py)
+    # Project-independent signals
     import_clicked = Signal()
     create_clicked = Signal()
     music_clicked = Signal()
-    prefs_clicked = Signal()
-    general_clicked = Signal()
+    settings_clicked = Signal()  # Global app settings
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -72,25 +69,18 @@ class ActionButtonPanel(QFrame):
         layout.addWidget(create_btn)
         
         music_btn = self._create_button(
-            "🎵 Add Music", 
+            "🎵 Add Music",
             "Add background music tracks"
         )
         music_btn.clicked.connect(self.music_clicked.emit)
         layout.addWidget(music_btn)
-        
-        prefs_btn = self._create_button(
-            "⚙️ Preferences", 
-            "Configure pipeline settings"
-        )
-        prefs_btn.clicked.connect(self.prefs_clicked.emit)
-        layout.addWidget(prefs_btn)
 
-        general_btn = self._create_button(
-            "⚙️ General Settings",
-            "Open general program settings (paths, video, M1)"
+        settings_btn = self._create_button(
+            "⚙️ Settings",
+            "Global app settings (paths, video, M1)"
         )
-        general_btn.clicked.connect(self.general_clicked.emit)
-        layout.addWidget(general_btn)
+        settings_btn.clicked.connect(self.settings_clicked.emit)
+        layout.addWidget(settings_btn)
         
         layout.addStretch()
     

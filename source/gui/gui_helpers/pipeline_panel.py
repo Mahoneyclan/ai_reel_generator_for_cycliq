@@ -36,9 +36,10 @@ class PipelinePanel(QWidget):
     select_clicked = Signal()
     build_clicked = Signal()        # Renamed from finalize_clicked
 
-    # Special tool signals (from old action_button_panel.py)
-    analyze_selection_clicked = Signal()  # Renamed from analyze_clicked in action_button_panel
-    view_log_clicked = Signal()           # Renamed from log_clicked in action_button_panel
+    # Project tool signals
+    analyze_selection_clicked = Signal()
+    view_log_clicked = Signal()
+    project_settings_clicked = Signal()  # Project-specific settings (audio, pipeline params)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -147,6 +148,14 @@ class PipelinePanel(QWidget):
         self.view_log_btn.clicked.connect(self.view_log_clicked.emit)
         special_layout.addWidget(self.view_log_btn)
 
+        # Project settings
+        self.project_settings_btn = self._create_special_button(
+            "🎛️ Project Settings",
+            "Project-specific settings (audio track, pipeline parameters)"
+        )
+        self.project_settings_btn.clicked.connect(self.project_settings_clicked.emit)
+        special_layout.addWidget(self.project_settings_btn)
+
         layout.addLayout(special_layout)
 
         layout.addStretch()
@@ -160,7 +169,7 @@ class PipelinePanel(QWidget):
             "build": self.btn_build
         }
 
-        self.special_buttons = [self.analyze_selection_btn, self.view_log_btn]
+        self.special_buttons = [self.analyze_selection_btn, self.view_log_btn, self.project_settings_btn]
 
     def _create_separator(self) -> QFrame:
         """Create horizontal separator."""

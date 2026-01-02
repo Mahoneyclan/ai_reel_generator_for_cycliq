@@ -161,8 +161,7 @@ class MainWindow(QMainWindow):
         self.action_panel.import_clicked.connect(self._show_import_raw_video)
         self.action_panel.create_clicked.connect(self._create_project)
         self.action_panel.music_clicked.connect(self._open_music_folder)
-        self.action_panel.prefs_clicked.connect(self._show_preferences)
-        self.action_panel.general_clicked.connect(self._show_general_settings)
+        self.action_panel.settings_clicked.connect(self._show_general_settings)
 
         # Pipeline panel (project-specific workflow)
         self.pipeline_panel.gpx_clicked.connect(self._show_gpx_import)
@@ -174,6 +173,7 @@ class MainWindow(QMainWindow):
         # Special project tools
         self.pipeline_panel.analyze_selection_clicked.connect(self.dialog_manager.show_analysis)
         self.pipeline_panel.view_log_clicked.connect(self.dialog_manager.show_log)
+        self.pipeline_panel.project_settings_clicked.connect(self._show_preferences)
 
     def _log_to_panel(self, message: str, level: str = "info"):
         """Route project controller logs to activity panel."""
