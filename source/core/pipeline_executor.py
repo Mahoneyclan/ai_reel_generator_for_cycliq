@@ -57,9 +57,6 @@ class PipelineExecutor:
             # GPX + flatten
             "flatten": [],  # root of the telemetry timeline
 
-            # Preflight can run anytime (just checks files on disk)
-            "preflight": [],
-
             # Camera alignment requires a flattened GPX timeline
             "align": [flatten_path()],
 

@@ -14,11 +14,10 @@ from .. import steps
 
 # Ordered list of all pipeline steps in execution sequence
 PIPELINE_SEQUENCE = [
-    "preflight",
-    "flatten", 
+    "flatten",
     "align",
     "extract",
-    "analyze",  # UPDATED: Replaces detect + enrich
+    "analyze",
     "select",
     "build",
     "splash",
@@ -27,11 +26,10 @@ PIPELINE_SEQUENCE = [
 
 # Function registry mapping step names to their run functions
 _STEP_FUNCTIONS: Dict[str, Callable] = {
-    "preflight": steps.preflight.run,
     "flatten": steps.flatten.run,
     "align": steps.align.run,
     "extract": steps.extract.run,
-    "analyze": steps.analyze.run,  # UPDATED: Combined detection + enrichment
+    "analyze": steps.analyze.run,
     "select": steps.select.run,
     "build": steps.build.run,
     "splash": steps.splash.run,
