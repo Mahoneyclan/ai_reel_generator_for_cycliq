@@ -65,16 +65,21 @@ class FrameAnalyzer:
     Combined frame analyzer using modular components.
     Extracts frames once and runs all analysis passes.
 
-    Optimized: Uses VideoCache to keep videos open while processing
-    consecutive frames from the same file.
+    Optimized:
+    - Uses VideoCache to keep videos open while processing consecutive frames
+    - Uses batch YOLO inference for 2-3x GPU speedup
     """
 
-    def __init__(self, scene_comparison_window_s: float = 5.0):
+    # Default batch size for YOLO inference
+    DEFAULT_BATCH_SIZE = 8
+
+    def __init__(self, scene_comparison_window_s: float = 5.0, batch_size: int = None):
         """
         Initialize all analysis components.
 
         Args:
             scene_comparison_window_s: Time window for scene change detection
+            batch_size: Number of frames to batch for YOLO inference (default: 8)
         """
         self.object_detector = ObjectDetector()
         self.scene_detector = SceneDetector(
@@ -86,6 +91,9 @@ class FrameAnalyzer:
 
         # Video cache for efficient frame extraction
         self.video_cache = VideoCache()
+
+        # Batch size for YOLO inference
+        self.batch_size = batch_size or self.DEFAULT_BATCH_SIZE
 
         self.frames_processed = 0
 
@@ -119,6 +127,51 @@ class FrameAnalyzer:
             **detect_result,
             "scene_boost": scene_score,
         }
+
+    def analyze_batch(self, batch_info: List[Dict]) -> List[Dict[str, object]]:
+        """
+        Analyze a batch of frames with batched YOLO inference.
+
+        Extracts all frames, runs batch YOLO detection, then runs
+        scene detection per-frame (scene detection needs sequential processing).
+
+        Args:
+            batch_info: List of dicts with 'video_path', 'frame_number', 'camera'
+
+        Returns:
+            List of analysis result dicts matching input order
+        """
+        if not batch_info:
+            return []
+
+        # Extract all frames in batch
+        frames = []
+        for info in batch_info:
+            frame = self.video_cache.extract_frame(
+                Path(info['video_path']),
+                int(info['frame_number'])
+            )
+            frames.append(frame)
+
+        # Batch YOLO detection
+        detect_results = self.object_detector.detect_batch(frames)
+
+        # Scene detection per-frame (needs sequential per-camera processing)
+        results = []
+        for i, (info, frame, detect_result) in enumerate(zip(batch_info, frames, detect_results)):
+            if frame is not None:
+                scene_score = self.scene_detector.compute_scene_score(frame, info['camera'])
+            else:
+                scene_score = 0.0
+
+            self.frames_processed += 1
+
+            results.append({
+                **detect_result,
+                "scene_boost": scene_score,
+            })
+
+        return results
 
     def enrich_frame(self, row: Dict) -> Dict:
         """Add GPX telemetry to frame metadata."""
@@ -196,41 +249,60 @@ def run() -> Path:
     log.info("[analyze] Sorting frames by camera and timestamp...")
     rows.sort(key=lambda r: (r.get("camera", ""), float(r.get("abs_time_epoch", 0) or 0.0)))
 
-    # Initialize analyzer
-    analyzer = FrameAnalyzer(scene_comparison_window_s=CFG.SCENE_COMPARISON_WINDOW_S)
+    # Initialize analyzer with batch size from config
+    batch_size = CFG.YOLO_BATCH_SIZE
+    analyzer = FrameAnalyzer(
+        scene_comparison_window_s=CFG.SCENE_COMPARISON_WINDOW_S,
+        batch_size=batch_size
+    )
     enriched_rows: List[Dict] = []
 
     log.info(f"[analyze] Scene detection: comparing frames {CFG.SCENE_COMPARISON_WINDOW_S}s apart")
+    log.info(f"[analyze] Using batch size {batch_size} for YOLO inference")
 
     try:
-        # Process all frames
-        pbar = progress_iter(rows, desc="[analyze] Processing frames", unit="frame")
-        for idx, r in enumerate(pbar):
-            # Extract frame info
-            video_path = Path(r["video_path"])
-            frame_number = int(r["frame_number"])
-            camera = r["camera"]
+        # Process frames in batches for GPU efficiency
+        total_frames = len(rows)
+        processed = 0
 
-            # Analyze frame (detection + scene)
-            analysis = analyzer.analyze_frame(video_path, frame_number, camera)
+        for batch_start in range(0, total_frames, batch_size):
+            batch_end = min(batch_start + batch_size, total_frames)
+            batch_rows = rows[batch_start:batch_end]
 
-            # Merge metadata: original row + analysis
-            enriched = {**r, **analysis}
+            # Prepare batch info for analyzer
+            batch_info = [
+                {
+                    'video_path': r["video_path"],
+                    'frame_number': r["frame_number"],
+                    'camera': r["camera"]
+                }
+                for r in batch_rows
+            ]
 
-            # Add detection flag
-            detect_ok = float(enriched.get("detect_score", 0) or 0.0) >= CFG.MIN_DETECT_SCORE
-            enriched["object_detected"] = "true" if detect_ok else "false"
+            # Batch analyze (YOLO batched, scene detection per-frame)
+            batch_results = analyzer.analyze_batch(batch_info)
 
-            # Persist class IDs for reporting/audit
-            if isinstance(enriched.get("detected_classes"), list):
-                enriched["detected_classes"] = ";".join(
-                    str(c) for c in sorted(enriched["detected_classes"])
-                )
+            # Merge results with original rows
+            for r, analysis in zip(batch_rows, batch_results):
+                enriched = {**r, **analysis}
 
-            # Enrich with GPX telemetry
-            enriched = analyzer.enrich_frame(enriched)
+                # Add detection flag
+                detect_ok = float(enriched.get("detect_score", 0) or 0.0) >= CFG.MIN_DETECT_SCORE
+                enriched["object_detected"] = "true" if detect_ok else "false"
 
-            enriched_rows.append(enriched)
+                # Persist class IDs for reporting/audit
+                if isinstance(enriched.get("detected_classes"), list):
+                    enriched["detected_classes"] = ";".join(
+                        str(c) for c in sorted(enriched["detected_classes"])
+                    )
+
+                # Enrich with GPX telemetry
+                enriched = analyzer.enrich_frame(enriched)
+
+                enriched_rows.append(enriched)
+
+            processed += len(batch_rows)
+            log.info(f"[analyze] Processed {processed}/{total_frames} frames ({processed*100//total_frames}%)")
 
         # Normalize scene scores and compute final scores
         enriched_rows = analyzer.normalize_and_score(enriched_rows)

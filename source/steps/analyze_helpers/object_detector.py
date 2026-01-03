@@ -121,59 +121,93 @@ class ObjectDetector:
         if frame is None:
             return self._empty_result()
 
+        results = self.detect_batch([frame])
+        return results[0] if results else self._empty_result()
+
+    def detect_batch(self, frames: List[np.ndarray]) -> List[Dict[str, object]]:
+        """
+        Run YOLO detection on a batch of frames for improved GPU efficiency.
+
+        Args:
+            frames: List of RGB numpy arrays (H, W, 3)
+
+        Returns:
+            List of dicts with detect_score, num_detections, bbox_area, detected_classes
+        """
+        if not frames:
+            return []
+
+        # Filter out None frames, tracking their indices
+        valid_indices = []
+        valid_frames = []
+        for i, frame in enumerate(frames):
+            if frame is not None:
+                valid_indices.append(i)
+                valid_frames.append(frame)
+
+        # Initialize results with empty for all frames
+        results_list: List[Dict[str, object]] = [self._empty_result() for _ in frames]
+
+        if not valid_frames:
+            return results_list
+
         try:
-            results = self.model.predict(
-                source=frame,
+            # Batch inference - YOLO accepts list of frames
+            batch_results = self.model.predict(
+                source=valid_frames,
                 imgsz=CFG.YOLO_IMAGE_SIZE,
                 conf=CFG.YOLO_MIN_CONFIDENCE,
                 verbose=False,
                 stream=False
             )
 
-            max_weighted_conf = 0.0
-            max_area = 0.0
-            count = 0
-            detected_classes: List[int] = []
+            # Process each result
+            for result_idx, r in enumerate(batch_results):
+                original_idx = valid_indices[result_idx]
 
-            for r in results:
-                if r.boxes is None:
-                    continue
+                max_weighted_conf = 0.0
+                max_area = 0.0
+                count = 0
+                detected_classes: List[int] = []
 
-                for b in r.boxes:
-                    cls = int(b.cls[0])
+                if r.boxes is not None:
+                    for b in r.boxes:
+                        cls = int(b.cls[0])
 
-                    # Only count classes the user configured
-                    if cls not in CFG.YOLO_DETECT_CLASSES:
-                        continue
+                        # Only count classes the user configured
+                        if cls not in CFG.YOLO_DETECT_CLASSES:
+                            continue
 
-                    conf = float(b.conf[0])
-                    class_name = self.class_id_to_name.get(cls)
-                    weight = CFG.YOLO_CLASS_WEIGHTS.get(class_name, 1.0)
-                    weighted_conf = conf * weight
+                        conf = float(b.conf[0])
+                        class_name = self.class_id_to_name.get(cls)
+                        weight = CFG.YOLO_CLASS_WEIGHTS.get(class_name, 1.0)
+                        weighted_conf = conf * weight
 
-                    x1, y1, x2, y2 = b.xyxy[0].tolist()
-                    area = max(0.0, (x2 - x1) * (y2 - y1))
+                        x1, y1, x2, y2 = b.xyxy[0].tolist()
+                        area = max(0.0, (x2 - x1) * (y2 - y1))
 
-                    max_weighted_conf = max(max_weighted_conf, weighted_conf)
-                    max_area = max(max_area, area)
-                    count += 1
-                    detected_classes.append(cls)
+                        max_weighted_conf = max(max_weighted_conf, weighted_conf)
+                        max_area = max(max_area, area)
+                        count += 1
+                        detected_classes.append(cls)
 
-            self.frames_processed += 1
+                self.frames_processed += 1
+                if count > 0:
+                    self.detections_found += 1
 
-            if count > 0:
-                self.detections_found += 1
+                results_list[original_idx] = {
+                    "detect_score": round(max_weighted_conf, 3),
+                    "num_detections": count,
+                    "bbox_area": round(max_area, 1),
+                    "detected_classes": detected_classes,
+                }
 
-            return {
-                "detect_score": round(max_weighted_conf, 3),
-                "num_detections": count,
-                "bbox_area": round(max_area, 1),
-                "detected_classes": detected_classes,
-            }
+            return results_list
 
         except Exception as e:
-            log.error(f"Detection failed: {e}")
-            return self._empty_result()
+            log.error(f"Batch detection failed: {e}")
+            # Return empty results for all frames
+            return [self._empty_result() for _ in frames]
 
     def _empty_result(self) -> Dict[str, object]:
         """Return empty detection result for failed frames."""
