@@ -48,14 +48,15 @@ def _draw_small_gauge(img, rect, value: float,
                       start_deg: int, end_deg: int,
                       two_sided: bool = False,
                       side: str = "center"):
-    """Draw a small circular gauge."""
+    """Draw a small circular gauge with semi-transparent background."""
     x, y, w, h = rect
     cx, cy = x + w // 2, y + h // 2
     r_outer = min(w, h) // 2 - 6
     draw = ImageDraw.Draw(img)
 
+    # Semi-transparent white background (RGBA) - alpha 160 = ~63% opaque
     draw.ellipse((x + 4, y + 4, x + w - 4, y + h - 4),
-                 fill="white", outline="black", width=2)
+                 fill=(255, 255, 255, 160), outline="black", width=2)
 
     frac_val = (value - min_val) / (max_val - min_val if max_val != min_val else 1.0)
     frac_val = max(0.0, min(frac_val, 1.0))
@@ -95,14 +96,15 @@ def _draw_small_gauge(img, rect, value: float,
 # --- Gauge types ---
 
 def draw_speed_gauge(img, rect, value: float, max_val: float):
-    """Draw large speed gauge (bottom horizontal arc)."""
+    """Draw large speed gauge (bottom horizontal arc) with semi-transparent background."""
     x, y, w, h = rect
     cx, cy = x + w // 2, y + h // 2
     r_outer = min(w, h) // 2 - 6
     draw = ImageDraw.Draw(img)
 
+    # Semi-transparent white background (RGBA) - alpha 160 = ~63% opaque
     draw.ellipse((x + 4, y + 4, x + w - 4, y + h - 4),
-                 fill="white", outline="black", width=3)
+                 fill=(255, 255, 255, 160), outline="black", width=3)
 
     # Horizontal bottom arc (speedometer style), left → right
     start_deg, end_deg = 180, 360
@@ -124,12 +126,12 @@ def draw_speed_gauge(img, rect, value: float, max_val: float):
     draw.text((cx - tw // 2, cy + 70), txt, fill="black", font=font)
 
 def draw_cadence_gauge(img, rect, value, max_val):
-    """Draw cadence gauge (right half)."""
+    """Draw cadence gauge (horizontal arc like speed gauge)."""
     _draw_small_gauge(
         img, rect, value, 0, max_val,
         "CADENCE", "rpm",
-        start_deg=-90, end_deg=90,    # right half
-        side="left"                   # readout left of hub
+        start_deg=180, end_deg=360,   # horizontal bottom arc
+        side="center"
     )
 
 def draw_hr_gauge(img, rect, value, max_val):
@@ -151,10 +153,10 @@ def draw_elev_gauge(img, rect, value, max_val):
     )
 
 def draw_gradient_gauge(img, rect, value, min_val, max_val):
-    """Draw gradient gauge (right half, two-sided)."""
+    """Draw gradient gauge (horizontal arc, two-sided for +/-)."""
     _draw_small_gauge(
         img, rect, value, min_val, max_val,
         "GRADIENT", "%",
-        start_deg=-90, end_deg=90,    # right half
-        two_sided=True, side="left"
+        start_deg=180, end_deg=360,   # horizontal bottom arc
+        two_sided=True, side="center"
     )
