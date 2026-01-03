@@ -267,10 +267,19 @@ def run() -> Path:
     try:
         # Process frames in batches for GPU efficiency
         total_frames = len(rows)
-        processed = 0
+        num_batches = (total_frames + batch_size - 1) // batch_size
 
-        for batch_start in range(0, total_frames, batch_size):
-            batch_end = min(batch_start + batch_size, total_frames)
+        # Create batch ranges for progress iteration
+        batch_ranges = [
+            (i * batch_size, min((i + 1) * batch_size, total_frames))
+            for i in range(num_batches)
+        ]
+
+        for batch_start, batch_end in progress_iter(
+            batch_ranges,
+            desc=f"[analyze] Processing frames (batch={batch_size})",
+            unit="batch"
+        ):
             batch_rows = rows[batch_start:batch_end]
 
             # Prepare batch info for analyzer
@@ -304,9 +313,6 @@ def run() -> Path:
                 enriched = analyzer.enrich_frame(enriched)
 
                 enriched_rows.append(enriched)
-
-            processed += len(batch_rows)
-            log.info(f"[analyze] Processed {processed}/{total_frames} frames ({processed*100//total_frames}%)")
 
         # Normalize scene scores and compute final scores
         enriched_rows = analyzer.normalize_and_score(enriched_rows)
