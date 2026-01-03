@@ -71,7 +71,7 @@ class PreferencesWindow(QDialog):
         # Buttons
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
-        save_btn.clicked.connect(self.accept)
+        save_btn.clicked.connect(self._on_save)
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
@@ -226,7 +226,6 @@ class PreferencesWindow(QDialog):
                 self.music_combo.addItem(f"🎵 {track.stem}", str(track))
 
     def _create_core_settings(self):
-        self._add_spinbox(self.core_form, "Sampling Interval (s)", "EXTRACT_INTERVAL_SECONDS", int(CFG.EXTRACT_INTERVAL_SECONDS), 1, 60)
         self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
         self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
         self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
@@ -236,7 +235,7 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.core_form, "Max Start Zone Fraction", "MAX_START_ZONE_FRAC", CFG.MAX_START_ZONE_FRAC, 0, 1, 0.05)
         self._add_doublespinbox(self.core_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
         self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
-        self._add_doublespinbox(self.core_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
+        self._add_doublespinbox(self.core_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
 
     def _create_score_settings(self):
         description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")
@@ -348,9 +347,6 @@ class PreferencesWindow(QDialog):
         selected_track = self.music_combo.currentData()
         overrides['SELECTED_MUSIC_TRACK'] = selected_track if selected_track else ""
 
-        overrides['PROJECTS_ROOT'] = Path(getattr(CFG, 'PROJECTS_ROOT', CFG.PROJECTS_ROOT))
-        overrides['INPUT_BASE_DIR'] = Path(getattr(CFG, 'INPUT_BASE_DIR', CFG.INPUT_BASE_DIR))
-
         score_weights = {}
         for attr, widget in self.overrides.items():
             if attr.startswith("SCORE_WEIGHTS."):
@@ -360,3 +356,13 @@ class PreferencesWindow(QDialog):
 
         save_persistent_config(overrides)
         return overrides
+
+    def _on_save(self):
+        """Save preferences and reload config."""
+        self.get_overrides()  # This saves to persistent config
+
+        # Reload config so changes take effect immediately without restart
+        from ..utils.persistent_config import reload_all_config
+        reload_all_config()
+
+        self.accept()

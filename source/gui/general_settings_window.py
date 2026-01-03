@@ -251,7 +251,7 @@ class GeneralSettingsWindow(QDialog):
 
     def _create_camera_offsets_section(self):
         """Camera creation_time offset settings."""
-        title = QLabel("Camera Creation Time Offsets")
+        title = QLabel("Camera & GPX Alignment")
         title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
         self.camera_form.addRow(title)
 
@@ -274,18 +274,25 @@ class GeneralSettingsWindow(QDialog):
             self.camera_form.addRow(f"{camera_name} Offset (s):", widget)
             self.known_offsets_spinboxes[camera_name] = widget
 
+        # GPX tolerance
+        self.gpx_tolerance = _fix_size(QDoubleSpinBox())
+        self.gpx_tolerance.setRange(0, 10)
+        self.gpx_tolerance.setSingleStep(0.5)
+        self.gpx_tolerance.setValue(CFG.GPX_TOLERANCE)
+        self.gpx_tolerance.setToolTip("Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.")
+        self.camera_form.addRow("GPX Tolerance (s):", self.gpx_tolerance)
+
     def _create_detection_section(self):
-        """Detection settings (YOLO parameters)."""
-        title = QLabel("Detection Settings")
+        """Detection and sampling settings."""
+        title = QLabel("Detection & Sampling")
         title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
         self.detect_form.addRow(title)
 
-        self.min_detect_score = _fix_size(QDoubleSpinBox())
-        self.min_detect_score.setRange(0, 1)
-        self.min_detect_score.setSingleStep(0.05)
-        self.min_detect_score.setValue(CFG.MIN_DETECT_SCORE)
-        self.min_detect_score.setToolTip("Minimum detection score required to consider an object detection valid.")
-        self.detect_form.addRow("Min Detect Score:", self.min_detect_score)
+        self.extract_interval = _fix_size(QSpinBox())
+        self.extract_interval.setRange(1, 60)
+        self.extract_interval.setValue(CFG.EXTRACT_INTERVAL_SECONDS)
+        self.extract_interval.setToolTip("Interval in seconds between sampled frames for analysis.")
+        self.detect_form.addRow("Sampling Interval (s):", self.extract_interval)
 
         self.yolo_min_conf = _fix_size(QDoubleSpinBox())
         self.yolo_min_conf.setRange(0, 1)
@@ -351,7 +358,8 @@ class GeneralSettingsWindow(QDialog):
             spinbox.setValue(current_offsets.get(camera_name, 0.0))
 
         # Detection settings
-        self.min_detect_score.setValue(float(cfg.MIN_DETECT_SCORE))
+        self.extract_interval.setValue(int(cfg.EXTRACT_INTERVAL_SECONDS))
+        self.gpx_tolerance.setValue(float(cfg.GPX_TOLERANCE))
         self.yolo_min_conf.setValue(float(cfg.YOLO_MIN_CONFIDENCE))
         self.yolo_image_size.setValue(int(cfg.YOLO_IMAGE_SIZE))
 
@@ -380,7 +388,8 @@ class GeneralSettingsWindow(QDialog):
         overrides['KNOWN_OFFSETS'] = known_offsets
 
         # Detection settings
-        overrides['MIN_DETECT_SCORE'] = float(self.min_detect_score.value())
+        overrides['EXTRACT_INTERVAL_SECONDS'] = int(self.extract_interval.value())
+        overrides['GPX_TOLERANCE'] = float(self.gpx_tolerance.value())
         overrides['YOLO_MIN_CONFIDENCE'] = float(self.yolo_min_conf.value())
         overrides['YOLO_IMAGE_SIZE'] = int(self.yolo_image_size.value())
 
