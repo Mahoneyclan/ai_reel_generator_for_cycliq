@@ -134,20 +134,35 @@ class SegmentConcatenator:
     
     def _select_music_track(self, music_path: Path) -> None:
         """
-        Select a single music track from the music directory.
-        
+        Select a music track - user-selected or random from directory.
+
+        Checks CFG.SELECTED_MUSIC_TRACK first. If empty/not set, picks randomly.
+
         Args:
             music_path: Path to music directory (assets/music)
         """
+        from ...config import DEFAULT_CONFIG as CFG
+
+        # Check for user-selected track
+        user_selected = getattr(CFG, 'SELECTED_MUSIC_TRACK', "")
+        if user_selected:
+            track_path = Path(user_selected)
+            if track_path.exists():
+                self.selected_music_track = track_path
+                log.info(f"[segment] Using user-selected track: {track_path.name}")
+                return
+            else:
+                log.warning(f"[segment] Selected track not found: {track_path}, falling back to random")
+
+        # Fall back to random selection
         music_files = self._find_music_files(music_path)
-        
+
         if not music_files:
             self.selected_music_track = None
             return
-        
-        # Randomly select one track
+
         self.selected_music_track = random.choice(music_files)
-        log.info(f"[segment] Selected music track: {self.selected_music_track.name}")
+        log.info(f"[segment] Randomly selected track: {self.selected_music_track.name}")
     
     def _find_music_files(self, music_path: Path) -> List[Path]:
         """

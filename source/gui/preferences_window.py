@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget, QWidget, QFormLayout,
     QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
     QPushButton, QHBoxLayout, QLabel, QSizePolicy, QGridLayout,
-    QGroupBox
+    QGroupBox, QComboBox
 )
 
 from ..utils.persistent_config import save_persistent_config
@@ -59,10 +59,12 @@ class PreferencesWindow(QDialog):
         self.core_tab, self.core_form = self._make_tab("Core")
         self.score_tab, self.score_form = self._make_tab("Score Weights")
         self.yolo_tab = self._make_yolo_tab("Detection Classes")
+        self.audio_tab, self.audio_form = self._make_tab("Audio")
 
         # Populate tabs
         self._create_core_settings()
         self._create_score_settings()
+        self._create_audio_settings()
 
         self.load_current_values()
 
@@ -77,7 +79,7 @@ class PreferencesWindow(QDialog):
         layout.addLayout(btn_layout)
 
         # Global polish: label alignment and growth
-        for form in (self.core_form, self.score_form):
+        for form in (self.audio_form, self.core_form, self.score_form):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setSpacing(8)
@@ -180,6 +182,49 @@ class PreferencesWindow(QDialog):
         form.addRow(label, widget)
         self.overrides[attr] = widget
 
+    def _create_audio_settings(self):
+        """Create audio/music selection UI."""
+        title = QLabel("Background Music")
+        title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
+        self.audio_form.addRow(title)
+
+        description = QLabel(
+            "Select a music track for the highlight reel.\n"
+            "Tracks are loaded from the assets/music folder."
+        )
+        description.setWordWrap(True)
+        description.setStyleSheet("font-size: 11px; color: #666; padding: 2px 0 10px 0;")
+        self.audio_form.addRow(description)
+
+        # Music track combo box
+        self.music_combo = _fix_size(QComboBox())
+        self.music_combo.setToolTip("Select a music track or use random selection")
+        self._populate_music_tracks()
+        self.audio_form.addRow("Music Track:", self.music_combo)
+
+        # Refresh button
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.setToolTip("Reload music tracks from assets/music folder")
+        refresh_btn.clicked.connect(self._populate_music_tracks)
+        self.audio_form.addRow("", refresh_btn)
+
+    def _populate_music_tracks(self):
+        """Populate combo box with available music tracks."""
+        self.music_combo.clear()
+        self.music_combo.addItem("🎲 Random", "")  # Empty string = random
+
+        music_dir = CFG.PROJECT_ROOT / "assets" / "music"
+        if music_dir.exists():
+            extensions = [".mp3", ".wav", ".m4a", ".aac", ".flac"]
+            tracks = []
+            for ext in extensions:
+                tracks.extend(music_dir.glob(f"*{ext}"))
+                tracks.extend(music_dir.glob(f"*{ext.upper()}"))
+            tracks = sorted(set(tracks))
+
+            for track in tracks:
+                self.music_combo.addItem(f"🎵 {track.stem}", str(track))
+
     def _create_core_settings(self):
         self._add_spinbox(self.core_form, "Sampling Interval (s)", "EXTRACT_INTERVAL_SECONDS", int(CFG.EXTRACT_INTERVAL_SECONDS), 1, 60)
         self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
@@ -274,6 +319,15 @@ class PreferencesWindow(QDialog):
         for class_name, spinbox in self.class_weights_spinboxes.items():
             spinbox.setValue(current_weights.get(class_name, 1.0))
 
+        # Load selected music track
+        selected_track = getattr(cfg, 'SELECTED_MUSIC_TRACK', "")
+        if selected_track:
+            # Find the track in combo box
+            for i in range(self.music_combo.count()):
+                if self.music_combo.itemData(i) == selected_track:
+                    self.music_combo.setCurrentIndex(i)
+                    break
+
         self._update_selected_count()
 
     def get_overrides(self) -> Dict[str, Any]:
@@ -289,6 +343,10 @@ class PreferencesWindow(QDialog):
 
         yolo_weights = {class_name: spinbox.value() for class_name, spinbox in self.class_weights_spinboxes.items()}
         overrides['YOLO_CLASS_WEIGHTS'] = yolo_weights
+
+        # Music track selection (empty string = random)
+        selected_track = self.music_combo.currentData()
+        overrides['SELECTED_MUSIC_TRACK'] = selected_track if selected_track else ""
 
         overrides['PROJECTS_ROOT'] = Path(getattr(CFG, 'PROJECTS_ROOT', CFG.PROJECTS_ROOT))
         overrides['INPUT_BASE_DIR'] = Path(getattr(CFG, 'INPUT_BASE_DIR', CFG.INPUT_BASE_DIR))
