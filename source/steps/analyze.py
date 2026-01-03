@@ -45,10 +45,14 @@ def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
     if sample_interval <= 0:
         sample_interval = 1.0
 
-    for row in rows:
+    for idx, row in enumerate(rows):
         try:
             epoch = float(row.get("abs_time_epoch", 0) or 0.0)
-        except Exception:
+        except (ValueError, TypeError) as e:
+            log.warning(
+                f"[analyze] Invalid epoch at row {idx}: "
+                f"value={row.get('abs_time_epoch')!r}, defaulting to 0"
+            )
             epoch = 0.0
 
         # Use global epoch reference (0), not first_epoch

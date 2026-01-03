@@ -33,10 +33,11 @@ class GPSEnricher:
             return []
 
         points = []
+        skipped = 0
         try:
             with fp.open() as f:
                 reader = csv.DictReader(f)
-                for r in reader:
+                for row_idx, r in enumerate(reader):
                     try:
                         epoch = float(r.get("gpx_epoch") or 0.0)
                         points.append({
@@ -50,8 +51,16 @@ class GPSEnricher:
                             "speed_kmh": r.get("speed_kmh", ""),
                             "gradient_pct": r.get("gradient_pct", "")
                         })
-                    except Exception:
+                    except (ValueError, TypeError) as e:
+                        skipped += 1
+                        if skipped <= 3:  # Log first few, then suppress
+                            log.debug(
+                                f"[gps_enricher] Skipping row {row_idx}: "
+                                f"gpx_epoch={r.get('gpx_epoch')!r}, error={e}"
+                            )
                         continue
+            if skipped > 0:
+                log.warning(f"[gps_enricher] Skipped {skipped} malformed rows in flatten.csv")
             log.info(f"[gps_enricher] Loaded {len(points)} telemetry points from flatten.csv")
         except Exception as e:
             log.error(f"[gps_enricher] Failed to read flatten.csv: {e}")
@@ -69,7 +78,11 @@ class GPSEnricher:
 
         try:
             epoch = float(row.get("abs_time_epoch", 0.0) or 0.0)
-        except Exception:
+        except (ValueError, TypeError):
+            log.debug(
+                f"[gps_enricher] Invalid abs_time_epoch: {row.get('abs_time_epoch')!r}, "
+                f"frame={row.get('index', '?')}"
+            )
             epoch = 0.0
 
         if not self.points:

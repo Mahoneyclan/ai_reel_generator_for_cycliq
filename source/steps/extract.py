@@ -240,7 +240,19 @@ def _extract_video_metadata(
     try:
         raw_dt, duration_s, video_fps = probe_video_metadata(video_path, include_fps=True)
     except Exception as e:
-        log.error(f"[extract] Failed to probe {video_path.name}: {e}")
+        try:
+            file_size = video_path.stat().st_size
+            size_mb = file_size / (1024 * 1024)
+            log.error(
+                f"[extract] Metadata probe failed: "
+                f"video={video_path.name} ({size_mb:.1f}MB), "
+                f"error={type(e).__name__}: {e}"
+            )
+        except OSError:
+            log.error(
+                f"[extract] Metadata probe failed: video={video_path.name}, "
+                f"error={type(e).__name__}: {e}"
+            )
         return []
 
     # Fix Cycliq UTC bug using utils function
@@ -500,7 +512,11 @@ def run() -> Path:
             all_rows.extend(rows)
             
         except Exception as e:
-            log.error(f"[extract] Failed to process {video_path.name}: {e}")
+            log.error(
+                f"[extract] Video processing failed: "
+                f"video={video_path.name}, camera={camera_name}, "
+                f"error={type(e).__name__}: {e}"
+            )
             continue
     
     # =========================================================================

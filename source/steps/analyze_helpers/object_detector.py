@@ -205,7 +205,11 @@ class ObjectDetector:
             return results_list
 
         except Exception as e:
-            log.error(f"Batch detection failed: {e}")
+            log.error(
+                f"[analyze.detector] Batch detection failed: "
+                f"batch_size={len(frames)}, valid_frames={len(valid_frames)}, "
+                f"error={type(e).__name__}: {e}"
+            )
             # Return empty results for all frames
             return [self._empty_result() for _ in frames]
 

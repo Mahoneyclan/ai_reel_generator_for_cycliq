@@ -87,7 +87,11 @@ def extract_frame_safe(video_path: Path, frame_number: int) -> Optional[np.ndarr
             return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
     except Exception as e:
-        log.error(f"Frame extraction failed for {video_path.name}: {e}")
+        log.error(
+            f"[utils.video] Frame extraction failed: "
+            f"video={video_path.name}, frame#{frame_number}, "
+            f"error={type(e).__name__}: {e}"
+        )
         return None
 
 
@@ -141,14 +145,20 @@ class VideoCache:
             ret, frame = self._current_cap.read()
 
             if not ret:
-                log.warning(f"Failed to read frame {frame_number} from {video_path.name}")
+                log.warning(
+                    f"[utils.video] Read failed: video={video_path.name}, frame#{frame_number}"
+                )
                 return None
 
             # Convert BGR to RGB
             return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         except Exception as e:
-            log.error(f"Frame extraction failed for {video_path.name}: {e}")
+            log.error(
+                f"[utils.video] Frame extraction failed: "
+                f"video={video_path.name}, frame#{frame_number}, "
+                f"error={type(e).__name__}: {e}"
+            )
             return None
 
     def _switch_video(self, video_path: Path):
@@ -156,19 +166,22 @@ class VideoCache:
         # Close existing
         if self._current_cap is not None:
             self._current_cap.release()
-            log.debug(f"[VideoCache] Closed {self._current_path.name if self._current_path else 'None'}")
+            log.debug(f"[utils.video] Cache closed: {self._current_path.name if self._current_path else 'None'}")
 
         # Open new
         self._current_path = video_path
         try:
             self._current_cap = cv2.VideoCapture(str(video_path))
             if not self._current_cap.isOpened():
-                log.error(f"[VideoCache] Failed to open {video_path.name}")
+                log.error(f"[utils.video] Cache open failed: {video_path.name}")
                 self._current_cap = None
             else:
-                log.debug(f"[VideoCache] Opened {video_path.name}")
+                log.debug(f"[utils.video] Cache opened: {video_path.name}")
         except Exception as e:
-            log.error(f"[VideoCache] Error opening {video_path.name}: {e}")
+            log.error(
+                f"[utils.video] Cache open error: video={video_path.name}, "
+                f"error={type(e).__name__}: {e}"
+            )
             self._current_cap = None
 
     def close(self):
@@ -181,7 +194,7 @@ class VideoCache:
         if total > 0:
             hit_rate = (self._hits / total) * 100
             log.info(
-                f"[VideoCache] Stats: {self._hits} hits, {self._misses} misses "
+                f"[utils.video] Cache stats: {self._hits} hits, {self._misses} misses "
                 f"({hit_rate:.1f}% hit rate)"
             )
 

@@ -67,7 +67,7 @@ class ScoreCalculator:
             # Speed normalization: scale to 0-1 range (no explicit slow-speed penalty)
             try:
                 speed_norm = float(speed) / 60.0
-            except Exception:
+            except (ValueError, TypeError):
                 speed_norm = 0.0
             # Clamp between 0 and 1 for sensible contribution
             if speed_norm < 0.0:
