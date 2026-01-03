@@ -258,3 +258,15 @@ def get_registry() -> CameraRegistry:
     if _default_registry is None:
         _default_registry = CameraRegistry()
     return _default_registry
+
+
+def reset_registry() -> None:
+    """
+    Reset the CameraRegistry singleton.
+
+    Call this after config changes to ensure fresh values are loaded.
+    Next call to get_registry() will create a new instance with current config.
+    """
+    global _default_registry
+    _default_registry = None
+    log.debug("[CameraRegistry] Singleton reset - will reload on next access")

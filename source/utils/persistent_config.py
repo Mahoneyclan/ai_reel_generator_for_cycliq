@@ -115,3 +115,19 @@ def clear_persistent_config() -> None:
     if USER_CONFIG_PATH.exists():
         USER_CONFIG_PATH.unlink()
         # Clearing config is silent.
+
+
+def reload_all_config() -> None:
+    """
+    Reload persistent config and reset all cached config values.
+
+    Call this after saving settings to ensure pipeline uses new values
+    without requiring application restart.
+    """
+    # Reload the global config in config.py
+    from ..config import reload_config
+    reload_config()
+
+    # Reset the CameraRegistry singleton
+    from ..models.camera_registry import reset_registry
+    reset_registry()

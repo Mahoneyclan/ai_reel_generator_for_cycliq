@@ -389,7 +389,12 @@ class GeneralSettingsWindow(QDialog):
     def _on_save(self):
         overrides = self._collect_overrides()
         save_persistent_config(overrides)
-        QMessageBox.information(self, "Saved", "General settings saved. Some changes may require restart.")
+
+        # Reload config so changes take effect immediately without restart
+        from ..utils.persistent_config import reload_all_config
+        reload_all_config()
+
+        QMessageBox.information(self, "Saved", "General settings saved.")
         self.accept()
 
     def _reset_all_preferences(self):

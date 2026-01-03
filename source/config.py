@@ -292,3 +292,23 @@ class Config:
     BUFSIZE: str = field(default_factory=lambda: _get_config_value('BUFSIZE', '24M'))
 
 DEFAULT_CONFIG = Config()
+
+
+def reload_config() -> None:
+    """
+    Reload persistent config and recreate DEFAULT_CONFIG.
+
+    Call this after saving settings to ensure pipeline uses new values
+    without requiring application restart.
+    """
+    global _PERSISTENT_CONFIG, DEFAULT_CONFIG
+
+    # Reload from file
+    try:
+        from source.utils.persistent_config import load_persistent_config
+        _PERSISTENT_CONFIG = load_persistent_config()
+    except ImportError:
+        _PERSISTENT_CONFIG = {}
+
+    # Recreate config with new values
+    DEFAULT_CONFIG = Config()
