@@ -27,12 +27,14 @@ def _fix_size(widget):
 
 
 class GeneralSettingsWindow(QDialog):
-    """Dialog for program-wide (general) settings with 3 tabs.
+    """Dialog for program-wide (general) settings.
 
     Contains:
     - Paths: Projects output, Source videos
     - Video Settings: codec, bitrate, buffers, volumes, PiP/minimap
     - M1 Settings: USE_MPS, YOLO_BATCH_SIZE, FFMPEG_HWACCEL
+    - Camera Offsets: creation_time offsets per camera model
+    - Detection: YOLO confidence, image size, min detect score
     """
 
     def __init__(self, parent=None):
@@ -42,9 +44,10 @@ class GeneralSettingsWindow(QDialog):
         self.setModal(True)
 
         self.overrides: Dict[str, Any] = {}
+        self.known_offsets_spinboxes: Dict[str, QDoubleSpinBox] = {}
 
         layout = QVBoxLayout(self)
-        
+
         # Create tabbed interface
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
@@ -53,11 +56,15 @@ class GeneralSettingsWindow(QDialog):
         self.paths_tab, self.paths_form = self._make_tab("Paths")
         self.video_tab, self.video_form = self._make_tab("Video Settings")
         self.m1_tab, self.m1_form = self._make_tab("M1 Settings")
+        self.camera_tab, self.camera_form = self._make_tab("Camera Offsets")
+        self.detect_tab, self.detect_form = self._make_tab("Detection")
 
         # Populate tabs
         self._create_paths_section()
         self._create_video_section()
         self._create_m1_section()
+        self._create_camera_offsets_section()
+        self._create_detection_section()
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -74,7 +81,7 @@ class GeneralSettingsWindow(QDialog):
         self.load_current_values()
 
         # Styling
-        for form in (self.paths_form, self.video_form, self.m1_form):
+        for form in (self.paths_form, self.video_form, self.m1_form, self.camera_form, self.detect_form):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setSpacing(8)
@@ -242,6 +249,57 @@ class GeneralSettingsWindow(QDialog):
         except Exception:
             pass
 
+    def _create_camera_offsets_section(self):
+        """Camera creation_time offset settings."""
+        title = QLabel("Camera Creation Time Offsets")
+        title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
+        self.camera_form.addRow(title)
+
+        description = QLabel(
+            "Seconds added to video duration when calculating recording start time.\n"
+            "Different cameras record creation_time at different points relative to recording end."
+        )
+        description.setWordWrap(True)
+        description.setStyleSheet("font-size: 11px; color: #666; padding: 2px 0 10px 0;")
+        self.camera_form.addRow(description)
+
+        # Create spinbox for each known camera
+        for camera_name, offset_val in CFG.KNOWN_OFFSETS.items():
+            widget = _fix_size(QDoubleSpinBox())
+            widget.setRange(-10.0, 10.0)
+            widget.setSingleStep(0.5)
+            widget.setDecimals(1)
+            widget.setValue(float(offset_val))
+            widget.setToolTip(f"Creation time offset for {camera_name} camera (seconds)")
+            self.camera_form.addRow(f"{camera_name} Offset (s):", widget)
+            self.known_offsets_spinboxes[camera_name] = widget
+
+    def _create_detection_section(self):
+        """Detection settings (YOLO parameters)."""
+        title = QLabel("Detection Settings")
+        title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
+        self.detect_form.addRow(title)
+
+        self.min_detect_score = _fix_size(QDoubleSpinBox())
+        self.min_detect_score.setRange(0, 1)
+        self.min_detect_score.setSingleStep(0.05)
+        self.min_detect_score.setValue(CFG.MIN_DETECT_SCORE)
+        self.min_detect_score.setToolTip("Minimum detection score required to consider an object detection valid.")
+        self.detect_form.addRow("Min Detect Score:", self.min_detect_score)
+
+        self.yolo_min_conf = _fix_size(QDoubleSpinBox())
+        self.yolo_min_conf.setRange(0, 1)
+        self.yolo_min_conf.setSingleStep(0.05)
+        self.yolo_min_conf.setValue(CFG.YOLO_MIN_CONFIDENCE)
+        self.yolo_min_conf.setToolTip("YOLO minimum confidence threshold for detections.")
+        self.detect_form.addRow("YOLO Min Confidence:", self.yolo_min_conf)
+
+        self.yolo_image_size = _fix_size(QSpinBox())
+        self.yolo_image_size.setRange(320, 1280)
+        self.yolo_image_size.setValue(CFG.YOLO_IMAGE_SIZE)
+        self.yolo_image_size.setToolTip("Image size for YOLO inference (larger = slower but more accurate).")
+        self.detect_form.addRow("YOLO Image Size:", self.yolo_image_size)
+
     # --- Browse helpers ---
     def _browse_projects_root(self):
         current = self.projects_root_edit.text()
@@ -287,6 +345,16 @@ class GeneralSettingsWindow(QDialog):
         self.yolo_batch.setValue(int(cfg.YOLO_BATCH_SIZE))
         self.ffmpeg_hw.setText(str(cfg.FFMPEG_HWACCEL))
 
+        # Camera offsets
+        current_offsets = getattr(cfg, 'KNOWN_OFFSETS', {})
+        for camera_name, spinbox in self.known_offsets_spinboxes.items():
+            spinbox.setValue(current_offsets.get(camera_name, 0.0))
+
+        # Detection settings
+        self.min_detect_score.setValue(float(cfg.MIN_DETECT_SCORE))
+        self.yolo_min_conf.setValue(float(cfg.YOLO_MIN_CONFIDENCE))
+        self.yolo_image_size.setValue(int(cfg.YOLO_IMAGE_SIZE))
+
     def _collect_overrides(self) -> Dict[str, Any]:
         overrides: Dict[str, Any] = {}
         overrides['PROJECTS_ROOT'] = Path(self.projects_root_edit.text())
@@ -306,6 +374,15 @@ class GeneralSettingsWindow(QDialog):
         overrides['USE_MPS'] = bool(self.use_mps.isChecked())
         overrides['YOLO_BATCH_SIZE'] = int(self.yolo_batch.value())
         overrides['FFMPEG_HWACCEL'] = self.ffmpeg_hw.text().strip()
+
+        # Camera offsets
+        known_offsets = {camera_name: spinbox.value() for camera_name, spinbox in self.known_offsets_spinboxes.items()}
+        overrides['KNOWN_OFFSETS'] = known_offsets
+
+        # Detection settings
+        overrides['MIN_DETECT_SCORE'] = float(self.min_detect_score.value())
+        overrides['YOLO_MIN_CONFIDENCE'] = float(self.yolo_min_conf.value())
+        overrides['YOLO_IMAGE_SIZE'] = int(self.yolo_image_size.value())
 
         return overrides
 

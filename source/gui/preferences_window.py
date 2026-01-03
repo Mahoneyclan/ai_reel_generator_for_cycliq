@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
 
 from ..utils.persistent_config import save_persistent_config
 from ..config import DEFAULT_CONFIG as CFG, DEFAULT_YOLO_CLASS_WEIGHTS
-from .general_settings_window import GeneralSettingsWindow
 
 
 FIELD_MIN_WIDTH = 220  # baseline width for all input widgets
@@ -50,32 +49,20 @@ class PreferencesWindow(QDialog):
         self.overrides: Dict[str, Any] = {}
         self.class_checkboxes: Dict[str, QCheckBox] = {}
         self.class_weights_spinboxes: Dict[str, QDoubleSpinBox] = {}
-        self.known_offsets_spinboxes: Dict[str, QDoubleSpinBox] = {}
 
         layout = QVBoxLayout(self)
 
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
 
-        # Tabs with form layouts
-        # Core and ride-specific tabs (general settings moved to standalone dialog)
+        # Tabs with form layouts (project-specific settings only)
         self.core_tab, self.core_form = self._make_tab("Core")
         self.score_tab, self.score_form = self._make_tab("Score Weights")
         self.yolo_tab = self._make_yolo_tab("Detection Classes")
-        self.detect_tab, self.detect_form = self._make_tab("Detection Settings")
 
         # Populate tabs
-        # Core and ride-specific settings
         self._create_core_settings()
         self._create_score_settings()
-        self._create_detection_settings()
-        # General settings are now in a standalone dialog; add a quick access button below tabs
-        btn_open_general = QPushButton("Open General Settings...")
-        btn_open_general.clicked.connect(self._open_general_settings)
-        general_btn_layout = QHBoxLayout()
-        general_btn_layout.addStretch()
-        general_btn_layout.addWidget(btn_open_general)
-        layout.addLayout(general_btn_layout)
 
         self.load_current_values()
 
@@ -90,9 +77,7 @@ class PreferencesWindow(QDialog):
         layout.addLayout(btn_layout)
 
         # Global polish: label alignment and growth
-        for form in (
-            self.core_form, self.detect_form, self.score_form
-        ):
+        for form in (self.core_form, self.score_form):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setSpacing(8)
@@ -208,42 +193,6 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
         self._add_doublespinbox(self.core_form, "GPX Tolerance (s)", "GPX_TOLERANCE", CFG.GPX_TOLERANCE, 0, 10, 0.5)
 
-        # Camera creation_time offsets section
-        self._create_known_offsets_settings()
-
-    def _create_detection_settings(self):
-        self._add_doublespinbox(self.detect_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
-        self._add_doublespinbox(self.detect_form, "YOLO Min Confidence", "YOLO_MIN_CONFIDENCE", CFG.YOLO_MIN_CONFIDENCE, 0, 1, 0.05)
-        self._add_spinbox(self.detect_form, "YOLO Image Size", "YOLO_IMAGE_SIZE", CFG.YOLO_IMAGE_SIZE, 320, 1280)
-
-    def _create_known_offsets_settings(self):
-        """Add camera creation_time offset settings to Core tab."""
-        separator = QLabel("")
-        self.core_form.addRow(separator)
-
-        header = QLabel("<b>Camera Creation Time Offsets</b>")
-        header.setToolTip(self.PREFERENCE_TOOLTIPS.get('KNOWN_OFFSETS', ''))
-        self.core_form.addRow(header)
-
-        description = QLabel(
-            "Seconds added to video duration when calculating recording start time.\n"
-            "Different cameras record creation_time at different points."
-        )
-        description.setWordWrap(True)
-        description.setStyleSheet("font-size: 11px; color: #666; padding: 2px 0 6px 0;")
-        self.core_form.addRow(description)
-
-        # Create spinbox for each known camera
-        for camera_name, offset_val in CFG.KNOWN_OFFSETS.items():
-            widget = _fix_size(QDoubleSpinBox())
-            widget.setRange(-10.0, 10.0)
-            widget.setSingleStep(0.5)
-            widget.setDecimals(1)
-            widget.setValue(float(offset_val))
-            widget.setToolTip(f"Creation time offset for {camera_name} camera (seconds)")
-            self.core_form.addRow(f"{camera_name} Offset (s):", widget)
-            self.known_offsets_spinboxes[camera_name] = widget
-
     def _create_score_settings(self):
         description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")
         description.setWordWrap(True)
@@ -261,10 +210,6 @@ class PreferencesWindow(QDialog):
         self.score_total_label.setStyleSheet("font-weight: 700; padding-top: 8px;")
         self.score_form.addRow("Total:", self.score_total_label)
         self._update_score_total()
-
-    def _open_general_settings(self):
-        dlg = GeneralSettingsWindow(self)
-        dlg.exec()
 
     def _select_all_classes(self):
         for checkbox in self.class_checkboxes.values():
@@ -329,11 +274,6 @@ class PreferencesWindow(QDialog):
         for class_name, spinbox in self.class_weights_spinboxes.items():
             spinbox.setValue(current_weights.get(class_name, 1.0))
 
-        # Load known offsets
-        current_offsets = getattr(cfg, 'KNOWN_OFFSETS', {})
-        for camera_name, spinbox in self.known_offsets_spinboxes.items():
-            spinbox.setValue(current_offsets.get(camera_name, 0.0))
-
         self._update_selected_count()
 
     def get_overrides(self) -> Dict[str, Any]:
@@ -349,10 +289,6 @@ class PreferencesWindow(QDialog):
 
         yolo_weights = {class_name: spinbox.value() for class_name, spinbox in self.class_weights_spinboxes.items()}
         overrides['YOLO_CLASS_WEIGHTS'] = yolo_weights
-
-        # Save known offsets
-        known_offsets = {camera_name: spinbox.value() for camera_name, spinbox in self.known_offsets_spinboxes.items()}
-        overrides['KNOWN_OFFSETS'] = known_offsets
 
         overrides['PROJECTS_ROOT'] = Path(getattr(CFG, 'PROJECTS_ROOT', CFG.PROJECTS_ROOT))
         overrides['INPUT_BASE_DIR'] = Path(getattr(CFG, 'INPUT_BASE_DIR', CFG.INPUT_BASE_DIR))
