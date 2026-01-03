@@ -10,14 +10,17 @@
 
   - AI Scene Detection - Uses YOLO v8 to identify cyclists, vehicles, and interesting traffic events
   - Multi-Camera Sync - Automatically aligns front/rear cameras with Cycliq-specific timing offsets
-  - Telemetry Overlays - Speed, cadence, heart rate, elevation gradient displays
-  - Route Minimap - Live position tracking on OpenStreetMap
+  - Telemetry Gauges - Semi-transparent speed, cadence, heart rate, elevation displays
+  - Route Minimap - Live position marker tracking on OpenStreetMap
   - Picture-in-Picture - Dual-view compositing of front/rear footage
+  - Continuous Music - Background audio plays seamlessly across all clips
+  - Audio Library - Select from multiple background tracks or random selection
   - Manual Review GUI - Fine-tune AI-selected clips before final render
+  - Settings UI - Global settings and per-project preferences
 
   8-Step Pipeline
 
-  1. Flatten → 2. Align → 3. Extract → 4. Analyze → 5. Select → 6. Build → 7. Splash → 8. Concat
+  Flatten → Align → Extract → Analyze → Select → Build → Splash → Concat
 
   Tech Stack
 
@@ -45,7 +48,10 @@ PySide6>=6.6.0          # GUI framework
 opencv-python>=4.8.0    # Video processing
 ultralytics>=8.0.0      # YOLO object detection
 gpxpy>=1.5.0            # GPX parsing
-staticmap>=0.5.0        # Minimap generation
+contextily>=1.4.0       # Basemap tiles for minimap
+geopandas>=0.14.0       # Geospatial data processing
+shapely>=2.0.0          # Geometry operations
+matplotlib>=3.8.0       # Map rendering
 pandas>=2.0.0           # Data processing
 numpy>=1.24.0           # Numerical operations
 Pillow>=10.0.0          # Image manipulation
@@ -91,7 +97,6 @@ ffprobe -version
   │   └── step_registry.py
   │
   ├── steps/                  # 8 pipeline stages
-  │   ├── preflight.py        # Pre-processing validation
   │   ├── flatten.py          # GPX to flat timeline
   │   ├── align.py            # Camera synchronization
   │   ├── extract.py          # Frame sampling
@@ -104,16 +109,22 @@ ffprobe -version
   │   ├── build_helpers/      # Rendering, gauges, minimaps
   │   └── splash_helpers/     # Intro/outro builders
   │
+  ├── models/                 # Data models
+  │   ├── time_model.py       # Time conversion utilities
+  │   └── camera_registry.py  # Camera configuration
+  │
   ├── utils/                  # Shared utilities
-  │   ├── video_utils.py      # Video processing (modified)
+  │   ├── video_utils.py      # Video processing
   │   ├── ffmpeg.py           # FFmpeg wrapper
   │   ├── gpx.py              # GPS parsing
-  │   ├── music.py            # Audio handling
+  │   ├── csv_utils.py        # CSV helpers
   │   └── gauge_overlay.py, map_overlay.py
   │
   ├── gui/                    # PySide6 interface
   │   ├── main_window.py      # Main app window
   │   ├── manual_selection_window.py  # Clip review UI
+  │   ├── general_settings_window.py  # Global settings
+  │   ├── preferences_window.py       # Project settings
   │   ├── controllers/        # UI event handling
   │   └── gui_helpers/        # Panels and widgets
   │
