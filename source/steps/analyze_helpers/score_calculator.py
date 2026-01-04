@@ -1,7 +1,7 @@
 # source/steps/analyze_helpers/score_calculator.py
 """
 Composite scoring for frame ranking.
-Combines detection, scene change, speed, gradient, and bbox area into final scores.
+Combines detection, scene change, speed, gradient, bbox area, and segment boost into final scores.
 """
 
 from __future__ import annotations
@@ -10,16 +10,18 @@ from typing import Dict, List
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.common import safe_float as _sf
+from .segment_matcher import SegmentMatcher
 
 log = setup_logger("steps.analyze_helpers.score_calculator")
 
 
 class ScoreCalculator:
     """Computes composite and weighted scores for frame ranking."""
-    
+
     def __init__(self):
         self.score_weights = CFG.SCORE_WEIGHTS
         self.camera_weights = CFG.CAMERA_WEIGHTS
+        self.segment_matcher = SegmentMatcher()
     
     def normalize_scene_scores(self, rows: List[Dict]) -> List[Dict]:
         """
@@ -53,46 +55,55 @@ class ScoreCalculator:
         """
         Compute composite and weighted scores for all frames.
         Scene boost is a key component - high scene change = interesting moment.
+        Segment boost adds priority for Strava PR/top-3 efforts.
         """
         W = self.score_weights
         out = []
-        
+        pr_frames = 0
+
         for r in rows:
             detect = _sf(r.get("detect_score"))
             scene_boost = _sf(r.get("scene_boost"))
             speed = _sf(r.get("speed_kmh"))
             grad_norm = abs(_sf(r.get("gradient_pct"))) / 8.0
             bbox_norm = _sf(r.get("bbox_area")) / 400_000.0
-            
-            # Speed normalization: scale to 0-1 range (no explicit slow-speed penalty)
+
+            # Speed normalization: scale to 0-1 range
             try:
                 speed_norm = float(speed) / 60.0
             except (ValueError, TypeError):
                 speed_norm = 0.0
-            # Clamp between 0 and 1 for sensible contribution
-            if speed_norm < 0.0:
-                speed_norm = 0.0
-            elif speed_norm > 1.0:
-                speed_norm = 1.0
-            
-            # Composite score with scene boost
+            speed_norm = max(0.0, min(1.0, speed_norm))
+
+            # Segment boost: PR/top-3 efforts from Strava
+            frame_epoch = _sf(r.get("abs_time_epoch"))
+            segment_boost = self.segment_matcher.get_segment_boost(frame_epoch)
+            if segment_boost > 0:
+                pr_frames += 1
+
+            # Composite score with all factors
             score = (
-                W["detect_score"] * detect +
-                W["scene_boost"]  * scene_boost +  # 🎬 Scene changes boost ranking
-                W["speed_kmh"]    * speed_norm +
-                W["gradient"]     * grad_norm +
-                W["bbox_area"]    * bbox_norm
+                W.get("detect_score", 0) * detect +
+                W.get("scene_boost", 0) * scene_boost +
+                W.get("speed_kmh", 0) * speed_norm +
+                W.get("gradient", 0) * grad_norm +
+                W.get("bbox_area", 0) * bbox_norm +
+                W.get("segment_boost", 0) * segment_boost  # 🏆 PR boost
             )
-            
+
             # Apply camera weight
             camera = r.get("camera", "")
             w = self.camera_weights.get(camera, 1.0)
-            
+
             r2 = dict(r)
+            r2["segment_boost"] = f"{segment_boost:.2f}"
             r2["score_composite"] = f"{score:.3f}"
             r2["score_weighted"] = f"{(score * w):.3f}"
             out.append(r2)
-        
+
+        if pr_frames > 0:
+            log.info(f"[score_calculator] Applied PR boost to {pr_frames} frames")
+
         return out
     
     def get_stats(self, rows: List[Dict]) -> Dict:

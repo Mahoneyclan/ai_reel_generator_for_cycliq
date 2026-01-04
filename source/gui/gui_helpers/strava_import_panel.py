@@ -3,10 +3,12 @@ Strava import panel:
 - OAuth connect flow
 - List activities with date
 - Download GPX to CFG.INPUT_DIR as 'ride.gpx'
+- Fetch and save segment efforts (for PR boost scoring)
 - Immediately run flatten step after successful download
 """
 
 from __future__ import annotations
+import json
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QMessageBox
 from PySide6.QtCore import Signal
 
@@ -15,6 +17,7 @@ from source.strava.strava_client import StravaClient
 from source.importer.import_controller import ImportController
 from source.steps.flatten import run as run_flatten
 from source.config import DEFAULT_CONFIG as CFG
+from source.io_paths import segments_path
 
 
 class StravaImportPanel(QWidget):
@@ -97,6 +100,10 @@ class StravaImportPanel(QWidget):
 
         if ok:
             self._log(f"GPX saved: {out_path}")
+
+            # Fetch and save segment efforts for PR scoring boost
+            self._save_segment_efforts(act_id)
+
             # Immediately flatten
             try:
                 flatten_out = run_flatten()
@@ -111,3 +118,18 @@ class StravaImportPanel(QWidget):
             self.window().accept()
         else:
             QMessageBox.warning(self, "Download failed", "Could not download GPX.")
+
+    def _save_segment_efforts(self, activity_id: int) -> None:
+        """Fetch and save segment efforts for PR boost scoring."""
+        try:
+            efforts = self.client.get_segment_efforts(activity_id)
+            if efforts:
+                seg_file = segments_path()
+                seg_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(seg_file, "w") as f:
+                    json.dump(efforts, f, indent=2)
+                self._log(f"✓ Saved {len(efforts)} PR segment(s)")
+            else:
+                self._log("No PR segments found")
+        except Exception as e:
+            self._log(f"Segment fetch failed: {e}", level="warning")

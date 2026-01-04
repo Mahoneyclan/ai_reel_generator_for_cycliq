@@ -31,6 +31,7 @@ def extract_path() -> Path: return CFG.WORKING_DIR / "extract.csv"
 def enrich_path() -> Path: return CFG.WORKING_DIR / "enriched.csv"
 def select_path() -> Path: return CFG.WORKING_DIR / "select.csv"
 def camera_offsets_path() -> Path: return CFG.WORKING_DIR / "camera_offsets.json"
+def segments_path() -> Path: return CFG.WORKING_DIR / "segments.json"
 
 # --- Clips / frames / splash assets (in project folder) ---
 def clips_dir() -> Path: return CFG.CLIPS_DIR

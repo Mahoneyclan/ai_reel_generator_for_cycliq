@@ -160,10 +160,11 @@ class Config:
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
         "detect_score": 0.20,
-        "scene_boost": 0.35,
-        "speed_kmh": 0.25,
+        "scene_boost": 0.30,
+        "speed_kmh": 0.20,
         "gradient": 0.05,
-        "bbox_area": 0.15,
+        "bbox_area": 0.10,
+        "segment_boost": 0.15,  # Strava PR/top-3 segment efforts
     })
 
     # --- M1 hardware acceleration ---

@@ -276,6 +276,50 @@ class StravaClient:
         return f"{date_str} | {name} - {distance_km:.1f} km - {time_str}"
 
     
+    def get_segment_efforts(self, activity_id: int) -> List[Dict]:
+        """
+        Extract PR segment efforts from activity details.
+
+        Args:
+            activity_id: Strava activity ID
+
+        Returns:
+            List of segment effort dicts with timing and PR info
+        """
+        details = self.get_activity_details(activity_id)
+        if not details:
+            return []
+
+        efforts = details.get("segment_efforts", [])
+        if not efforts:
+            log.info(f"[strava_client] No segment efforts in activity {activity_id}")
+            return []
+
+        # Extract relevant fields for PR efforts
+        pr_efforts = []
+        for effort in efforts:
+            pr_rank = effort.get("pr_rank")
+
+            # Only include if it's a PR (rank 1) or top 3
+            if pr_rank is not None and pr_rank <= 3:
+                segment = effort.get("segment", {})
+                pr_efforts.append({
+                    "name": effort.get("name", "Unknown Segment"),
+                    "start_time": effort.get("start_date"),
+                    "elapsed_time": effort.get("elapsed_time", 0),
+                    "pr_rank": pr_rank,
+                    "kom_rank": effort.get("kom_rank"),
+                    "distance": effort.get("distance", 0),
+                    "climb_category": segment.get("climb_category", 5),
+                    "average_grade": segment.get("average_grade", 0),
+                })
+
+        log.info(
+            f"[strava_client] Found {len(pr_efforts)} PR/top-3 efforts "
+            f"out of {len(efforts)} total segments"
+        )
+        return pr_efforts
+
     def disconnect(self):
         """Clear authentication (logout)."""
         self._access_token = None
