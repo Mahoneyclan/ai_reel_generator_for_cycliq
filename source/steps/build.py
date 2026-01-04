@@ -11,6 +11,7 @@ Moment-based version:
 from __future__ import annotations
 import csv
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -245,6 +246,7 @@ def run() -> Path:
     # Collect results indexed by clip_idx for proper ordering
     clip_results: Dict[int, Optional[Path]] = {}
     completed = 0
+    start_time = time.time()
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all clip rendering tasks
@@ -266,13 +268,30 @@ def run() -> Path:
             clip_results[clip_idx] = clip_path
             completed += 1
 
-            # Report progress
-            if clip_path:
-                log.debug(f"[build] Completed clip {clip_idx}/{total_clips}")
+            # Calculate ETA
+            elapsed = time.time() - start_time
+            if completed > 0:
+                avg_time_per_clip = elapsed / completed
+                remaining = total_clips - completed
+                eta_seconds = avg_time_per_clip * remaining
+                if eta_seconds >= 60:
+                    eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+                else:
+                    eta_str = f"{int(eta_seconds)}s"
             else:
-                log.warning(f"[build] Clip {clip_idx} failed to render")
+                eta_str = "calculating..."
 
-            report_progress(completed, total_clips, f"Rendered {completed}/{total_clips} clips")
+            # Report progress with ETA
+            if clip_path:
+                log.info(f"[build] Clip {clip_idx}/{total_clips} complete (ETA: {eta_str})")
+            else:
+                log.warning(f"[build] Clip {clip_idx}/{total_clips} failed")
+
+            report_progress(
+                completed,
+                total_clips,
+                f"Rendering clip {completed}/{total_clips} (ETA: {eta_str})"
+            )
 
     # Collect successful clips in order
     individual_clips: List[Path] = [
