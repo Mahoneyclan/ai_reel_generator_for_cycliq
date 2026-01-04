@@ -15,13 +15,22 @@ rm -rf "$DESKTOP_APP"
 mkdir -p "$DESKTOP_APP/Contents/MacOS"
 mkdir -p "$DESKTOP_APP/Contents/Resources"
 
-# Create the launcher script
-cat > "$DESKTOP_APP/Contents/MacOS/launcher" << EOF
+# Create the launcher script - opens Terminal to show any errors
+cat > "$DESKTOP_APP/Contents/MacOS/launcher" << 'LAUNCHER'
 #!/bin/bash
-cd "$PROJECT_DIR"
-source .venv/bin/activate
-python run_gui.py
+
+PROJECT_DIR="__PROJECT_DIR__"
+
+osascript << EOF
+tell application "Terminal"
+    activate
+    do script "cd '$PROJECT_DIR' && source .venv/bin/activate && python run_gui.py; exit"
+end tell
 EOF
+LAUNCHER
+
+# Replace placeholder with actual path
+sed -i '' "s|__PROJECT_DIR__|$PROJECT_DIR|g" "$DESKTOP_APP/Contents/MacOS/launcher"
 
 chmod +x "$DESKTOP_APP/Contents/MacOS/launcher"
 
@@ -41,8 +50,6 @@ cat > "$DESKTOP_APP/Contents/Info.plist" << EOF
     <string>1.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
-    <key>LSUIElement</key>
-    <false/>
 </dict>
 </plist>
 EOF
@@ -50,7 +57,6 @@ EOF
 # Copy icon if it exists
 if [ -f "$PROJECT_DIR/assets/icon.icns" ]; then
     cp "$PROJECT_DIR/assets/icon.icns" "$DESKTOP_APP/Contents/Resources/AppIcon.icns"
-    # Update plist to use icon
     /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$DESKTOP_APP/Contents/Info.plist" 2>/dev/null || true
 fi
 
