@@ -53,12 +53,16 @@ def extract_frame_images(rows: List[Dict]) -> int:
     """
     Extract frame images from videos for manual review.
 
-    Optimized: Groups frames by video file to minimize open/close overhead.
-    Each video is opened once and all its frames are extracted before closing.
+    Optimized: Uses VideoCache for efficient extraction with:
+    - Automatic video file caching (minimizes open/close overhead)
+    - Consistent error handling and logging
+    - Cache hit/miss statistics
+
+    Frames are sorted by video path and frame number for optimal sequential access.
     """
     from ..io_paths import frames_dir, _mk
+    from ..utils.video_utils import VideoCache
     import cv2
-    from collections import defaultdict
 
     frames_dir_path = _mk(frames_dir())
     extracted_count = 0
@@ -72,52 +76,35 @@ def extract_frame_images(rows: List[Dict]) -> int:
             pending_rows.append(row)
 
     if not pending_rows:
-        log.info("All frame images already extracted")
+        log.info("[select] All frame images already extracted")
         return 0
 
-    log.info(f"Extracting {len(pending_rows)} frame images for manual review...")
+    log.info(f"[select] Extracting {len(pending_rows)} frame images for manual review...")
 
-    # Group rows by video file for batch extraction
-    by_video: Dict[str, List[Dict]] = defaultdict(list)
-    for row in pending_rows:
-        video_path = row["video_path"]
-        by_video[video_path].append(row)
+    # Sort by video path then frame number for optimal cache usage
+    pending_rows.sort(key=lambda r: (r["video_path"], int(float(r["frame_number"]))))
 
-    log.info(f"Batching across {len(by_video)} video files...")
+    # Use VideoCache for efficient extraction
+    cache = VideoCache()
+    try:
+        for row in pending_rows:
+            video_path = Path(row["video_path"])
+            index = row["index"]
+            frame_number = int(float(row["frame_number"]))
+            primary_out = frames_dir_path / f"{index}_Primary.jpg"
 
-    # Process each video file once
-    for video_path_str, video_rows in by_video.items():
-        video_path = Path(video_path_str)
+            # Extract frame using cache (reuses open video for consecutive frames)
+            frame = cache.extract_frame(video_path, frame_number)
 
-        # Sort by frame number for sequential access (better I/O performance)
-        video_rows.sort(key=lambda r: int(float(r["frame_number"])))
+            if frame is not None:
+                # Convert RGB back to BGR for cv2.imwrite
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(str(primary_out), frame_bgr)
+                extracted_count += 1
+    finally:
+        cache.close()  # Logs cache statistics
 
-        try:
-            cap = cv2.VideoCapture(str(video_path))
-            if not cap.isOpened():
-                log.error(f"Failed to open video: {video_path.name}")
-                continue
-
-            for row in video_rows:
-                index = row["index"]
-                frame_number = int(float(row["frame_number"]))
-                primary_out = frames_dir_path / f"{index}_Primary.jpg"
-
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-                ret, frame = cap.read()
-
-                if ret and frame is not None:
-                    cv2.imwrite(str(primary_out), frame)
-                    extracted_count += 1
-                else:
-                    log.warning(f"Failed to extract frame {frame_number} from {video_path.name}")
-
-            cap.release()
-
-        except Exception as e:
-            log.error(f"Error processing {video_path.name}: {e}")
-
-    log.info(f"Extracted {extracted_count} new frame images to {frames_dir_path}")
+    log.info(f"[select] Extracted {extracted_count} new frame images to {frames_dir_path}")
     return extracted_count
 
 
