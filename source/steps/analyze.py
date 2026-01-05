@@ -300,7 +300,7 @@ def run() -> Path:
                 enriched = {**r, **analysis}
 
                 # Add detection flag
-                detect_ok = float(enriched.get("detect_score", 0) or 0.0) >= CFG.MIN_DETECT_SCORE
+                detect_ok = float(enriched.get("detect_score", 0) or 0.0) >= CFG.YOLO_MIN_CONFIDENCE
                 enriched["object_detected"] = "true" if detect_ok else "false"
 
                 # Persist class IDs for reporting/audit

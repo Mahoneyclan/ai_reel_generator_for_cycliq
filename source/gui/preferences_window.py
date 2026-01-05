@@ -36,7 +36,6 @@ class PreferencesWindow(QDialog):
     PREFERENCE_TOOLTIPS = {
         'KNOWN_OFFSETS': 'Seconds to add to video duration when calculating recording start time. '
                          'Different cameras record creation_time at different points relative to recording end.',
-        'MIN_DETECT_SCORE': 'Minimum detection score required to consider an object detection valid.',
         'GPX_TOLERANCE': 'Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.',
         'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.'
     }
@@ -226,16 +225,15 @@ class PreferencesWindow(QDialog):
                 self.music_combo.addItem(f"🎵 {track.stem}", str(track))
 
     def _create_core_settings(self):
-        self._add_doublespinbox(self.core_form, "Target Duration (s)", "HIGHLIGHT_TARGET_DURATION_S", CFG.HIGHLIGHT_TARGET_DURATION_S, 30, 600, 30)
+        self._add_doublespinbox(self.core_form, "Target Duration (min)", "HIGHLIGHT_TARGET_DURATION_M", CFG.HIGHLIGHT_TARGET_DURATION_M, 1, 10, 0.5)
         self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
         self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
         self._add_doublespinbox(self.core_form, "Min Gap Between Clips (s)", "MIN_GAP_BETWEEN_CLIPS", CFG.MIN_GAP_BETWEEN_CLIPS, 30, 300, 10)
         self._add_doublespinbox(self.core_form, "Scene Comparison Window (s)", "SCENE_COMPARISON_WINDOW_S", CFG.SCENE_COMPARISON_WINDOW_S, 1.0, 15.0, 0.5)
-        self._add_doublespinbox(self.core_form, "Start Zone Duration (s)", "START_ZONE_DURATION_S", CFG.START_ZONE_DURATION_S, 0, 1800, 60)
-        self._add_doublespinbox(self.core_form, "Max Start Zone Fraction", "MAX_START_ZONE_FRAC", CFG.MAX_START_ZONE_FRAC, 0, 1, 0.05)
-        self._add_doublespinbox(self.core_form, "End Zone Duration (s)", "END_ZONE_DURATION_S", CFG.END_ZONE_DURATION_S, 0, 1800, 60)
-        self._add_doublespinbox(self.core_form, "Max End Zone Fraction", "MAX_END_ZONE_FRAC", CFG.MAX_END_ZONE_FRAC, 0, 1, 0.05)
-        self._add_doublespinbox(self.core_form, "Min Detect Score", "MIN_DETECT_SCORE", CFG.MIN_DETECT_SCORE, 0, 1, 0.05)
+        self._add_doublespinbox(self.core_form, "Start Zone Duration (min)", "START_ZONE_DURATION_M", CFG.START_ZONE_DURATION_M, 0, 60, 5)
+        self._add_spinbox(self.core_form, "Max Start Zone Clips", "MAX_START_ZONE_CLIPS", CFG.MAX_START_ZONE_CLIPS, 0, 10)
+        self._add_doublespinbox(self.core_form, "End Zone Duration (min)", "END_ZONE_DURATION_M", CFG.END_ZONE_DURATION_M, 0, 60, 5)
+        self._add_spinbox(self.core_form, "Max End Zone Clips", "MAX_END_ZONE_CLIPS", CFG.MAX_END_ZONE_CLIPS, 0, 10)
 
     def _create_score_settings(self):
         description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")

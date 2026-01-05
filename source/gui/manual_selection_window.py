@@ -37,7 +37,7 @@ class ManualSelectionWindow(QDialog):
         self.extract_dir = frames_dir()
         _mk(self.extract_dir)
 
-        self.target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
+        self.target_clips = int((CFG.HIGHLIGHT_TARGET_DURATION_M * 60) // CFG.CLIP_OUT_LEN_S)
 
         # Data model
         self.model = MomentSelectionModel(select_path())

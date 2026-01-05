@@ -59,8 +59,8 @@ class Config:
         default_factory=lambda: _get_config_value('EXTRACT_INTERVAL_SECONDS', 5)
     )
 
-    HIGHLIGHT_TARGET_DURATION_S: float = field(
-        default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_S', 180.0)
+    HIGHLIGHT_TARGET_DURATION_M: float = field(
+        default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_M', 3.0)
     )
     CLIP_PRE_ROLL_S: float = field(default_factory=lambda: _get_config_value('CLIP_PRE_ROLL_S', 0.5))
     CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 3.5))
@@ -123,9 +123,6 @@ class Config:
         default_factory=lambda: _get_config_value('YOLO_MIN_CONFIDENCE', 0.10)
     )
     YOLO_BATCH_SIZE: int = field(default_factory=lambda: _get_config_value('YOLO_BATCH_SIZE', 4))
-    MIN_DETECT_SCORE: float = field(
-        default_factory=lambda: _get_config_value('MIN_DETECT_SCORE', 0.10)
-    )
     # MIN_SPEED_PENALTY removed; speed is normalized without an explicit penalty
 
     # --- Candidate selection ---
@@ -136,21 +133,21 @@ class Config:
         default_factory=lambda: _get_config_value('REQUIRE_GPS_FOR_SELECTION', False)
     )
 
-    # --- Zone filtering ---
-    START_ZONE_DURATION_S: float = field(
-        default_factory=lambda: _get_config_value('START_ZONE_DURATION_S', 1200.0)
+    # --- Zone filtering (additional clips beyond target) ---
+    START_ZONE_DURATION_M: float = field(
+        default_factory=lambda: _get_config_value('START_ZONE_DURATION_M', 20.0)
     )
-    # START_ZONE_PENALTY removed; we will only use durations to limit selection
-    MAX_START_ZONE_FRAC: float = field(
-        default_factory=lambda: _get_config_value('MAX_START_ZONE_FRAC', 0.10)
+    # Max additional clips from start zone (first N minutes of ride)
+    MAX_START_ZONE_CLIPS: int = field(
+        default_factory=lambda: int(_get_config_value('MAX_START_ZONE_CLIPS', 2))
     )
 
-    END_ZONE_DURATION_S: float = field(
-        default_factory=lambda: _get_config_value('END_ZONE_DURATION_S', 1200.0)
+    END_ZONE_DURATION_M: float = field(
+        default_factory=lambda: _get_config_value('END_ZONE_DURATION_M', 20.0)
     )
-    # END_ZONE_PENALTY removed; we will only use durations to limit selection
-    MAX_END_ZONE_FRAC: float = field(
-        default_factory=lambda: _get_config_value('MAX_END_ZONE_FRAC', 0.10)
+    # Max additional clips from end zone (last N minutes of ride)
+    MAX_END_ZONE_CLIPS: int = field(
+        default_factory=lambda: int(_get_config_value('MAX_END_ZONE_CLIPS', 2))
     )
 
     # --- Scoring weights ---

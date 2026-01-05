@@ -35,6 +35,7 @@ class ProgressReporter:
         self.unit = unit
         self.callback = callback
         self.current = 0
+        self._last_emitted_bracket = -1  # Track last 10% bracket emitted
     
     def __enter__(self):
         return self
@@ -54,12 +55,22 @@ class ProgressReporter:
     def update(self, n: int = 1):
         """Update progress by n steps."""
         self.current += n
-        
+
         if self.callback and self.total > 0:
             pct = int((self.current / self.total) * 100)
             msg = f"{self.desc}: {self.current}/{self.total} {self.unit}"
-            # Throttle: only emit every 10% or at completion
-            if pct % 10 == 0 or self.current == self.total:
+
+            # Throttle: emit when crossing into a new 10% bracket or at completion
+            # This ensures updates at 0-10%, 10-20%, etc. regardless of exact percentages
+            current_bracket = pct // 10
+            should_emit = (
+                current_bracket > self._last_emitted_bracket or  # Crossed into new bracket
+                self.current == self.total or                    # Completion
+                self._last_emitted_bracket < 0                   # First update
+            )
+
+            if should_emit:
+                self._last_emitted_bracket = current_bracket
                 self.callback(self.current, self.total, msg)
     
     def close(self):

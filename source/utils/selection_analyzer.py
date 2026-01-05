@@ -54,7 +54,7 @@ def analyze_selection() -> str:
 
     # Detection score distribution
     detect_scores = [_sf(r.get("detect_score")) for r in enriched]
-    above_threshold = sum(1 for s in detect_scores if s >= _sf(CFG.MIN_DETECT_SCORE))
+    above_threshold = sum(1 for s in detect_scores if s >= _sf(CFG.YOLO_MIN_CONFIDENCE))
     max_detect = max(detect_scores) if detect_scores else 0.0
     avg_detect = (sum(detect_scores) / len(detect_scores)) if detect_scores else 0.0
 
@@ -69,7 +69,7 @@ def analyze_selection() -> str:
     max_speed = max(speeds) if speeds else 0.0
 
     # Candidate pool
-    target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
+    target_clips = int((CFG.HIGHLIGHT_TARGET_DURATION_M * 60) // CFG.CLIP_OUT_LEN_S)
     preselected = sum(1 for r in selected if r.get("recommended") == "true")
 
     # Per-class breakdown - FIXED to handle semicolon delimiters and invalid data
@@ -121,7 +121,7 @@ def analyze_selection() -> str:
     lines.append("-" * 70)
     lines.append(f"Average:  {avg_detect:.3f}")
     lines.append(f"Maximum:  {max_detect:.3f}")
-    lines.append(f"Above threshold ({CFG.MIN_DETECT_SCORE:.2f}): {above_threshold} frames")
+    lines.append(f"Above threshold ({CFG.YOLO_MIN_CONFIDENCE:.2f}): {above_threshold} frames")
     lines.append("")
     lines.append("🎬 SCENE CHANGE SCORES")
     lines.append("-" * 70)

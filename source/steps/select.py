@@ -388,6 +388,70 @@ def _find_pr_moments(moments: List[Dict], segment_matcher: SegmentMatcher) -> Li
     return pr_moments
 
 
+def _find_zone_moments(
+    candidate_moments: List[Dict],
+    recommended_moment_ids: set,
+    first_epoch: float,
+    last_epoch: float,
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Find additional moments from start and end zones.
+
+    These are bonus clips beyond the target duration to capture
+    the beginning and end of the ride.
+
+    Args:
+        candidate_moments: All candidate moments (sorted by score)
+        recommended_moment_ids: Already-recommended moment IDs to exclude
+        first_epoch: Timestamp of first frame
+        last_epoch: Timestamp of last frame
+
+    Returns:
+        Tuple of (start_zone_moments, end_zone_moments)
+    """
+    start_zone_end = first_epoch + (CFG.START_ZONE_DURATION_M * 60)
+    end_zone_start = last_epoch - (CFG.END_ZONE_DURATION_M * 60)
+
+    max_start = CFG.MAX_START_ZONE_CLIPS
+    max_end = CFG.MAX_END_ZONE_CLIPS
+
+    if max_start == 0 and max_end == 0:
+        return [], []
+
+    # Filter to moments not already recommended
+    available = [m for m in candidate_moments if m["moment_id"] not in recommended_moment_ids]
+
+    # Find start zone moments (sorted by score, take top N)
+    start_zone = [m for m in available if m["moment_epoch"] <= start_zone_end]
+    start_zone = sorted(start_zone, key=lambda m: m["best_score"], reverse=True)[:max_start]
+
+    # Find end zone moments (sorted by score, take top N)
+    end_zone = [m for m in available if m["moment_epoch"] >= end_zone_start]
+    end_zone = sorted(end_zone, key=lambda m: m["best_score"], reverse=True)[:max_end]
+
+    if start_zone or end_zone:
+        log.info("")
+        log.info("=" * 60)
+        log.info("ZONE BONUS CLIPS")
+        log.info("=" * 60)
+        log.info(f"Start zone: first {CFG.START_ZONE_DURATION_M:.0f} min, max {max_start} clips")
+        log.info(f"End zone: last {CFG.END_ZONE_DURATION_M:.0f} min, max {max_end} clips")
+
+        if start_zone:
+            log.info(f"🚀 Start zone: adding {len(start_zone)} bonus clips")
+            for m in start_zone:
+                t_iso = (m["fly12"].get("abs_time_iso", "") or m["fly6"].get("abs_time_iso", ""))[:19]
+                log.info(f"   {t_iso} - score {m['best_score']:.3f}")
+
+        if end_zone:
+            log.info(f"🏁 End zone: adding {len(end_zone)} bonus clips")
+            for m in end_zone:
+                t_iso = (m["fly12"].get("abs_time_iso", "") or m["fly6"].get("abs_time_iso", ""))[:19]
+                log.info(f"   {t_iso} - score {m['best_score']:.3f}")
+
+    return start_zone, end_zone
+
+
 # -----------------------------
 # Main entrypoint
 # -----------------------------
@@ -424,7 +488,7 @@ def run() -> Path:
         return select_path()
 
     # Selection targets
-    target_clips = int(CFG.HIGHLIGHT_TARGET_DURATION_S // CFG.CLIP_OUT_LEN_S)
+    target_clips = int((CFG.HIGHLIGHT_TARGET_DURATION_M * 60) // CFG.CLIP_OUT_LEN_S)
     if target_clips <= 0:
         log.warning("Non-positive target_clips; nothing to select.")
         return select_path()
@@ -471,6 +535,25 @@ def run() -> Path:
     if pr_added > 0:
         log.info(f"")
         log.info(f"🏆 Added {pr_added} Strava PR segment moments to recommended list")
+
+    # Add zone bonus clips (start/end of ride)
+    start_zone_moments, end_zone_moments = _find_zone_moments(
+        candidate_moments,
+        recommended_moment_ids,
+        first_time,
+        last_time,
+    )
+
+    zone_added = 0
+    for zm in start_zone_moments + end_zone_moments:
+        if zm["moment_id"] not in recommended_moment_ids:
+            recommended_moments.append(zm)
+            recommended_moment_ids.add(zm["moment_id"])
+            zone_added += 1
+
+    if zone_added > 0:
+        log.info(f"")
+        log.info(f"📍 Added {zone_added} zone bonus clips to recommended list")
 
     log.info("")
     log.info("=" * 60)

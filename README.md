@@ -242,7 +242,7 @@ SCORE_WEIGHTS = {
 EXTRACT_INTERVAL_SECONDS = 5  # Frame sampling rate
 
 # Target duration
-HIGHLIGHT_TARGET_DURATION_S = 180.0  # 3-minute highlights
+HIGHLIGHT_TARGET_DURATION_M = 3.0  # 3-minute highlights
 
 # Clip timing
 CLIP_PRE_ROLL_S = 0.2   # Lead-in before scored moment
@@ -265,11 +265,11 @@ SCENE_PRIORITY_MODE = True
 SCENE_HIGH_THRESHOLD = 0.50   # High-activity threshold
 SCENE_MAJOR_THRESHOLD = 0.70  # Major event threshold
 
-# Zone filtering (reduce start/end clips)
-START_ZONE_DURATION_S = 1200.0  # First 20 minutes
-MAX_START_ZONE_FRAC = 0.10      # Max 10% of clips from start
-END_ZONE_DURATION_S = 1200.0
-MAX_END_ZONE_FRAC = 0.10
+# Zone bonus clips (start/end of ride - additional to target)
+START_ZONE_DURATION_M = 20.0  # First 20 minutes
+MAX_START_ZONE_CLIPS = 2      # Max 2 bonus clips from start zone
+END_ZONE_DURATION_M = 20.0    # Last 20 minutes
+MAX_END_ZONE_CLIPS = 2        # Max 2 bonus clips from end zone
 
 # Hardware acceleration
 USE_MPS = True  # Metal Performance Shaders (M1)
