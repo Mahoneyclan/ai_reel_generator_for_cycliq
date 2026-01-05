@@ -125,84 +125,170 @@ class StravaClient:
     
     def download_gpx(self, activity_id: int, output_path: Path) -> bool:
         """
-        Download activity GPX export.
-        
+        Download activity GPS data as GPX file.
+
+        Uses streams API to construct GPX (more reliable than export_gpx endpoint).
+
         Args:
             activity_id: Strava activity ID
             output_path: Where to save GPX file
-            
+
         Returns:
             True if successful
         """
         if not self._access_token:
             raise RuntimeError("Not connected. Call connect() first.")
-        
-        log.info(f"[strava_client] Downloading GPX for activity {activity_id}...")
-        
+
+        log.info(f"[strava_client] Downloading GPS data for activity {activity_id}...")
+
         try:
-            # First, get activity details to check for GPS data and privacy settings
+            # Get activity details for metadata
             details = self.get_activity_details(activity_id)
-            
-            # Request GPX export
-            response = requests.get(
-                f"{self.config.API_BASE_URL}/activities/{activity_id}/export_gpx",
-                headers={"Authorization": f"Bearer {self._access_token}"},
-                stream=True
-            )
-            
-            # Handle 404 - check why GPS export failed
-            if response.status_code == 404:
-                # Diagnose the specific reason
-                if details:
-                    has_latlng = bool(details.get("start_latlng"))
-                    map_visibility = details.get("visibility", "unknown")
-                    activity_type = details.get("type", "unknown")
-                    
-                    if not has_latlng:
-                        log.warning(
-                            f"[strava_client] Activity {activity_id} has no GPS data. "
-                            f"Type: {activity_type} (likely virtual ride or manual entry)"
-                        )
-                    else:
-                        log.error(
-                            f"[strava_client] Activity {activity_id} has GPS data but export is blocked.\n"
-                            f"   Map visibility: {map_visibility}\n"
-                            f"   Possible reasons:\n"
-                            f"   • Privacy zones are hiding the route\n"
-                            f"   • Map visibility is set to 'Only You' or 'Followers Only'\n"
-                            f"   • Your app doesn't have permission to access detailed GPS data\n\n"
-                            f"   Solutions:\n"
-                            f"   1. Go to https://www.strava.com/activities/{activity_id}\n"
-                            f"   2. Click the pencil icon to edit\n"
-                            f"   3. Change 'Map Visibility' to 'Everyone'\n"
-                            f"   4. Temporarily disable privacy zones in Settings > Privacy\n"
-                            f"   5. Re-authorize this app at https://www.strava.com/settings/apps"
-                        )
-                else:
-                    log.warning(
-                        f"[strava_client] Cannot export GPX for activity {activity_id}. "
-                        "Unable to determine the reason - check activity details on Strava."
-                    )
+            if not details:
+                log.error(f"[strava_client] Could not fetch activity details")
                 return False
-            
-            response.raise_for_status()
-            
+
+            # Get streams (GPS data)
+            streams = self._get_activity_streams(activity_id)
+            if not streams:
+                log.error(f"[strava_client] No GPS streams available for activity {activity_id}")
+                return False
+
+            # Build GPX from streams
+            gpx_content = self._build_gpx_from_streams(details, streams)
+            if not gpx_content:
+                log.error(f"[strava_client] Failed to build GPX from streams")
+                return False
+
             # Save GPX file
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
+            with output_path.open("w") as f:
+                f.write(gpx_content)
+
             file_size = output_path.stat().st_size
             log.info(
                 f"[strava_client] ✓ Downloaded GPX to {output_path.name} "
                 f"({file_size / 1024:.1f} KB)"
             )
             return True
-            
-        except requests.RequestException as e:
+
+        except Exception as e:
             log.error(f"[strava_client] GPX download failed: {e}")
             return False
+
+    def _get_activity_streams(self, activity_id: int) -> Optional[Dict]:
+        """
+        Fetch activity streams (GPS, altitude, time, heartrate, etc.)
+
+        Args:
+            activity_id: Strava activity ID
+
+        Returns:
+            Dict of stream data or None
+        """
+        try:
+            response = requests.get(
+                f"{self.config.API_BASE_URL}/activities/{activity_id}/streams",
+                headers={"Authorization": f"Bearer {self._access_token}"},
+                params={
+                    "keys": "time,latlng,altitude,heartrate,cadence",
+                    "key_by_type": "true"
+                }
+            )
+
+            if response.status_code == 404:
+                log.warning(f"[strava_client] No streams available for activity {activity_id}")
+                return None
+
+            response.raise_for_status()
+            return response.json()
+
+        except requests.RequestException as e:
+            log.error(f"[strava_client] Failed to fetch streams: {e}")
+            return None
+
+    def _build_gpx_from_streams(self, activity: Dict, streams: Dict) -> Optional[str]:
+        """
+        Build GPX XML from Strava streams data.
+
+        Args:
+            activity: Activity details dict
+            streams: Streams data dict
+
+        Returns:
+            GPX XML string or None
+        """
+        latlng = streams.get("latlng", {}).get("data", [])
+        altitude = streams.get("altitude", {}).get("data", [])
+        time_data = streams.get("time", {}).get("data", [])
+        heartrate = streams.get("heartrate", {}).get("data", [])
+        cadence = streams.get("cadence", {}).get("data", [])
+
+        if not latlng:
+            log.warning("[strava_client] No latlng data in streams")
+            return None
+
+        # Parse activity start time
+        start_time_str = activity.get("start_date", "")
+        try:
+            start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            start_time = datetime.now(timezone.utc)
+
+        activity_name = activity.get("name", "Strava Activity")
+
+        # Build GPX XML
+        gpx_lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<gpx version="1.1" creator="Velo Highlights AI (Strava Import)"',
+            '     xmlns="http://www.topografix.com/GPX/1/1"',
+            '     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">',
+            '  <metadata>',
+            f'    <name>{activity_name}</name>',
+            f'    <time>{start_time.isoformat()}</time>',
+            '  </metadata>',
+            '  <trk>',
+            f'    <name>{activity_name}</name>',
+            '    <trkseg>',
+        ]
+
+        for i, (lat, lon) in enumerate(latlng):
+            # Calculate timestamp
+            if i < len(time_data):
+                from datetime import timedelta
+                point_time = start_time + timedelta(seconds=time_data[i])
+            else:
+                point_time = start_time
+
+            ele = altitude[i] if i < len(altitude) else 0
+
+            gpx_lines.append(f'      <trkpt lat="{lat}" lon="{lon}">')
+            gpx_lines.append(f'        <ele>{ele}</ele>')
+            gpx_lines.append(f'        <time>{point_time.isoformat()}</time>')
+
+            # Add extensions for HR/cadence if available
+            has_hr = i < len(heartrate) and heartrate[i]
+            has_cad = i < len(cadence) and cadence[i]
+            if has_hr or has_cad:
+                gpx_lines.append('        <extensions>')
+                gpx_lines.append('          <gpxtpx:TrackPointExtension>')
+                if has_hr:
+                    gpx_lines.append(f'            <gpxtpx:hr>{heartrate[i]}</gpxtpx:hr>')
+                if has_cad:
+                    gpx_lines.append(f'            <gpxtpx:cad>{cadence[i]}</gpxtpx:cad>')
+                gpx_lines.append('          </gpxtpx:TrackPointExtension>')
+                gpx_lines.append('        </extensions>')
+
+            gpx_lines.append('      </trkpt>')
+
+        gpx_lines.extend([
+            '    </trkseg>',
+            '  </trk>',
+            '</gpx>'
+        ])
+
+        log.info(f"[strava_client] Built GPX with {len(latlng)} trackpoints")
+        return '\n'.join(gpx_lines)
     
     def search_activities_by_date(
         self,
