@@ -273,6 +273,18 @@ class ManualSelectionWindow(QDialog):
         pip_widget = self._create_pip_widget(primary_row, partner_row)
         layout.addWidget(pip_widget)
 
+        # Strava PR badge (if applicable)
+        is_strava_pr = primary_row.get("strava_pr") == "true"
+        if is_strava_pr:
+            pr_badge = QLabel("🏆 Strava Segment PR")
+            pr_badge.setAlignment(Qt.AlignCenter)
+            pr_badge.setStyleSheet(
+                "font-size: 12px; font-weight: 700; color: #FF6B00; "
+                "background-color: #FFF3E0; padding: 4px 8px; "
+                "border: 2px solid #FF9800; border-radius: 4px; margin: 2px 0;"
+            )
+            layout.addWidget(pr_badge)
+
         # Metadata
         camera_label = primary_row.get("camera", "Camera")
         source_file = primary_row.get("source", "")

@@ -36,6 +36,7 @@ from ..utils.log import setup_logger
 from ..utils.common import safe_float as _sf, read_csv as _load_csv
 from ..config import DEFAULT_CONFIG as CFG
 from ..models import get_registry
+from .analyze_helpers.segment_matcher import SegmentMatcher
 
 log = setup_logger("steps.select")
 
@@ -354,6 +355,39 @@ def _apply_gap_filter(moments: List[Dict], target_clips: int) -> List[Dict]:
     return accepted
 
 
+def _find_pr_moments(moments: List[Dict], segment_matcher: SegmentMatcher) -> List[Dict]:
+    """
+    Find moments that fall within Strava PR segments.
+
+    Returns moments with is_strava_pr=True flag set.
+    """
+    if not segment_matcher.segments:
+        return []
+
+    pr_moments = []
+    for m in moments:
+        epoch = m["moment_epoch"]
+        boost = segment_matcher.get_segment_boost(epoch)
+
+        # Only flag actual PRs (rank 1), not just top-3
+        if boost >= 1.0:
+            m_copy = dict(m)
+            m_copy["is_strava_pr"] = True
+            m_copy["segment_name"] = segment_matcher.get_segment_name(epoch)
+            pr_moments.append(m_copy)
+
+    if pr_moments:
+        log.info(f"")
+        log.info("=" * 60)
+        log.info("STRAVA PR SEGMENTS DETECTED")
+        log.info("=" * 60)
+        for pm in pr_moments:
+            seg_name = pm.get("segment_name", "Unknown")
+            log.info(f"🏆 PR: {seg_name} @ moment {pm['moment_id']}")
+
+    return pr_moments
+
+
 # -----------------------------
 # Main entrypoint
 # -----------------------------
@@ -421,6 +455,23 @@ def run() -> Path:
     # Gap filtering on candidate pool
     recommended_moments = _apply_gap_filter(candidate_moments, target_clips)
 
+    # Check for Strava PR segments to auto-include
+    segment_matcher = SegmentMatcher()
+    pr_moments = _find_pr_moments(candidate_moments, segment_matcher)
+
+    # Merge PR moments into recommended (avoid duplicates)
+    recommended_moment_ids = {m["moment_id"] for m in recommended_moments}
+    pr_added = 0
+    for pm in pr_moments:
+        if pm["moment_id"] not in recommended_moment_ids:
+            recommended_moments.append(pm)
+            recommended_moment_ids.add(pm["moment_id"])
+            pr_added += 1
+
+    if pr_added > 0:
+        log.info(f"")
+        log.info(f"🏆 Added {pr_added} Strava PR segment moments to recommended list")
+
     log.info("")
     log.info("=" * 60)
     log.info("PERSPECTIVE SELECTION PER MOMENT")
@@ -428,6 +479,8 @@ def run() -> Path:
     log.info("Choosing best perspective for each recommended moment...")
 
     recommended_indices = set()
+    pr_indices = set()  # Track which indices are from PR segments
+
     for m in recommended_moments:
         score12 = m["score_fly12"]
         score6 = m["score_fly6"]
@@ -445,19 +498,27 @@ def run() -> Path:
 
         recommended_indices.add(chosen["index"])
 
+        # Check if this is a PR moment
+        is_pr = m.get("is_strava_pr", False)
+        if is_pr:
+            pr_indices.add(chosen["index"])
+            pr_indices.add(other["index"])
+
         time_iso = (chosen.get("abs_time_iso", "") or other.get("abs_time_iso", ""))[:19]
-        log.info(f"✓ {time_iso}: {chosen['index']} (score {chosen_score:.3f})")
+        pr_badge = " 🏆 PR" if is_pr else ""
+        log.info(f"✓ {time_iso}: {chosen['index']} (score {chosen_score:.3f}){pr_badge}")
         log.info(
             f"  Chosen: {chosen.get('camera')} - score={chosen_score:.3f} | "
             f"Other: {other.get('camera')} - score={other_score:.3f}"
         )
 
-    # Build output rows: all rows from candidate pool, with recommended flags
+    # Build output rows: all rows from candidate pool, with recommended and strava_pr flags
     output_rows: List[Dict] = []
     for m in candidate_moments:
         for row in (m["fly12"], m["fly6"]):
             row = dict(row)  # avoid mutating original enriched row list
             row["recommended"] = "true" if row["index"] in recommended_indices else "false"
+            row["strava_pr"] = "true" if row["index"] in pr_indices else "false"
             output_rows.append(row)
 
     # Sort by aligned world time
