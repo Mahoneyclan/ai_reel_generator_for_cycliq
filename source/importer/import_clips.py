@@ -13,6 +13,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Tuple, Callable
 
+from ..config import DEFAULT_CONFIG as CFG
+
 
 def _format_size(bytes_size: int) -> str:
     """Format bytes into human-readable size."""
@@ -62,14 +64,15 @@ def run_import(cameras: list, ride_date: str, ride_name: str, log_callback: Call
         log_callback (function): A function to call for logging messages
     """
     log_callback("=== Starting Import Process ===", "info")
-    
+
     try:
-        # --- 1. Define Paths ---
-        base_import_path = Path("/Volumes/GDrive/Fly")
+        # --- 1. Define Paths (using config) ---
+        base_import_path = CFG.INPUT_BASE_DIR
         ride_date_obj = datetime.strptime(ride_date, "%Y-%m-%d")
         folder_name = f"{ride_date_obj.strftime('%Y-%m-%d')} {ride_name}"
         destination_path = base_import_path / folder_name
 
+        log_callback(f"Source videos folder: {base_import_path}", "info")
         log_callback(f"Destination path: {destination_path}", "info")
 
         camera_map = {
