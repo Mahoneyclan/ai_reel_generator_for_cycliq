@@ -54,6 +54,11 @@ class Config:
     RIDE_FOLDER: str = ""
     SOURCE_FOLDER: str = ""
 
+    # Test mode: only process first video from each camera for faster testing
+    TEST_MODE: bool = field(
+        default_factory=lambda: _get_config_value('TEST_MODE', False)
+    )
+
     # Sampling interval in seconds (time-based, not FPS)
     EXTRACT_INTERVAL_SECONDS: int = field(
         default_factory=lambda: _get_config_value('EXTRACT_INTERVAL_SECONDS', 5)
@@ -180,15 +185,18 @@ class Config:
 
     # Known creation_time offsets per camera model (seconds to add to duration)
     # Different Cycliq cameras record creation_time at different points relative to recording end
+    # Testing showed both cameras have creation_time at exactly end of recording
     KNOWN_OFFSETS: dict = field(default_factory=lambda: _get_config_value(
         'KNOWN_OFFSETS', {
-            "Fly12Sport": 2.0,  # creation_time is end + 2s
+            "Fly12Sport": 0.0,  # creation_time is exactly at end
             "Fly6Pro": 0.0,     # creation_time is exactly at end
         }
     ))
 
     # Whether to load and apply camera offsets from camera_offsets.json
-    USE_CAMERA_OFFSETS: bool = True
+    # DISABLED: The align step couples with KNOWN_OFFSETS causing confusing interactions.
+    # Use KNOWN_OFFSETS only for camera timing adjustments.
+    USE_CAMERA_OFFSETS: bool = False
 
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
     GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))

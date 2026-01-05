@@ -322,8 +322,10 @@ class GeneralSettingsWindow(QDialog):
 
     # --- Load & Save ---
     def load_current_values(self):
-        # Populate UI with current CFG values or persistent overrides
-        cfg = CFG
+        # Reload config to get fresh values (not stale module-level CFG)
+        from ..config import reload_config, DEFAULT_CONFIG
+        reload_config()
+        cfg = DEFAULT_CONFIG
         self.projects_root_edit.setText(str(cfg.PROJECTS_ROOT))
         # If INPUT_BASE_DIR points at the project folder itself (its name == SOURCE_FOLDER),
         # prefer showing the parent directory as the raw videos base.

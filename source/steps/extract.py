@@ -59,32 +59,51 @@ def _load_camera_offsets() -> Dict[str, float]:
     return CFG.CAMERA_TIME_OFFSETS.copy()
 
 
-def _get_gpx_start_epoch() -> float:
+def _get_gpx_time_range() -> Tuple[float, float]:
     """
-    Load GPX ride start time for filtering.
-    
+    Load GPX ride start and end times for filtering.
+
     Returns:
-        GPX start time as epoch seconds, or 0.0 if unavailable
+        Tuple of (start_epoch, end_epoch), or (0.0, 0.0) if unavailable
     """
     flatten_csv = flatten_path()
-    
+
     if not flatten_csv.exists():
         log.warning("[extract] No flatten.csv - will extract all frames (no GPX filtering)")
-        return 0.0
-    
+        return 0.0, 0.0
+
     try:
         with flatten_csv.open() as f:
             reader = csv.DictReader(f)
-            first_row = next(reader, None)
-            
+            rows = list(reader)
+
+            if not rows:
+                return 0.0, 0.0
+
+            first_row = rows[0]
+            last_row = rows[-1]
+
+            gpx_start = 0.0
+            gpx_end = 0.0
+
             if first_row and "gpx_epoch" in first_row and first_row["gpx_epoch"]:
                 gpx_start = float(first_row["gpx_epoch"])
-                log.info(f"[extract] GPX ride starts at epoch {gpx_start:.3f}")
-                return gpx_start
+
+            if last_row and "gpx_epoch" in last_row and last_row["gpx_epoch"]:
+                gpx_end = float(last_row["gpx_epoch"])
+
+            if gpx_start > 0 and gpx_end > 0:
+                duration_m = (gpx_end - gpx_start) / 60
+                log.info(f"[extract] GPX time range: {duration_m:.1f} min")
+                log.info(f"[extract]   Start: epoch {gpx_start:.3f}")
+                log.info(f"[extract]   End:   epoch {gpx_end:.3f}")
+
+            return gpx_start, gpx_end
+
     except Exception as e:
-        log.warning(f"[extract] Could not read GPX start time: {e}")
-    
-    return 0.0
+        log.warning(f"[extract] Could not read GPX time range: {e}")
+
+    return 0.0, 0.0
 
 
 def _compute_session_time_bounds(
@@ -209,6 +228,7 @@ def _extract_video_metadata(
     sampling_interval_s: int,
     camera_offsets: Dict[str, float],
     gpx_start_epoch: float,
+    gpx_end_epoch: float,
     global_session_start_epoch: float,
     _camera_overlap_bounds: Tuple[float, float],
 ) -> List[Dict[str, str]]:
@@ -271,14 +291,18 @@ def _extract_video_metadata(
     # Camera-to-camera offset (relative to baseline camera)
     camera_offset_s = float(camera_offsets.get(camera_name, 0.0))
 
+    # ALIGNED start epoch: real start adjusted by camera offset
+    # This ensures all cameras share the same aligned timeline
+    aligned_start_epoch = real_start_epoch - camera_offset_s
+
     duration_int = int(duration_s)
     effective_fps = 1.0 / float(sampling_interval_s)
 
     # =========================================================================
     # ALIGNED SAMPLING: Compute first_sec_raw so samples fall on global grid
     # =========================================================================
-    # Time from global session start to this clip's start
-    time_since_global_start = real_start_epoch - global_session_start_epoch
+    # Time from global session start to this clip's ALIGNED start
+    time_since_global_start = aligned_start_epoch - global_session_start_epoch
 
     # Find first sampling point that falls on the global grid
     # Grid points are at: 0, interval, 2*interval, 3*interval, ... from global start
@@ -311,14 +335,17 @@ def _extract_video_metadata(
         frame_number = int(sec_raw * video_fps)
         index = f"{camera_name}_{clip_id}_{sec_raw:06d}"
 
-        # 2. Real-world timestamp for this frame (now aligned to global grid)
+        # 2. Real-world timestamp for this frame
+        # Note: real_start_epoch already has KNOWN_OFFSETS applied via infer_recording_start()
         abs_time_epoch = real_start_epoch + float(sec_raw)
         abs_time_iso = datetime.fromtimestamp(abs_time_epoch, tz=timezone.utc).isoformat()
 
         session_ts_aligned = abs_time_epoch - global_session_start_epoch
 
-        # Filter frames before GPX start
+        # Filter frames outside GPX time range
         if gpx_start_epoch > 0 and abs_time_epoch < gpx_start_epoch:
+            continue
+        if gpx_end_epoch > 0 and abs_time_epoch > gpx_end_epoch:
             continue
 
         rows.append({
@@ -437,13 +464,28 @@ def run() -> Path:
     
     output_csv = _mk(extract_path())
     videos = sorted(CFG.INPUT_VIDEOS_DIR.glob("*_*.MP4"))
-    
+
     if not videos:
         log.warning(f"[extract] No videos found in {CFG.INPUT_VIDEOS_DIR}")
         _write_metadata_csv(output_csv, [])
         return output_csv
-    
+
     log.info(f"[extract] Found {len(videos)} video clips")
+
+    # Test mode: only process first video from each camera
+    if CFG.TEST_MODE:
+        seen_cameras = set()
+        test_videos = []
+        for v in videos:
+            camera_name, _, _ = parse_camera_and_clip(v)
+            if camera_name not in seen_cameras:
+                seen_cameras.add(camera_name)
+                test_videos.append(v)
+        log.info(f"[extract] 🧪 TEST MODE: Using only first video per camera")
+        log.info(f"[extract] 🧪 Reduced from {len(videos)} to {len(test_videos)} videos")
+        for v in test_videos:
+            log.info(f"[extract] 🧪   → {v.name}")
+        videos = test_videos
     
     # =========================================================================
     # Load alignment data
@@ -462,15 +504,18 @@ def run() -> Path:
         camera_offsets,
     )
     
-    gpx_start_epoch = _get_gpx_start_epoch()
+    gpx_start_epoch, gpx_end_epoch = _get_gpx_time_range()
     sampling_interval_s = int(CFG.EXTRACT_INTERVAL_SECONDS)
     effective_fps = 1.0 / float(sampling_interval_s)
-    
+
     log.info(f"[extract] Sampling interval: {sampling_interval_s}s (~{effective_fps:.3f} FPS)")
-    
-    if gpx_start_epoch > 0:
+
+    if gpx_start_epoch > 0 and gpx_end_epoch > 0:
         gpx_start_dt = datetime.fromtimestamp(gpx_start_epoch, tz=timezone.utc)
-        log.info(f"[extract] GPX filtering enabled: frames before {gpx_start_dt.isoformat()} will be excluded")
+        gpx_end_dt = datetime.fromtimestamp(gpx_end_epoch, tz=timezone.utc)
+        log.info(f"[extract] GPX filtering enabled:")
+        log.info(f"[extract]   Excluding frames before {gpx_start_dt.isoformat()}")
+        log.info(f"[extract]   Excluding frames after  {gpx_end_dt.isoformat()}")
     else:
         log.info("[extract] No GPX filtering - all frames will be extracted")
     
@@ -505,6 +550,7 @@ def run() -> Path:
                 sampling_interval_s,
                 camera_offsets,
                 gpx_start_epoch,
+                gpx_end_epoch,
                 global_session_start_epoch,
                 overlap_bounds,
             )

@@ -285,15 +285,18 @@ class ManualSelectionWindow(QDialog):
             )
             layout.addWidget(pr_badge)
 
-        # Metadata
+        # Metadata with timestamp for alignment debugging
         camera_label = primary_row.get("camera", "Camera")
         source_file = primary_row.get("source", "")
         frame_num = primary_row.get("frame_number", "—")
+        abs_time = primary_row.get("abs_time_iso", "")[:19]  # Trim to YYYY-MM-DDTHH:MM:SS
 
         metadata_lines = [
+            f"⏱ {abs_time}" if abs_time else "",
             f"Camera: {camera_label} | File: {source_file} | Frame {frame_num}",
             MomentSelectionModel.format_metadata(primary_row),
         ]
+        metadata_lines = [line for line in metadata_lines if line]  # Remove empty lines
 
         metadata = QLabel("\n".join(metadata_lines))
         metadata.setAlignment(Qt.AlignCenter)

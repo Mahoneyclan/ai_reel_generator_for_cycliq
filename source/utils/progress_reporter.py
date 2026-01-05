@@ -60,9 +60,9 @@ class ProgressReporter:
             pct = int((self.current / self.total) * 100)
             msg = f"{self.desc}: {self.current}/{self.total} {self.unit}"
 
-            # Throttle: emit when crossing into a new 10% bracket or at completion
-            # This ensures updates at 0-10%, 10-20%, etc. regardless of exact percentages
-            current_bracket = pct // 10
+            # Throttle: emit when crossing into a new 5% bracket or at completion
+            # This ensures updates at 0-5%, 5-10%, etc. regardless of exact percentages
+            current_bracket = pct // 5
             should_emit = (
                 current_bracket > self._last_emitted_bracket or  # Crossed into new bracket
                 self.current == self.total or                    # Completion
@@ -103,7 +103,7 @@ def progress_iter(
     """
     Iterate with progress reporting.
     Drop-in replacement for tqdm().
-    
+
     Usage:
         for item in progress_iter(items, desc="Processing", unit="item"):
             process(item)
@@ -115,7 +115,11 @@ def progress_iter(
         unit=unit,
         callback=_progress_callback
     )
-    
+
+    # Emit initial 0% progress immediately so UI shows activity
+    if _progress_callback and reporter.total > 0:
+        _progress_callback(0, reporter.total, f"{desc}: starting...")
+
     with reporter:
         for item in reporter:
             yield item

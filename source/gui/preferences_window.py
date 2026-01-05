@@ -37,7 +37,8 @@ class PreferencesWindow(QDialog):
         'KNOWN_OFFSETS': 'Seconds to add to video duration when calculating recording start time. '
                          'Different cameras record creation_time at different points relative to recording end.',
         'GPX_TOLERANCE': 'Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.',
-        'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.'
+        'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.',
+        'TEST_MODE': 'Only process first video from each camera for faster testing of alignment and pipeline.',
     }
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -160,6 +161,15 @@ class PreferencesWindow(QDialog):
 
         return tab
 
+    def _add_checkbox(self, form, label, attr, value):
+        widget = QCheckBox()
+        widget.setChecked(value)
+        tip = self.PREFERENCE_TOOLTIPS.get(attr, '')
+        if tip:
+            widget.setToolTip(tip)
+        form.addRow(label, widget)
+        self.overrides[attr] = widget
+
     def _add_spinbox(self, form, label, attr, value, min_val, max_val):
         widget = _fix_size(QSpinBox())
         widget.setRange(min_val, max_val)
@@ -225,6 +235,9 @@ class PreferencesWindow(QDialog):
                 self.music_combo.addItem(f"🎵 {track.stem}", str(track))
 
     def _create_core_settings(self):
+        # Test mode at top for visibility
+        self._add_checkbox(self.core_form, "🧪 Test Mode (first video only)", "TEST_MODE", CFG.TEST_MODE)
+
         self._add_doublespinbox(self.core_form, "Target Duration (min)", "HIGHLIGHT_TARGET_DURATION_M", CFG.HIGHLIGHT_TARGET_DURATION_M, 1, 10, 0.5)
         self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
         self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
