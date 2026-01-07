@@ -1,30 +1,20 @@
 # source/steps/align.py
 """
-Camera alignment step with three explicit stages:
+Camera alignment diagnostics.
 
-Stage 1: UTC Bug Correction
-    - Fix Cycliq's "local time with fake Z" metadata bug
-    - Pure metadata correction, independent of GPX
-    
-Stage 2: Camera-to-Camera Alignment
-    - Compute recording start differences between cameras
-    - Store offsets relative to earliest camera (baseline)
-    - These offsets go into camera_offsets.json
-    
-Stage 3: GPX Sanity Checks
-    - Log how cameras relate to GPX timeline
-    - Informational only, does not affect alignment
+Logs timing information about cameras and GPX for debugging.
+Does NOT produce any output files - extract.py handles alignment
+by anchoring all sampling to the GPX timeline.
 """
 
 from __future__ import annotations
-import json
 import csv
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Tuple, List, Optional
 
 from ..config import DEFAULT_CONFIG as CFG
-from ..io_paths import flatten_path, camera_offsets_path, _mk
+from ..io_paths import flatten_path
 from ..utils.log import setup_logger
 from ..utils.progress_reporter import report_progress
 from ..utils.video_utils import (
@@ -126,187 +116,106 @@ def _probe_camera_with_fallback(
     return None, None
 
 
-def run() -> Dict[str, float]:
+def run() -> None:
     """
-    Main alignment pipeline with three explicit stages.
-    
-    Returns:
-        Dict mapping camera names to their offsets (in seconds)
+    Log camera timing diagnostics.
+
+    This step is informational only - it logs:
+    - Recording start times for each camera
+    - Time differences between cameras
+    - How cameras relate to GPX timeline
+
+    Alignment is handled by extract.py using GPX-anchored sampling grid.
     """
     log.info("=" * 70)
-    log.info("CAMERA ALIGNMENT - THREE STAGE CORRECTION")
+    log.info("CAMERA ALIGNMENT DIAGNOSTICS")
     log.info("=" * 70)
-    log.info(f"[align] USE_CAMERA_OFFSETS={CFG.USE_CAMERA_OFFSETS}")
-    
-    # =========================================================================
-    # STAGE 0: Preparation
-    # =========================================================================
-    report_progress(1, 6, "Scanning video files...")
-    
+
+    report_progress(1, 4, "Scanning video files...")
+
     videos = sorted(CFG.INPUT_VIDEOS_DIR.glob("*_*.MP4"))
-    
     if not videos:
         log.warning(f"[align] No videos found in {CFG.INPUT_VIDEOS_DIR}")
-        log.warning("[align] Searched for pattern: *_*.MP4")
-        
-        # Write empty offsets file
-        empty_offsets = {cam: 0.0 for cam in CFG.CAMERA_WEIGHTS.keys()}
-        if CFG.USE_CAMERA_OFFSETS:
-            offsets_file = _mk(camera_offsets_path())
-            with offsets_file.open("w") as f:
-                json.dump(empty_offsets, f, indent=2, sort_keys=True)
-            log.info(f"[align] Wrote empty offsets file: {offsets_file}")
-        else:
-            log.info("[align] USE_CAMERA_OFFSETS is False – not writing camera_offsets.json")
+        return
 
-        return empty_offsets
-    
     # Group videos by camera
     videos_by_camera: Dict[str, List[Path]] = {}
     for video in videos:
         camera_name = extract_camera_name(video)
         videos_by_camera.setdefault(camera_name, []).append(video)
-    
+
     log.info(f"[align] Found {len(videos)} videos from {len(videos_by_camera)} cameras")
     for cam, files in videos_by_camera.items():
         log.info(f"[align]   - {cam}: {len(files)} clips")
-    
-    # =========================================================================
-    # STAGE 1: UTC Bug Fix + Recording Start Inference
-    # =========================================================================
-    report_progress(2, 6, "Computing corrected recording start times...")
-    
-    log.info("")
-    log.info("STAGE 1: UTC Bug Correction + Recording Start Inference")
-    log.info("-" * 70)
-    
+
+    # ────────────────────────────────────────────────────────────
+    # Probe camera start times
+    # ────────────────────────────────────────────────────────────
+    report_progress(2, 4, "Probing camera start times...")
+
     recording_starts: Dict[str, Tuple[datetime, str]] = {}
-    
+
     for camera_name, video_files in videos_by_camera.items():
         start_time, source_file = _probe_camera_with_fallback(camera_name, video_files)
-        
         if start_time is None:
             log.error(f"[align] Failed to determine start time for {camera_name}")
-            log.error(f"[align] This camera will use offset 0.0 by default")
-            # Use epoch as placeholder
-            recording_starts[camera_name] = (datetime.fromtimestamp(0, tz=timezone.utc), "FAILED")
-        else:
-            recording_starts[camera_name] = (start_time, source_file)
-            log.info(
-                f"[align] ✓ {camera_name:15s} starts at {start_time.isoformat()} "
-                f"(from {source_file})"
-            )
-    
+            continue
+        recording_starts[camera_name] = (start_time, source_file)
+        log.info(
+            f"[align] ✓ {camera_name:15s} starts at {start_time.isoformat()} "
+            f"(from {source_file})"
+        )
+
     if not recording_starts:
         log.error("[align] No cameras could be probed successfully")
-        return {}
-    
-    # =========================================================================
-    # STAGE 2: Camera-to-Camera Alignment
-    # =========================================================================
-    report_progress(3, 6, "Computing camera-to-camera offsets...")
-    
-    log.info("")
-    log.info("STAGE 2: Camera-to-Camera Alignment")
-    log.info("-" * 70)
-    
-    # Find earliest camera (baseline)
-    earliest_start = min(start_time for start_time, _ in recording_starts.values())
+        return
+
+    # ────────────────────────────────────────────────────────────
+    # Log time differences between cameras
+    # ────────────────────────────────────────────────────────────
+    report_progress(3, 4, "Computing camera time differences...")
+
+    earliest_start = min(start for (start, _src) in recording_starts.values())
     baseline_camera = [
-        cam for cam, (start, _) in recording_starts.items()
+        cam for cam, (start, _src) in recording_starts.items()
         if start == earliest_start
     ][0]
-    
+
     log.info(f"[align] Baseline camera (earliest): {baseline_camera}")
-    log.info(f"[align] Baseline start time: {earliest_start.isoformat()}")
-    log.info("")
-    
-    # Compute offsets relative to baseline
-    camera_offsets: Dict[str, float] = {}
-    
-    for camera_name, (start_time, source_file) in recording_starts.items():
-        # How many seconds AFTER baseline this camera started
+
+    for camera_name, (start_time, _) in recording_starts.items():
         offset_s = (start_time - earliest_start).total_seconds()
-        camera_offsets[camera_name] = round(offset_s, 3)
-        
         if camera_name == baseline_camera:
             log.info(f"[align] {camera_name:15s}: 0.000s (baseline)")
         else:
             log.info(
-                f"[align] {camera_name:15s}: +{offset_s:7.3f}s "
-                f"(starts {abs(offset_s):.3f}s {'after' if offset_s > 0 else 'before'} baseline)"
+                f"[align] {camera_name:15s}: {offset_s:+7.3f}s "
+                f"(starts {abs(offset_s):.3f}s after baseline)"
             )
-        
-        # Sanity check
-        if abs(offset_s) > SANITY_THRESHOLD_S:
-            log.warning(
-                f"[align] ⚠️ WARNING: {camera_name} offset is very large ({offset_s:.1f}s)"
-            )
-            log.warning(
-                f"[align]           This might indicate a problem with timestamps"
-            )
-    
-    # =========================================================================
-    # STAGE 3: GPX Sanity Checks (Optional)
-    # =========================================================================
-    report_progress(4, 6, "Performing GPX sanity checks...")
-    
+
+    # ────────────────────────────────────────────────────────────
+    # GPX sanity checks
+    # ────────────────────────────────────────────────────────────
+    report_progress(4, 4, "GPX sanity checks...")
     gpx_start = _get_gpx_start_time()
-    
     if gpx_start is not None:
         log.info("")
-        log.info("STAGE 3: GPX Sanity Checks")
+        log.info("GPX Timing:")
         log.info("-" * 70)
         log.info(f"[align] GPX start time: {gpx_start.isoformat()}")
-        log.info("")
-        
-        for camera_name, (camera_start, _) in recording_starts.items():
+        for camera_name, (camera_start, _src) in recording_starts.items():
             delta_vs_gpx = (camera_start - gpx_start).total_seconds()
-            
-            if abs(delta_vs_gpx) < 1.0:
-                status = "✓ aligned"
-            elif delta_vs_gpx > 0:
-                status = f"starts {delta_vs_gpx:.1f}s after GPX"
-            else:
-                status = f"starts {abs(delta_vs_gpx):.1f}s before GPX"
-            
-            log.info(f"[align] {camera_name:15s} vs GPX: {delta_vs_gpx:+8.3f}s ({status})")
-            
-            # Additional warning for concerning offsets
-            if abs(delta_vs_gpx) > SANITY_THRESHOLD_S:
-                log.warning(
-                    f"[align] ⚠️ {camera_name} is very far from GPX start "
-                    f"({abs(delta_vs_gpx):.0f}s)"
-                )
+            status = (
+                "✓ aligned" if abs(delta_vs_gpx) < 1.0
+                else f"starts {delta_vs_gpx:.1f}s "
+                     f"{'after' if delta_vs_gpx > 0 else 'before'} GPX"
+            )
+            log.info(
+                f"[align] {camera_name:15s} vs GPX: {delta_vs_gpx:+8.3f}s ({status})"
+            )
     else:
-        log.info("")
-        log.info("STAGE 3: GPX Sanity Checks")
-        log.info("-" * 70)
-        log.info("[align] No GPX data available - skipping sanity checks")
-    
-    # =========================================================================
-    # Persist & Apply Offsets
-    # =========================================================================
-    report_progress(5, 6, "Saving camera offsets...")
-    
-    if CFG.USE_CAMERA_OFFSETS:
-        offsets_file = _mk(camera_offsets_path())
-        with offsets_file.open("w") as f:
-            json.dump(camera_offsets, f, indent=2, sort_keys=True)
+        log.info("[align] No GPX data available - skipping GPX checks")
 
-        log.info("")
-        log.info("=" * 70)
-        log.info(f"[align] ✓ Offsets saved to: {offsets_file}")
-        log.info("=" * 70)
-
-        # Auto-apply to config for this pipeline run
-        CFG.CAMERA_TIME_OFFSETS.update(camera_offsets)
-        log.info("[align] Offsets applied to config for current pipeline run")
-    else:
-        log.info("[align] USE_CAMERA_OFFSETS is False – skipping write/apply of camera offsets")
-    
-    report_progress(6, 6, "Alignment complete")
-    
-    return camera_offsets
+    log.info("=" * 70)
 
 

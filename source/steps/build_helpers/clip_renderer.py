@@ -127,45 +127,59 @@ class ClipRenderer:
         camera_role: str
     ) -> Optional[float]:
         """
-        Compute extraction start time for a single camera using TimeModel.
+        Compute extraction start time for a single camera.
 
-        Args:
-            row: CSV row containing abs_time_epoch and adjusted_start_time
-            clip_idx: Clip number (for logging)
-            camera_role: "main" or "pip" (for logging)
+        Uses:
+        - abs_time_epoch: world time of the selected moment
+        - clip_start_epoch: real start time of this source clip (from extract)
+        - duration_s: clip duration for bounds checking
 
         Returns:
-            t_start in seconds, or None if calculation fails
+        t_start (float): seconds into the clip to begin extraction,
+        or None if invalid.
         """
-        # Use TimeModel to encapsulate time calculations
-        tm = TimeModel.from_row(row)
-        if tm is None:
+        try:
+            abs_epoch = float(row.get("abs_time_epoch") or 0.0)
+            clip_start_epoch = float(row.get("clip_start_epoch") or 0.0)
+            duration_s = float(row.get("duration_s") or 0.0)
+        except (ValueError, TypeError) as e:
             log.error(
-                f"[clip] Failed to create TimeModel for {camera_role} camera "
-                f"in clip {clip_idx} ({row.get('source')})"
+                f"[clip] Invalid time fields for {camera_role} camera in clip {clip_idx}: {e}"
             )
             return None
 
-        # Check for negative offset (misalignment)
-        if tm.offset_in_clip < 0:
+        if abs_epoch == 0.0 or clip_start_epoch == 0.0:
+            log.error(
+                f"[clip] Missing abs_time_epoch or clip_start_epoch for "
+                f"{camera_role} camera in clip {clip_idx}"
+            )
+            return None
+
+        # Offset of the desired moment inside the clip
+        offset_in_clip = abs_epoch - clip_start_epoch
+
+        if offset_in_clip < 0:
             log.warning(
-                f"[clip] Negative offset_in_clip ({tm.offset_in_clip:.3f}s) "
-                f"for {camera_role} camera in clip {clip_idx:04d} ({row.get('source')})"
+                f"[clip] Negative offset_in_clip ({offset_in_clip:.3f}s) "
+                f"for {camera_role} camera in clip {clip_idx:04d} "
+                f"({row.get('source')})"
             )
 
-        # Compute t_start with pre-roll
-        t_start = tm.t_start(CFG.CLIP_PRE_ROLL_S)
+        # Apply pre-roll
+        t_start = max(0.0, offset_in_clip - CFG.CLIP_PRE_ROLL_S)
 
-        # Validate seek position against clip duration
-        if tm.duration_s > 0 and t_start >= tm.duration_s:
+        # Bounds check
+        if duration_s > 0 and t_start >= duration_s:
             log.error(
                 f"[clip] t_start={t_start:.3f}s beyond clip duration "
-                f"{tm.duration_s:.3f}s for {camera_role} camera "
+                f"{duration_s:.3f}s for {camera_role} camera "
                 f"({row.get('source')}) in clip_idx={clip_idx}"
             )
             return None
 
         return t_start
+
+
 
     def _build_ffmpeg_inputs_and_filters(
         self,

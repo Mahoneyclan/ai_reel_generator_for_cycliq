@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QPushButton, QHBoxLayout, QLabel, QSizePolicy, QFileDialog, QMessageBox
 )
 
-from ..utils.persistent_config import save_persistent_config, load_persistent_config, clear_persistent_config
+from ..utils.persistent_config import save_persistent_config
 from ..config import DEFAULT_CONFIG as CFG
 
 FIELD_MIN_WIDTH = 220
@@ -56,7 +56,7 @@ class GeneralSettingsWindow(QDialog):
         self.paths_tab, self.paths_form = self._make_tab("Paths")
         self.video_tab, self.video_form = self._make_tab("Video Settings")
         self.m1_tab, self.m1_form = self._make_tab("M1 Settings")
-        self.camera_tab, self.camera_form = self._make_tab("Camera Offsets")
+        self.camera_tab, self.camera_form = self._make_tab("Camera Timing")
         self.detect_tab, self.detect_form = self._make_tab("Detection")
 
         # Populate tabs
@@ -250,37 +250,38 @@ class GeneralSettingsWindow(QDialog):
             pass
 
     def _create_camera_offsets_section(self):
-        """Camera creation_time offset settings."""
-        title = QLabel("Camera & GPX Alignment")
+        """Global per-camera metadata correction (KNOWN_OFFSETS)."""
+        title = QLabel("Camera Metadata Correction (KNOWN_OFFSETS)")
         title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
         self.camera_form.addRow(title)
 
         description = QLabel(
-            "Seconds added to video duration when calculating recording start time.\n"
-            "Different cameras record creation_time at different points relative to recording end."
+            "Corrects per-camera metadata bias in creation_time.\n"
+            "Cycliq cameras write creation_time at the end of the clip, but each model "
+            "finalizes the file with a slightly different delay.\n"
+            "These values are global per camera model and do not change per ride."
         )
         description.setWordWrap(True)
         description.setStyleSheet("font-size: 11px; color: #666; padding: 2px 0 10px 0;")
         self.camera_form.addRow(description)
 
-        # Create spinbox for each known camera
-        for camera_name, offset_val in CFG.KNOWN_OFFSETS.items():
-            widget = _fix_size(QDoubleSpinBox())
-            widget.setRange(-10.0, 10.0)
-            widget.setSingleStep(0.5)
-            widget.setDecimals(1)
-            widget.setValue(float(offset_val))
-            widget.setToolTip(f"Creation time offset for {camera_name} camera (seconds)")
-            self.camera_form.addRow(f"{camera_name} Offset (s):", widget)
-            self.known_offsets_spinboxes[camera_name] = widget
+        # Create spinboxes for each known offset entry
+        self.known_offsets_spinboxes: Dict[str, QDoubleSpinBox] = {}
 
-        # GPX tolerance
-        self.gpx_tolerance = _fix_size(QDoubleSpinBox())
-        self.gpx_tolerance.setRange(0, 10)
-        self.gpx_tolerance.setSingleStep(0.5)
-        self.gpx_tolerance.setValue(CFG.GPX_TOLERANCE)
-        self.gpx_tolerance.setToolTip("Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.")
-        self.camera_form.addRow("GPX Tolerance (s):", self.gpx_tolerance)
+        for camera_name, offset_val in CFG.KNOWN_OFFSETS.items():
+            spin = _fix_size(QDoubleSpinBox())
+            spin.setRange(-10.0, 10.0)
+            spin.setSingleStep(0.1)
+            spin.setDecimals(2)
+            spin.setValue(float(offset_val))
+            spin.setToolTip(
+                f"Global metadata correction for {camera_name}.\n"
+                "Applied when inferring the real recording start time from creation_time.\n"
+                "Units: seconds. Positive = creation_time is later than true end."
+            )
+            self.camera_form.addRow(f"{camera_name} creation-time correction (s):", spin)
+            self.known_offsets_spinboxes[camera_name] = spin
+
 
     def _create_detection_section(self):
         """Detection and sampling settings."""
@@ -300,6 +301,15 @@ class GeneralSettingsWindow(QDialog):
         self.yolo_min_conf.setValue(CFG.YOLO_MIN_CONFIDENCE)
         self.yolo_min_conf.setToolTip("YOLO minimum confidence threshold for detections.")
         self.detect_form.addRow("YOLO Min Confidence:", self.yolo_min_conf)
+
+        # GPX tolerance (seconds)
+        self.gpx_tolerance = _fix_size(QDoubleSpinBox())
+        self.gpx_tolerance.setRange(0.0, 5.0)
+        self.gpx_tolerance.setSingleStep(0.1)
+        self.gpx_tolerance.setValue(CFG.GPX_TOLERANCE)
+        self.gpx_tolerance.setToolTip("Maximum allowed time difference (seconds) when matching frames to GPX telemetry.")
+        self.detect_form.addRow("GPX Match Tolerance (s):", self.gpx_tolerance)
+
 
         self.yolo_image_size = _fix_size(QSpinBox())
         self.yolo_image_size.setRange(320, 1280)
@@ -407,22 +417,3 @@ class GeneralSettingsWindow(QDialog):
 
         QMessageBox.information(self, "Saved", "General settings saved.")
         self.accept()
-
-    def _reset_all_preferences(self):
-        reply = QMessageBox.question(
-            self,
-            "Reset All Preferences",
-            "This will reset ALL preferences to their default values.\n\n"
-            "This action cannot be undone. Continue?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            clear_persistent_config()
-            QMessageBox.information(
-                self,
-                "Preferences Reset",
-                "All preferences have been reset to defaults.\n\n"
-                "Please restart the application for changes to take effect."
-            )
-            self.reject()

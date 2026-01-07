@@ -177,26 +177,14 @@ class Config:
     CAMERA_CREATION_TIME_TZ = timezone(timedelta(hours=10))
     CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z: bool = True
 
-    # Camera-to-camera offsets (computed in align.py and loaded in extract.py)
-    CAMERA_TIME_OFFSETS: dict = field(default_factory=lambda: {
-        "Fly12Sport": 0.0,
-        "Fly6Pro": 0.0,
-    })
-
     # Known creation_time offsets per camera model (seconds to add to duration)
-    # Different Cycliq cameras record creation_time at different points relative to recording end
-    # Testing showed both cameras have creation_time at exactly end of recording
+    # Different Cycliq cameras may record creation_time at different points relative to recording end
     KNOWN_OFFSETS: dict = field(default_factory=lambda: _get_config_value(
         'KNOWN_OFFSETS', {
-            "Fly12Sport": 0.0,  # creation_time is exactly at end
-            "Fly6Pro": 0.0,     # creation_time is exactly at end
+            "Fly12Sport": 0.0,
+            "Fly6Pro": 0.0,
         }
     ))
-
-    # Whether to load and apply camera offsets from camera_offsets.json
-    # DISABLED: The align step couples with KNOWN_OFFSETS causing confusing interactions.
-    # Use KNOWN_OFFSETS only for camera timing adjustments.
-    USE_CAMERA_OFFSETS: bool = False
 
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
     GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))

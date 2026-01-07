@@ -159,28 +159,20 @@ python run_gui.py
 # Outputs: flatten.csv (gpx_epoch, lat, lon, elevation, speed, etc.)
 ```
 
-#### 2. **Align** - Camera Synchronization
+#### 2. **Align** - Camera Diagnostics
 ```bash
-# Probes video metadata to determine recording start times
-# Handles Cycliq-specific timing quirks:
-#   - Fly12Sport: creation_time = end + 2s
-#   - Fly6Pro: creation_time = exact end
-# Outputs: camera_offsets.json
-```
-
-**Example output:**
-```json
-{
-  "Fly6Pro": 0.0,
-  "Fly12Sport": 11.0
-}
+# Probes video metadata to log recording start times
+# Logs timing differences between cameras
+# Compares camera times to GPX timeline
+# Outputs: Diagnostic logs only (informational)
 ```
 
 #### 3. **Extract** - Frame Metadata Generation
 ```bash
-# Samples frames at 5-second intervals
-# Applies camera offsets for temporal alignment
-# Filters frames before GPX start time
+# Uses GPX-anchored global sampling grid
+# Grid: gpx_start + 0, gpx_start + 5s, gpx_start + 10s, ...
+# Each clip samples at grid points within its recording window
+# All cameras get identical abs_time_epoch for same grid point
 # Outputs: extract.csv (frame_number, abs_time_epoch, video_path, etc.)
 ```
 
@@ -285,7 +277,6 @@ Projects are stored in `PROJECTS_ROOT/{ride_name}/`:
 ├── ride.gpx               # Input: GPS track
 ├── working/               # Intermediate CSVs
 │   ├── flatten.csv
-│   ├── camera_offsets.json
 │   ├── extract.csv
 │   ├── enrich.csv
 │   └── select.csv
@@ -343,19 +334,25 @@ YOLO_IMAGE_SIZE = 320  # Faster than 640 (default)
 
 ### Time Model
 
-The pipeline uses a unified time model across all stages:
+The pipeline uses a GPX-anchored time model for camera alignment:
 
 ```
-real_start_epoch = creation_time_utc - (duration + camera_offset)
-abs_time_epoch = real_start_epoch + seconds_into_clip
-session_ts_s = abs_time_epoch - global_session_start_epoch
+# GPX defines the ride timeline
+gpx_start_epoch, gpx_end_epoch = from flatten.csv
+
+# Global sampling grid anchored to GPX
+grid_points = [gpx_start + N * interval for N in 0, 1, 2, ...]
+
+# Each clip samples at grid points within its recording window
+for grid_point in grid_points:
+    if clip_start <= grid_point < clip_end:
+        abs_time_epoch = grid_point  # Same for all cameras at this moment
 ```
 
-Where:
-- `creation_time_utc`: From MP4 metadata (after UTC bug fix)
-- `camera_offset`: Per-camera creation_time bias (Fly12Sport: 2s, Fly6Pro: 0s)
-- `global_session_start_epoch`: Earliest aligned camera start time
-- `session_ts_s`: Used for partner matching and GPX lookups
+This ensures:
+- All cameras sampling at the same real-world moment get identical `abs_time_epoch`
+- Frames pair correctly via `moment_id = round(abs_time_epoch)`
+- GPX data matches directly by timestamp
 
 ### Partner Matching
 

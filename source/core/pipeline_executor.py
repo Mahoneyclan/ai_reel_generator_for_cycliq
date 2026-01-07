@@ -57,10 +57,10 @@ class PipelineExecutor:
             # GPX + flatten
             "flatten": [],  # root of the telemetry timeline
 
-            # Camera alignment requires a flattened GPX timeline
+            # Camera alignment (diagnostics only)
             "align": [flatten_path()],
 
-            # Extract requires GPX timeline + offsets
+            # Extract requires GPX timeline (uses GPX-anchored sampling grid)
             "extract": [flatten_path()],
 
             # Analyze requires extracted frame metadata

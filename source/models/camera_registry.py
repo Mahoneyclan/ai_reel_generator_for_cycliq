@@ -7,7 +7,6 @@ Consolidates scattered camera-related logic:
 - Alias handling (Fly12S → Fly12Sport)
 - KNOWN_OFFSETS lookup (creation_time bias per camera)
 - CAMERA_WEIGHTS lookup (scoring weights)
-- CAMERA_TIME_OFFSETS lookup (alignment offsets)
 
 Usage:
     from source.models import CameraRegistry
@@ -18,7 +17,7 @@ Usage:
     camera = registry.normalize("Fly12S")  # Returns "Fly12Sport"
 
     # Get camera properties
-    offset = registry.get_known_offset("Fly12Sport")  # Returns 2.0
+    offset = registry.get_known_offset("Fly12Sport")  # Returns 0.0
     weight = registry.get_weight("Fly6Pro")  # Returns 1.0
 """
 
@@ -70,9 +69,6 @@ class CameraRegistry:
     # Scoring weights per camera
     camera_weights: Dict[str, float] = field(default_factory=dict)
 
-    # Camera-to-camera alignment offsets (computed by align.py)
-    time_offsets: Dict[str, float] = field(default_factory=dict)
-
     def __post_init__(self):
         """Initialize with config defaults if not provided."""
         # Lazy import to avoid circular dependency
@@ -83,9 +79,6 @@ class CameraRegistry:
 
         if not self.camera_weights:
             self.camera_weights = dict(CFG.CAMERA_WEIGHTS)
-
-        if not self.time_offsets:
-            self.time_offsets = dict(CFG.CAMERA_TIME_OFFSETS)
 
     # -------------------------------------------------------------------------
     # Validation & Normalization
@@ -178,35 +171,6 @@ class CameraRegistry:
         """
         normalized = self.normalize(camera_name)
         return self.camera_weights.get(normalized, default)
-
-    def get_time_offset(self, camera_name: str, default: float = 0.0) -> float:
-        """
-        Get camera-to-camera alignment offset.
-
-        Computed by align.py based on actual recording start times.
-
-        Args:
-            camera_name: Camera name (will be normalized)
-            default: Default offset if camera not found
-
-        Returns:
-            Offset in seconds relative to baseline camera
-        """
-        normalized = self.normalize(camera_name)
-        return self.time_offsets.get(normalized, default)
-
-    def set_time_offset(self, camera_name: str, offset: float) -> None:
-        """
-        Set camera-to-camera alignment offset.
-
-        Called by align.py after computing offsets from video metadata.
-
-        Args:
-            camera_name: Camera name (will be normalized)
-            offset: Offset in seconds
-        """
-        normalized = self.normalize(camera_name)
-        self.time_offsets[normalized] = offset
 
     # -------------------------------------------------------------------------
     # Camera Identification

@@ -31,36 +31,29 @@ log = setup_logger("steps.analyze")
 
 def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
     """
-    Assign moment_id based solely on abs_time_epoch, using a fixed global
-    reference (epoch=0) so that camera start-time differences do not shift
-    bucket boundaries.
+    Assign moment_id using abs_time_epoch from extract.py.
 
-    moment_id = floor(abs_time_epoch / sample_interval)
+    extract.py uses a GPX-anchored sampling grid, so all cameras
+    recording at the same real-world moment get identical abs_time_epoch.
+
+    moment_id = round(abs_time_epoch) provides 1-second bucketing.
     """
-
     if not rows:
         return rows
 
-    sample_interval = float(CFG.EXTRACT_INTERVAL_SECONDS)
-    if sample_interval <= 0:
-        sample_interval = 1.0
-
-    for idx, row in enumerate(rows):
+    for row in rows:
         try:
-            epoch = float(row.get("abs_time_epoch", 0) or 0.0)
-        except (ValueError, TypeError) as e:
-            log.warning(
-                f"[analyze] Invalid epoch at row {idx}: "
-                f"value={row.get('abs_time_epoch')!r}, defaulting to 0"
-            )
-            epoch = 0.0
+            abs_epoch = float(row.get("abs_time_epoch", 0) or 0.0)
+        except Exception:
+            abs_epoch = 0.0
 
-        # Use global epoch reference (0), not first_epoch
-        mid = int(epoch // sample_interval)
-
-        row["moment_id"] = str(mid)
+        row["moment_id"] = str(int(round(abs_epoch)))
 
     return rows
+
+
+
+
 
 
 

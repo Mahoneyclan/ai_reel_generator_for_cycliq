@@ -84,9 +84,9 @@ class PipelinePanel(QWidget):
         # Align & Extract: align cameras and extract frame metadata
         self.btn_prepare = self._create_button(
             "Align & Extract",
-            "Align camera clocks using GPX and generate frame metadata.\n"
+            "Log camera timing diagnostics and generate frame metadata using GPX-anchored grid.\n"
             "Requires: flatten.csv\n"
-            "Produces: camera_offsets.json, extract.csv",
+            "Produces: extract.csv",
             self.prepare_clicked
         )
         layout.addWidget(self.btn_prepare)
