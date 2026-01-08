@@ -52,11 +52,6 @@ def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
     return rows
 
 
-
-
-
-
-
 class FrameAnalyzer:
     """
     Combined frame analyzer using modular components.

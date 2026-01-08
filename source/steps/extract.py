@@ -80,21 +80,23 @@ def _get_gpx_time_range() -> Tuple[float, float]:
 def _extract_video_metadata(
     video_path: Path,
     sampling_interval_s: int,
+    grid_start_epoch: float,
+    grid_end_epoch: float,
     gpx_start_epoch: float,
-    gpx_end_epoch: float,
 ) -> List[Dict[str, str]]:
     """
-    Generate frame metadata for one video clip using GPX-anchored global grid.
+    Generate frame metadata for one video clip using global sampling grid.
 
     Time model:
-      - GPX defines the ride timeline (gpx_start_epoch to gpx_end_epoch)
-      - Global grid: sample at gpx_start_epoch + N * interval
+      - Grid extends beyond GPX to capture pre/post ride footage
+      - Global grid: sample at grid_start + N * interval
       - Each clip samples at grid points that fall within its recording window
       - abs_time_epoch = the grid point (real-world time)
+      - session_ts_s = time relative to GPX start (can be negative for pre-ride)
       - All cameras sampling at the same grid point get the same abs_time_epoch
     """
-    if gpx_start_epoch <= 0 or gpx_end_epoch <= 0:
-        log.warning(f"[extract] {video_path.name}: No GPX time bounds - skipping")
+    if grid_start_epoch <= 0 or grid_end_epoch <= 0:
+        log.warning(f"[extract] {video_path.name}: No grid time bounds - skipping")
         return []
 
     camera_name, clip_num, clip_id = parse_camera_and_clip(video_path)
@@ -122,12 +124,12 @@ def _extract_video_metadata(
         f"fps={video_fps:.2f} | start={real_start_utc.isoformat()}"
     )
 
-    # Generate global grid points anchored to GPX start
-    # Grid: gpx_start + 0, gpx_start + interval, gpx_start + 2*interval, ...
+    # Generate global grid points (extended beyond GPX for pre/post ride)
+    # Grid: grid_start + 0, grid_start + interval, grid_start + 2*interval, ...
     rows: List[Dict[str, str]] = []
 
-    grid_point = gpx_start_epoch
-    while grid_point <= gpx_end_epoch:
+    grid_point = grid_start_epoch
+    while grid_point <= grid_end_epoch:
         # Check if this grid point falls within this clip's recording window
         if clip_start_epoch <= grid_point < clip_end_epoch:
             # Compute position within clip
@@ -258,19 +260,28 @@ def run() -> Path:
         videos = test_videos
     
     # =========================================================================
-    # Load GPX time bounds (defines the ride timeline)
+    # Load GPX time bounds and extend grid for pre/post ride video
     # =========================================================================
     report_progress(2, 5, "Loading GPX time bounds...")
     gpx_start_epoch, gpx_end_epoch = _get_gpx_time_range()
     sampling_interval_s = int(CFG.EXTRACT_INTERVAL_SECONDS)
 
+    # Extend grid by 10 minutes before/after GPX to capture pre/post ride footage
+    GRID_EXTENSION_S = 600.0  # 10 minutes
+
     if gpx_start_epoch > 0 and gpx_end_epoch > 0:
         gpx_start_dt = datetime.fromtimestamp(gpx_start_epoch, tz=timezone.utc)
         gpx_end_dt = datetime.fromtimestamp(gpx_end_epoch, tz=timezone.utc)
         duration_min = (gpx_end_epoch - gpx_start_epoch) / 60
+
+        # Extended grid bounds
+        grid_start_epoch = gpx_start_epoch - GRID_EXTENSION_S
+        grid_end_epoch = gpx_end_epoch + GRID_EXTENSION_S
+
         log.info(f"[extract] GPX timeline: {duration_min:.1f} min")
-        log.info(f"[extract]   Start: {gpx_start_dt.isoformat()}")
-        log.info(f"[extract]   End:   {gpx_end_dt.isoformat()}")
+        log.info(f"[extract]   GPX start: {gpx_start_dt.isoformat()}")
+        log.info(f"[extract]   GPX end:   {gpx_end_dt.isoformat()}")
+        log.info(f"[extract]   Grid extended: +/- {GRID_EXTENSION_S/60:.0f} min")
         log.info(f"[extract]   Grid interval: {sampling_interval_s}s")
     else:
         log.error("[extract] No GPX data - cannot create timeline grid")
@@ -300,8 +311,9 @@ def run() -> Path:
             rows = _extract_video_metadata(
                 video_path,
                 sampling_interval_s,
+                grid_start_epoch,
+                grid_end_epoch,
                 gpx_start_epoch,
-                gpx_end_epoch,
             )
             all_rows.extend(rows)
         except Exception as e:

@@ -20,7 +20,6 @@ from typing import Dict, List, Optional, Tuple
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
-from ...models import TimeModel
 from ...io_paths import _mk
 from .gauge_renderer import GaugeRenderer
 
