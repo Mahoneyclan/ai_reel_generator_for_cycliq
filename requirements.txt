@@ -25,4 +25,4 @@ tqdm>=4.65.0
 requests>=2.31.0
 
 # Garmin Connect Integration
-garminconnect==0.2.18
+garminconnect==0.2.8
