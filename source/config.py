@@ -32,8 +32,8 @@ DEFAULT_YOLO_CLASS_WEIGHTS = {
     "car": 1.0,
     "motorcycle": 1.0,
     "truck": 1.0,
-    "traffic light": 1.0,
-    "stop sign": 1.0,
+    "traffic light": 2.0,
+    "stop sign": 2.0,
 }
 
 @dataclass
@@ -65,10 +65,10 @@ class Config:
     )
 
     HIGHLIGHT_TARGET_DURATION_M: float = field(
-        default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_M', 3.0)
+        default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_M', 4.0)
     )
     CLIP_PRE_ROLL_S: float = field(default_factory=lambda: _get_config_value('CLIP_PRE_ROLL_S', 0.5))
-    CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 3.5))
+    CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 4.5))
 
     MIN_GAP_BETWEEN_CLIPS: float = field(
         default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 30.0)
@@ -128,11 +128,11 @@ class Config:
         default_factory=lambda: _get_config_value('YOLO_MIN_CONFIDENCE', 0.10)
     )
     YOLO_BATCH_SIZE: int = field(default_factory=lambda: _get_config_value('YOLO_BATCH_SIZE', 4))
-    # MIN_SPEED_PENALTY removed; speed is normalized without an explicit penalty
+
 
     # --- Candidate selection ---
     CANDIDATE_FRACTION: float = field(
-        default_factory=lambda: _get_config_value('CANDIDATE_FRACTION', 2.0)
+        default_factory=lambda: _get_config_value('CANDIDATE_FRACTION', 2.5)
     )
     REQUIRE_GPS_FOR_SELECTION: bool = field(
         default_factory=lambda: _get_config_value('REQUIRE_GPS_FOR_SELECTION', False)
@@ -140,11 +140,11 @@ class Config:
 
     # --- Zone filtering (additional clips beyond target) ---
     START_ZONE_DURATION_M: float = field(
-        default_factory=lambda: _get_config_value('START_ZONE_DURATION_M', 20.0)
+        default_factory=lambda: _get_config_value('START_ZONE_DURATION_M', 15.0)
     )
     # Max additional clips from start zone (first N minutes of ride)
     MAX_START_ZONE_CLIPS: int = field(
-        default_factory=lambda: int(_get_config_value('MAX_START_ZONE_CLIPS', 2))
+        default_factory=lambda: int(_get_config_value('MAX_START_ZONE_CLIPS', 3))
     )
 
     END_ZONE_DURATION_M: float = field(
@@ -152,18 +152,18 @@ class Config:
     )
     # Max additional clips from end zone (last N minutes of ride)
     MAX_END_ZONE_CLIPS: int = field(
-        default_factory=lambda: int(_get_config_value('MAX_END_ZONE_CLIPS', 2))
+        default_factory=lambda: int(_get_config_value('MAX_END_ZONE_CLIPS', 3))
     )
 
     # --- Scoring weights ---
     CAMERA_WEIGHTS: dict = field(default_factory=lambda: {
-        "Fly12Sport": 1.0,
+        "Fly12Sport": 1.5,
         "Fly6Pro": 1.0,
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
-        "detect_score": 0.20,
+        "detect_score": 0.10,
         "scene_boost": 0.30,
-        "speed_kmh": 0.20,
+        "speed_kmh": 0.10,
         "gradient": 0.05,
         "bbox_area": 0.10,
         "segment_boost": 0.15,  # Strava PR/top-3 segment efforts
