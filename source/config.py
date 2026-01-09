@@ -43,11 +43,11 @@ class Config:
 
     # --- Project paths ---
     INPUT_BASE_DIR: Path = field(
-        default_factory=lambda: Path(_get_config_value('INPUT_BASE_DIR', '/Volumes/GDrive/Fly'))
+        default_factory=lambda: Path(_get_config_value('INPUT_BASE_DIR', '/Volumes/AData/Fly_Raw'))
     )
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
     PROJECTS_ROOT: Path = field(
-        default_factory=lambda: Path(_get_config_value('PROJECTS_ROOT', '/Volumes/GDrive/Fly_Projects'))
+        default_factory=lambda: Path(_get_config_value('PROJECTS_ROOT', '/Volumes/AData/Fly_Projects'))
     )
 
     # --- Core pipeline settings ---
@@ -71,7 +71,7 @@ class Config:
     CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 4.5))
 
     MIN_GAP_BETWEEN_CLIPS: float = field(
-        default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 30.0)
+        default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 15.0)
     )
 
     # --- Scene-aware selection ---
