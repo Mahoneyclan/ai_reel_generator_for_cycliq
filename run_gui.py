@@ -5,10 +5,15 @@ Run with: python3 run_gui.py
 """
 
 import os
+import warnings
+
 # --- CRITICAL: must be FIRST, before any other imports ---
 os.environ['MPLBACKEND'] = 'Agg'   # Force matplotlib backend
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['QT_MAC_WANTS_LAYER'] = '1'
+
+# Suppress harmless joblib/contextily cache collision warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='joblib')
 # ---------------------------------------------------------
 
 import sys

@@ -41,61 +41,67 @@ def setup_logger(name: str, level: int = logging.DEBUG) -> logging.Logger:
 
 def reconfigure_loggers() -> None:
     """
-    Reconfigure all active loggers to write to project log directory.
-    
+    Reconfigure application loggers to write to project log directory.
+
     This is called after CFG.RIDE_FOLDER is updated to create log files in the
     selected project folder, not in the project root.
-    
+
+    Only creates log files for our own application modules, not third-party libraries.
+
     Process:
     1. Remove all existing file handlers from all loggers
-    2. Add new file handlers pointing to current project's log directory
+    2. Add new file handlers for APP loggers only
     3. Preserve any GUI/stream handlers that were added separately
-    
-    Existing log files are preserved (append mode) rather than overwritten.
     """
     from ..io_paths import logs_dir, _mk
-    
+
     log_dir = _mk(logs_dir())
-    
+
+    # Only create log files for our own modules (not third-party libraries)
+    APP_LOG_PREFIXES = (
+        'steps', 'gui', 'utils', 'core', 'models',
+        'strava', 'source', 'io_paths', 'config'
+    )
+
     # Get all active loggers
     logger_names = list(logging.Logger.manager.loggerDict.keys())
-    
+
     # Also include root logger
     loggers_to_configure = [logging.getLogger(name) for name in logger_names]
     loggers_to_configure.append(logging.getLogger())
-    
+
     for logger in loggers_to_configure:
         # Remove ONLY file handlers, preserve GUI/stream handlers
         handlers_to_remove = [
-            h for h in logger.handlers 
+            h for h in logger.handlers
             if isinstance(h, logging.FileHandler)
         ]
-        
+
         for handler in handlers_to_remove:
             handler.close()
             logger.removeHandler(handler)
-        
-        # Only add file handler if this logger is actually used
-        if logger.name and not logger.name.startswith('matplotlib'):
+
+        # Only add file handler for our app loggers (not third-party)
+        if logger.name and logger.name.startswith(APP_LOG_PREFIXES):
             # Create sanitized filename from logger name
             log_filename = logger.name.replace('.', '_') + ".log.txt"
             log_file = log_dir / log_filename
-            
+
             # Create file handler
             try:
                 fh = logging.FileHandler(log_file, mode="a", encoding="utf-8")
                 fh.setLevel(logging.DEBUG)
-                
+
                 # Detailed format for file logs
                 formatter = logging.Formatter(
                     "%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S"
                 )
                 fh.setFormatter(formatter)
-                
+
                 logger.addHandler(fh)
                 _configured_loggers.add(logger.name)
-                
+
             except Exception as e:
                 # If file handler creation fails, continue without it
                 print(f"Warning: Could not create log file handler for {logger.name}: {e}")

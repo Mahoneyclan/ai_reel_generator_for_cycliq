@@ -31,6 +31,7 @@ DEFAULT_YOLO_CLASS_WEIGHTS = {
     "bicycle": 3.0,
     "car": 1.0,
     "motorcycle": 1.0,
+    "bus": 1.0,
     "truck": 1.0,
     "traffic light": 2.0,
     "stop sign": 2.0,
@@ -100,6 +101,7 @@ class Config:
         "bicycle": 1,
         "car": 2,
         "motorcycle": 3,
+        "bus": 5,
         "truck": 7,
         "traffic light": 9,
         "stop sign": 11
@@ -110,6 +112,7 @@ class Config:
         "bicycle",
         "car",
         "motorcycle",
+        "bus",
         "truck",
         "traffic light",
         "stop sign"
@@ -121,7 +124,7 @@ class Config:
 
     # --- Detection settings ---
     YOLO_DETECT_CLASSES: list = field(
-        default_factory=lambda: _get_config_value('YOLO_DETECT_CLASSES', [1])
+        default_factory=lambda: _get_config_value('YOLO_DETECT_CLASSES', [0, 1, 2, 3, 5, 7, 9, 11])
     )
     YOLO_IMAGE_SIZE: int = field(default_factory=lambda: _get_config_value('YOLO_IMAGE_SIZE', 640))
     YOLO_MIN_CONFIDENCE: float = field(
@@ -304,8 +307,18 @@ def reload_config() -> None:
 
     Updates the existing DEFAULT_CONFIG object rather than replacing it,
     so all modules that imported it as CFG will see the new values.
+
+    Preserves runtime-set values (RIDE_FOLDER, SOURCE_FOLDER, INPUT_BASE_DIR)
+    that are set when a project is selected.
     """
     global _PERSISTENT_CONFIG
+
+    # Preserve runtime-set project values before reload
+    preserved = {
+        'RIDE_FOLDER': DEFAULT_CONFIG.RIDE_FOLDER,
+        'SOURCE_FOLDER': DEFAULT_CONFIG.SOURCE_FOLDER,
+        'INPUT_BASE_DIR': DEFAULT_CONFIG.INPUT_BASE_DIR,
+    }
 
     # Reload from file
     try:
@@ -324,3 +337,8 @@ def reload_config() -> None:
                 setattr(DEFAULT_CONFIG, f.name, getattr(new_config, f.name))
             except AttributeError:
                 pass  # Skip properties and computed fields
+
+    # Restore preserved runtime values
+    for key, value in preserved.items():
+        if value:  # Only restore if it was set
+            setattr(DEFAULT_CONFIG, key, value)
