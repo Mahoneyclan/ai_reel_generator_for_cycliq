@@ -11,6 +11,7 @@ from typing import List, Tuple
 from PIL import Image
 
 from ...utils.log import setup_logger
+from ...config import DEFAULT_CONFIG as CFG
 
 log = setup_logger("steps.splash_helpers.animation_renderer")
 
@@ -204,7 +205,8 @@ class AnimationRenderer:
             frame_path = temp_dir / f"flip_{idx:04d}.png"
             img.save(frame_path, quality=95)
         
-        # Encode with FFmpeg
+        # Encode with FFmpeg (hardware accelerated if available)
+        video_codec = "h264_videotoolbox" if CFG.FFMPEG_HWACCEL == "videotoolbox" else "libx264"
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             "-framerate", str(self.fps),
@@ -212,7 +214,7 @@ class AnimationRenderer:
             "-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate=48000",
             "-shortest",
             "-map", "0:v", "-map", "1:a",
-            "-c:v", "libx264", "-b:v", "8M", "-pix_fmt", "yuv420p",
+            "-c:v", video_codec, "-b:v", "8M", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-ar", "48000", "-ac", "2",
             str(output_path)
         ]

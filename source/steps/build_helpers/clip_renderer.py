@@ -284,10 +284,9 @@ class ClipRenderer:
                 )
                 inputs.extend(["-loop", "1", "-t", f"{duration:.3f}", "-i", str(trophy_path)])
                 trophy_idx = len([a for a in inputs if a == "-i"]) - 1
-                # Position: top-left with margin (opposite from minimap)
-                trophy_margin = 30
+                # Position: top-left with same margin as minimap
                 filters.append(
-                    f"{current_stream}[{trophy_idx}:v]overlay={trophy_margin}:{trophy_margin}[vtrophy]"
+                    f"{current_stream}[{trophy_idx}:v]overlay={CFG.MINIMAP_MARGIN}:{CFG.MINIMAP_MARGIN}[vtrophy]"
                 )
                 current_stream = "[vtrophy]"
                 log.debug(f"[clip] Added PR badge for clip {clip_idx}: {segment_name}")
@@ -342,8 +341,14 @@ class ClipRenderer:
         final_stream: str,
         output_path: Path,
     ) -> List[str]:
-        """Build complete ffmpeg encoding command."""
-        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs]
+        """Build complete ffmpeg encoding command with optional hardware acceleration."""
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+
+        # Add hardware acceleration for decoding if configured
+        if CFG.FFMPEG_HWACCEL == "videotoolbox":
+            cmd.extend(["-hwaccel", "videotoolbox"])
+
+        cmd.extend(inputs)
 
         if filters:
             filter_str = ";".join(filters)
@@ -351,10 +356,16 @@ class ClipRenderer:
         else:
             cmd.extend(["-map", "0:v"])
 
+        # Use hardware encoder if available, otherwise fall back to configured codec
+        if CFG.FFMPEG_HWACCEL == "videotoolbox":
+            video_codec = "h264_videotoolbox"
+        else:
+            video_codec = CFG.VIDEO_CODEC
+
         cmd.extend(
             [
                 "-c:v",
-                CFG.VIDEO_CODEC,
+                video_codec,
                 "-b:v",
                 CFG.BITRATE,
                 "-maxrate",

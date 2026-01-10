@@ -127,7 +127,7 @@ class Config:
     YOLO_MIN_CONFIDENCE: float = field(
         default_factory=lambda: _get_config_value('YOLO_MIN_CONFIDENCE', 0.10)
     )
-    YOLO_BATCH_SIZE: int = field(default_factory=lambda: _get_config_value('YOLO_BATCH_SIZE', 4))
+    YOLO_BATCH_SIZE: int = field(default_factory=lambda: _get_config_value('YOLO_BATCH_SIZE', 8))
 
 
     # --- Candidate selection ---
