@@ -105,6 +105,38 @@ class SegmentMatcher:
 
         return None
 
+    def get_segment_info(self, frame_epoch: float) -> Optional[Dict]:
+        """
+        Get full segment info if frame is during an effort.
+
+        Args:
+            frame_epoch: Frame timestamp as Unix epoch
+
+        Returns:
+            Dict with segment details or None:
+            - name: Segment name
+            - distance: Distance in meters
+            - average_grade: Grade percentage
+            - pr_rank: 1 for PR, 2-3 for top efforts
+        """
+        if not self.segments:
+            return None
+
+        for seg in self.segments:
+            start = seg.get("start_epoch", 0)
+            end = seg.get("end_epoch", 0)
+
+            if start <= frame_epoch <= end:
+                return {
+                    "name": seg.get("name", ""),
+                    "distance": seg.get("distance", 0),
+                    "average_grade": seg.get("average_grade", 0),
+                    "pr_rank": seg.get("pr_rank", 0),
+                    "elapsed_time": seg.get("elapsed_time", 0),
+                }
+
+        return None
+
     def get_stats(self) -> Dict:
         """Return segment matching statistics."""
         return {

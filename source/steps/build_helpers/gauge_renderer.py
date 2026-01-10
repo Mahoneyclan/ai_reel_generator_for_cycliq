@@ -18,10 +18,15 @@ log = setup_logger("steps.build_helpers.gauge_renderer")
 
 class GaugeRenderer:
     """Renders telemetry gauges for HUD overlay."""
-    
-    # Expose sizes for layout calculations
-    SPEED_GAUGE_SIZE = gauge_overlay.SPEED_GAUGE_SIZE
-    SMALL_GAUGE_SIZE = gauge_overlay.SMALL_GAUGE_SIZE
+
+    # Expose sizes for layout calculations - read from config
+    @property
+    def SPEED_GAUGE_SIZE(self):
+        return CFG.SPEED_GAUGE_SIZE
+
+    @property
+    def SMALL_GAUGE_SIZE(self):
+        return CFG.SMALL_GAUGE_SIZE
     
     def __init__(self, output_dir: Path, select_csv_path: Path):
         """

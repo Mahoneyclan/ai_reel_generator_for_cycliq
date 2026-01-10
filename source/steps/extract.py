@@ -266,8 +266,8 @@ def run() -> Path:
     gpx_start_epoch, gpx_end_epoch = _get_gpx_time_range()
     sampling_interval_s = int(CFG.EXTRACT_INTERVAL_SECONDS)
 
-    # Extend grid by 10 minutes before/after GPX to capture pre/post ride footage
-    GRID_EXTENSION_S = 600.0  # 10 minutes
+    # Extend grid before/after GPX to capture pre/post ride footage
+    grid_extension_s = CFG.GPX_GRID_EXTENSION_M * 60.0  # Convert minutes to seconds
 
     if gpx_start_epoch > 0 and gpx_end_epoch > 0:
         gpx_start_dt = datetime.fromtimestamp(gpx_start_epoch, tz=timezone.utc)
@@ -275,13 +275,13 @@ def run() -> Path:
         duration_min = (gpx_end_epoch - gpx_start_epoch) / 60
 
         # Extended grid bounds
-        grid_start_epoch = gpx_start_epoch - GRID_EXTENSION_S
-        grid_end_epoch = gpx_end_epoch + GRID_EXTENSION_S
+        grid_start_epoch = gpx_start_epoch - grid_extension_s
+        grid_end_epoch = gpx_end_epoch + grid_extension_s
 
         log.info(f"[extract] GPX timeline: {duration_min:.1f} min")
         log.info(f"[extract]   GPX start: {gpx_start_dt.isoformat()}")
         log.info(f"[extract]   GPX end:   {gpx_end_dt.isoformat()}")
-        log.info(f"[extract]   Grid extended: +/- {GRID_EXTENSION_S/60:.0f} min")
+        log.info(f"[extract]   Grid extended: +/- {CFG.GPX_GRID_EXTENSION_M:.0f} min")
         log.info(f"[extract]   Grid interval: {sampling_interval_s}s")
     else:
         log.error("[extract] No GPX data - cannot create timeline grid")

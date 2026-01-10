@@ -25,6 +25,7 @@ from ..utils.progress_reporter import progress_iter, report_progress
 # Import build helpers
 from .build_helpers import (
     MinimapPrerenderer,
+    ElevationPrerenderer,
     GaugeRenderer,
     ClipRenderer,
     SegmentConcatenator,
@@ -151,6 +152,7 @@ def _render_single_clip(
     moment: Dict,
     idx: int,
     minimap_path: Optional[Path],
+    elevation_path: Optional[Path],
 ) -> Tuple[int, Optional[Path]]:
     """
     Render a single clip (thread-safe for parallel execution).
@@ -161,6 +163,7 @@ def _render_single_clip(
         moment: Moment dict with main/pip rows
         idx: Clip index (1-based)
         minimap_path: Optional path to pre-rendered minimap
+        elevation_path: Optional path to pre-rendered elevation plot
 
     Returns:
         Tuple of (clip_idx, output_path or None if failed)
@@ -174,6 +177,7 @@ def _render_single_clip(
             pip_row=pip_row,
             clip_idx=idx,
             minimap_path=minimap_path,
+            elevation_path=elevation_path,
             gauge_renderer=gauge_renderer,
         )
         return (idx, clip_path)
@@ -229,6 +233,14 @@ def run() -> Path:
     main_rows_for_minimap = [m["main"] for m in recommended_moments]
     minimap_paths = minimap_prerenderer.prerender_all(main_rows_for_minimap)
 
+    # Step 1.5: Pre-render elevation plots (if enabled)
+    elevation_paths: Dict[int, Path] = {}
+    if CFG.SHOW_ELEVATION_PLOT:
+        log.info("[build] Pre-rendering elevation plots...")
+        elevation_dir = _mk(CFG.WORKING_DIR / "elevation_plots")
+        elevation_prerenderer = ElevationPrerenderer(elevation_dir)
+        elevation_paths = elevation_prerenderer.prerender_all(main_rows_for_minimap)
+
     # Step 2: Setup gauge renderer
     log.info("[build] Computing gauge maxes...")
     gauge_renderer = GaugeRenderer(gauge_path, select_path())
@@ -258,6 +270,7 @@ def run() -> Path:
                 moment,
                 idx,
                 minimap_paths.get(idx),
+                elevation_paths.get(idx),
             ): idx
             for idx, moment in enumerate(recommended_moments, start=1)
         }

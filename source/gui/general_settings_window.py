@@ -210,10 +210,10 @@ class GeneralSettingsWindow(QDialog):
         self.video_form.addRow("PiP Margin", self.pip_margin)
 
         self.minimap_scale = _fix_size(QDoubleSpinBox())
-        self.minimap_scale.setRange(0.0, 1.0)
-        self.minimap_scale.setSingleStep(0.05)
-        self.minimap_scale.setValue(CFG.MINIMAP_SCALE_RATIO)
-        self.video_form.addRow("Minimap Scale Ratio", self.minimap_scale)
+        self.minimap_scale.setRange(0.1, 0.5)
+        self.minimap_scale.setSingleStep(0.02)
+        self.minimap_scale.setValue(CFG.MINIMAP_SIZE_RATIO)
+        self.video_form.addRow("Minimap Size (% of video)", self.minimap_scale)
 
         self.minimap_margin = _fix_size(QSpinBox())
         self.minimap_margin.setRange(0, 200)
@@ -357,7 +357,7 @@ class GeneralSettingsWindow(QDialog):
         self.raw_audio_volume.setValue(float(cfg.RAW_AUDIO_VOLUME))
         self.pip_scale.setValue(float(cfg.PIP_SCALE_RATIO))
         self.pip_margin.setValue(int(cfg.PIP_MARGIN))
-        self.minimap_scale.setValue(float(cfg.MINIMAP_SCALE_RATIO))
+        self.minimap_scale.setValue(float(cfg.MINIMAP_SIZE_RATIO))
         self.minimap_margin.setValue(int(cfg.MINIMAP_MARGIN))
 
         self.use_mps.setChecked(bool(cfg.USE_MPS))
@@ -388,7 +388,7 @@ class GeneralSettingsWindow(QDialog):
         overrides['RAW_AUDIO_VOLUME'] = float(self.raw_audio_volume.value())
         overrides['PIP_SCALE_RATIO'] = float(self.pip_scale.value())
         overrides['PIP_MARGIN'] = int(self.pip_margin.value())
-        overrides['MINIMAP_SCALE_RATIO'] = float(self.minimap_scale.value())
+        overrides['MINIMAP_SIZE_RATIO'] = float(self.minimap_scale.value())
         overrides['MINIMAP_MARGIN'] = int(self.minimap_margin.value())
 
         overrides['USE_MPS'] = bool(self.use_mps.isChecked())

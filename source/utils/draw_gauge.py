@@ -15,6 +15,11 @@ def safe_font(size: int):
     except Exception:
         return ImageFont.load_default()
 
+
+def _scale_font_size(base_size: int, gauge_size: int, reference_size: int) -> int:
+    """Scale font size proportionally to gauge size."""
+    return max(8, int(base_size * gauge_size / reference_size))
+
 def _polar(cx, cy, r, ang_deg):
     """Convert polar coordinates to cartesian."""
     a = math.radians(ang_deg)
@@ -66,14 +71,16 @@ def _draw_small_gauge(img, rect, value: float,
                20, red_frac=0.9, two_sided=two_sided)
     _draw_needle(draw, cx, cy, r_outer, ang_val)
 
-    # Fonts
-    title_font = safe_font(9)
-    val_font = safe_font(18)
-    unit_font = safe_font(11)
+    # Fonts - scaled based on gauge size (reference size 120px)
+    gauge_size = min(w, h)
+    title_font = safe_font(_scale_font_size(9, gauge_size, 120))
+    val_font = safe_font(_scale_font_size(18, gauge_size, 120))
+    unit_font = safe_font(_scale_font_size(11, gauge_size, 120))
 
-    # Title centered near top
+    # Title centered near top - scaled offset
+    title_offset = int(8 * gauge_size / 120)
     tw = draw.textlength(title, font=title_font)
-    draw.text((cx - tw // 2, cy + 8), title, fill="black", font=title_font)
+    draw.text((cx - tw // 2, cy + title_offset), title, fill="black", font=title_font)
 
     # Value + unit placement
     val_txt = f"{int(round(value))}"
@@ -82,16 +89,18 @@ def _draw_small_gauge(img, rect, value: float,
     unit_txt = unit
     unit_w = draw.textlength(unit_txt, font=unit_font)
 
+    offset_10 = int(10 * gauge_size / 120)
     if side == "left":
-        vx = cx - r_outer + 10
+        vx = cx - r_outer + offset_10
     elif side == "right":
-        vx = cx + r_outer - val_w - 10
+        vx = cx + r_outer - val_w - offset_10
     else:  # center
         vx = cx - val_w // 2
 
-    vy = cy - 30  # vertical anchor at hub height
+    vy = cy - int(30 * gauge_size / 120)  # vertical anchor at hub height, scaled
+    unit_gap = int(20 * gauge_size / 120)
     draw.text((vx, vy), val_txt, fill="black", font=val_font)
-    draw.text((vx + (val_w - unit_w)//2, vy + 20), unit_txt, fill="black", font=unit_font)
+    draw.text((vx + (val_w - unit_w)//2, vy + unit_gap), unit_txt, fill="black", font=unit_font)
 
 # --- Gauge types ---
 
@@ -100,6 +109,7 @@ def draw_speed_gauge(img, rect, value: float, max_val: float):
     x, y, w, h = rect
     cx, cy = x + w // 2, y + h // 2
     r_outer = min(w, h) // 2 - 6
+    gauge_size = min(w, h)
     draw = ImageDraw.Draw(img)
 
     # Semi-transparent white background (RGBA) - alpha 160 = ~63% opaque
@@ -114,16 +124,18 @@ def draw_speed_gauge(img, rect, value: float, max_val: float):
     ang_val = start_deg + (end_deg - start_deg) * frac_val
     _draw_needle(draw, cx, cy, r_outer, ang_val)
 
-    # Place readout below the needle hub
-    font = safe_font(60)
+    # Place readout below the needle hub - fonts scaled (reference size 240px)
+    val_font = safe_font(_scale_font_size(60, gauge_size, 240))
     txt = f"{int(round(value))}"
-    tw = draw.textlength(txt, font=font)
-    draw.text((cx - tw // 2, cy + 10), txt, fill="black", font=font)
+    tw = draw.textlength(txt, font=val_font)
+    val_offset = int(10 * gauge_size / 240)
+    draw.text((cx - tw // 2, cy + val_offset), txt, fill="black", font=val_font)
 
-    font = safe_font(20)
+    unit_font = safe_font(_scale_font_size(20, gauge_size, 240))
     txt = "km/h"
-    tw = draw.textlength(txt, font=font)
-    draw.text((cx - tw // 2, cy + 70), txt, fill="black", font=font)
+    tw = draw.textlength(txt, font=unit_font)
+    unit_offset = int(70 * gauge_size / 240)
+    draw.text((cx - tw // 2, cy + unit_offset), txt, fill="black", font=unit_font)
 
 def draw_cadence_gauge(img, rect, value, max_val):
     """Draw cadence gauge (horizontal arc like speed gauge)."""

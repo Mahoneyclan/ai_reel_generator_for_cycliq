@@ -3,7 +3,7 @@
 # ============================================
 
 # 1. Make sure you’re in your project root
-cd /Volumes/GDrive/Github/ai_reel_generator_for_cycliq
+cd /Volumes/AData/Github/ai_reel_generator_for_cycliq
 
 # 2. Remove any old venv if it exists
 rm -rf .venv
@@ -16,6 +16,8 @@ source .venv/bin/activate
 
 # 5. Upgrade pip inside the venv
 python -m pip install --upgrade pip
+
+pip install -U pip setuptools wheel
 
 # 6. Install your requirements
 python -m pip install -r requirements.txt

@@ -6,7 +6,7 @@ Loads user preferences from persistent storage.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from datetime import timezone, timedelta
 from typing import Any
@@ -161,13 +161,13 @@ class Config:
         "Fly6Pro": 1.0,
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
-        "detect_score": 0.10,
-        "scene_boost": 0.30,
-        "speed_kmh": 0.10,
-        "gradient": 0.05,
+        "detect_score": 0.15,
+        "scene_boost": 0.35,
+        "speed_kmh": 0.15,
+        "gradient": 0.10,
         "bbox_area": 0.10,
         "segment_boost": 0.15,  # Strava PR/top-3 segment efforts
-    })
+    })  # Must sum to 1.0
 
     # --- M1 hardware acceleration ---
     USE_MPS: bool = field(default_factory=lambda: _get_config_value('USE_MPS', True))
@@ -188,6 +188,9 @@ class Config:
 
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
     GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))
+    GPX_GRID_EXTENSION_M: float = field(
+        default_factory=lambda: _get_config_value('GPX_GRID_EXTENSION_M', 10.0)
+    )  # Minutes to extend sampling grid before/after GPX ride data
 
 
     # --- Path properties ---
@@ -252,11 +255,16 @@ class Config:
     # --- PiP & minimap overlay ---
     PIP_SCALE_RATIO: float = field(default_factory=lambda: _get_config_value('PIP_SCALE_RATIO', 0.30))
     PIP_MARGIN: int = field(default_factory=lambda: _get_config_value('PIP_MARGIN', 30))
-    MINIMAP_SCALE_RATIO: float = field(
-        default_factory=lambda: _get_config_value('MINIMAP_SCALE_RATIO', 0.25)
+    # Minimap size as fraction of video width (like PIP), NOT base render size
+    # 0.28 = ~540px on 1920p video, similar to PIP
+    MINIMAP_SIZE_RATIO: float = field(
+        default_factory=lambda: _get_config_value('MINIMAP_SIZE_RATIO', 0.28)
     )
     MINIMAP_MARGIN: int = field(default_factory=lambda: _get_config_value('MINIMAP_MARGIN', 30))
     MINIMAP_ANCHOR: str = "top_right"
+    SHOW_ELEVATION_PLOT: bool = field(
+        default_factory=lambda: _get_config_value('SHOW_ELEVATION_PLOT', True)
+    )
     MAP_ROUTE_COLOR: tuple[int, int, int] = (40, 180, 60)
     MAP_ROUTE_WIDTH: int = 8
     MAP_MARKER_COLOR: tuple[int, int, int] = (230, 175, 0)
@@ -273,6 +281,8 @@ class Config:
     HUD_ANCHOR: str = "bottom_left"
     HUD_SCALE: float = 1.0
     HUD_PADDING: tuple[int, int] = (30, 30)
+    SPEED_GAUGE_SIZE: int = field(default_factory=lambda: _get_config_value('SPEED_GAUGE_SIZE', 300))
+    SMALL_GAUGE_SIZE: int = field(default_factory=lambda: _get_config_value('SMALL_GAUGE_SIZE', 150))
     GAUGE_ORDER: list[str] = field(default_factory=lambda: ["cadence", "hr", "gradient", "speed", "elev"])
     GAUGE_MAXES: dict = field(default_factory=lambda: {
         "speed": 80, "cadence": 120, "hr": 180, "elev": 5000,
@@ -290,12 +300,12 @@ DEFAULT_CONFIG = Config()
 
 def reload_config() -> None:
     """
-    Reload persistent config and recreate DEFAULT_CONFIG.
+    Reload persistent config and update DEFAULT_CONFIG in-place.
 
-    Call this after saving settings to ensure pipeline uses new values
-    without requiring application restart.
+    Updates the existing DEFAULT_CONFIG object rather than replacing it,
+    so all modules that imported it as CFG will see the new values.
     """
-    global _PERSISTENT_CONFIG, DEFAULT_CONFIG
+    global _PERSISTENT_CONFIG
 
     # Reload from file
     try:
@@ -304,5 +314,13 @@ def reload_config() -> None:
     except ImportError:
         _PERSISTENT_CONFIG = {}
 
-    # Recreate config with new values
-    DEFAULT_CONFIG = Config()
+    # Create new config with updated values
+    new_config = Config()
+
+    # Update DEFAULT_CONFIG in-place so all existing references see new values
+    for f in fields(Config):
+        if not f.name.startswith('_'):  # Skip private fields
+            try:
+                setattr(DEFAULT_CONFIG, f.name, getattr(new_config, f.name))
+            except AttributeError:
+                pass  # Skip properties and computed fields

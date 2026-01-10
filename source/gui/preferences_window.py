@@ -39,6 +39,10 @@ class PreferencesWindow(QDialog):
         'GPX_TOLERANCE': 'Allowed time tolerance (seconds) when aligning GPX timestamps to video frames.',
         'EXTRACT_INTERVAL_SECONDS': 'Interval in seconds between sampled frames used for analysis.',
         'TEST_MODE': 'Only process first video from each camera for faster testing of alignment and pipeline.',
+        'MAX_START_ZONE_CLIPS': 'Maximum number of bonus clips to include from the first N minutes of the ride. '
+                                'Set to 0 to disable start zone clips.',
+        'MAX_END_ZONE_CLIPS': 'Maximum number of bonus clips to include from the last N minutes of the ride. '
+                              'Set to 0 to disable end zone clips.',
     }
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -241,12 +245,12 @@ class PreferencesWindow(QDialog):
         self._add_doublespinbox(self.core_form, "Target Duration (min)", "HIGHLIGHT_TARGET_DURATION_M", CFG.HIGHLIGHT_TARGET_DURATION_M, 1, 10, 0.5)
         self._add_doublespinbox(self.core_form, "Clip Pre-Roll (s)", "CLIP_PRE_ROLL_S", CFG.CLIP_PRE_ROLL_S, 0, 2, 0.1)
         self._add_doublespinbox(self.core_form, "Clip Duration (s)", "CLIP_OUT_LEN_S", CFG.CLIP_OUT_LEN_S, 1, 10, 0.1)
-        self._add_doublespinbox(self.core_form, "Min Gap Between Clips (s)", "MIN_GAP_BETWEEN_CLIPS", CFG.MIN_GAP_BETWEEN_CLIPS, 30, 300, 10)
+        self._add_doublespinbox(self.core_form, "Min Gap Between Clips (s)", "MIN_GAP_BETWEEN_CLIPS", CFG.MIN_GAP_BETWEEN_CLIPS, 5, 120, 5)
         self._add_doublespinbox(self.core_form, "Scene Comparison Window (s)", "SCENE_COMPARISON_WINDOW_S", CFG.SCENE_COMPARISON_WINDOW_S, 1.0, 15.0, 0.5)
         self._add_doublespinbox(self.core_form, "Start Zone Duration (min)", "START_ZONE_DURATION_M", CFG.START_ZONE_DURATION_M, 0, 60, 5)
-        self._add_spinbox(self.core_form, "Max Start Zone Clips", "MAX_START_ZONE_CLIPS", CFG.MAX_START_ZONE_CLIPS, 0, 10)
+        self._add_spinbox(self.core_form, "Max Start Zone Clips (#)", "MAX_START_ZONE_CLIPS", CFG.MAX_START_ZONE_CLIPS, 0, 10)
         self._add_doublespinbox(self.core_form, "End Zone Duration (min)", "END_ZONE_DURATION_M", CFG.END_ZONE_DURATION_M, 0, 60, 5)
-        self._add_spinbox(self.core_form, "Max End Zone Clips", "MAX_END_ZONE_CLIPS", CFG.MAX_END_ZONE_CLIPS, 0, 10)
+        self._add_spinbox(self.core_form, "Max End Zone Clips (#)", "MAX_END_ZONE_CLIPS", CFG.MAX_END_ZONE_CLIPS, 0, 10)
 
     def _create_score_settings(self):
         description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")
@@ -343,6 +347,9 @@ class PreferencesWindow(QDialog):
     def get_overrides(self) -> Dict[str, Any]:
         overrides: Dict[str, Any] = {}
         for attr, widget in self.overrides.items():
+            # Skip SCORE_WEIGHTS.xxx - these are handled separately as nested dict
+            if attr.startswith("SCORE_WEIGHTS."):
+                continue
             if isinstance(widget, QLineEdit): overrides[attr] = widget.text().strip()
             elif isinstance(widget, QSpinBox): overrides[attr] = widget.value()
             elif isinstance(widget, QDoubleSpinBox): overrides[attr] = widget.value()

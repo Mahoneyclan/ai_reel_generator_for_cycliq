@@ -19,9 +19,11 @@ from .draw_gauge import (
     draw_gradient_gauge,
 )
 
-# Exposed sizes for layout math in build.py
-SPEED_GAUGE_SIZE = 240
-SMALL_GAUGE_SIZE = 120
+# Exposed sizes for layout math in build.py - now read from config
+# These module-level constants are kept for backward compatibility
+# but actual rendering uses CFG values
+SPEED_GAUGE_SIZE = 300  # Default, actual value from CFG.SPEED_GAUGE_SIZE
+SMALL_GAUGE_SIZE = 150  # Default, actual value from CFG.SMALL_GAUGE_SIZE
 
 def compute_gauge_maxes(csv_path: Path) -> Dict[str, float]:
     """Compute maximum values for gauge scaling from CSV data."""
@@ -89,6 +91,10 @@ def create_all_gauge_images(
     out: Dict[str, Path] = {}
     base_dir.mkdir(parents=True, exist_ok=True)
 
+    # Use config values for gauge sizes
+    speed_size = CFG.SPEED_GAUGE_SIZE
+    small_size = CFG.SMALL_GAUGE_SIZE
+
     for gtype, values in telemetry.items():
         if not values:
             continue
@@ -96,23 +102,23 @@ def create_all_gauge_images(
         max_val = gauge_maxes.get(gtype, None)
 
         if gtype == "speed":
-            size = SPEED_GAUGE_SIZE
+            size = speed_size
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             draw_speed_gauge(img, (0, 0, size, size), val, float(max_val or 60))
         elif gtype == "cadence":
-            size = SMALL_GAUGE_SIZE
+            size = small_size
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             draw_cadence_gauge(img, (0, 0, size, size), val, float(max_val or 120))
         elif gtype == "hr":
-            size = SMALL_GAUGE_SIZE
+            size = small_size
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             draw_hr_gauge(img, (0, 0, size, size), val, float(max_val or 180))
         elif gtype == "elev":
-            size = SMALL_GAUGE_SIZE
+            size = small_size
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             draw_elev_gauge(img, (0, 0, size, size), val, float(max_val or 1000))
         elif gtype == "gradient":
-            size = SMALL_GAUGE_SIZE
+            size = small_size
             img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             draw_gradient_gauge(img, (0, 0, size, size), val,
                                 -float(max_val or 10), float(max_val or 10))

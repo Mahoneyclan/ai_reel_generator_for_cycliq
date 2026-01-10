@@ -95,6 +95,11 @@ def save_persistent_config(config: Dict[str, Any]) -> None:
     # Merge: new values override existing
     merged_config = {**existing_serialized, **new_serialized}
 
+    # Clean up stale dotted keys (e.g., SCORE_WEIGHTS.xxx) that should be nested
+    stale_keys = [k for k in merged_config if '.' in k]
+    for key in stale_keys:
+        del merged_config[key]
+
     try:
         with USER_CONFIG_PATH.open('w') as f:
             json.dump(merged_config, f, indent=2, sort_keys=True)

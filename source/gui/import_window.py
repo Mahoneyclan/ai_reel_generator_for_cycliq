@@ -113,7 +113,7 @@ class ImportRideWindow(QDialog):
                 border: 1px solid #E5E5E5;
                 border-radius: 4px;
                 padding: 8px;
-                font-family: 'Monaco', 'Courier New', monospace;
+                font-family: 'Menlo', 'SF Mono', 'Monaco', 'Courier New';
                 font-size: 11px;
             }
         """)

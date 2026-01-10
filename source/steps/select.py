@@ -595,13 +595,29 @@ def run() -> Path:
             f"Other: {other.get('camera')} - score={other_score:.3f}"
         )
 
-    # Build output rows: all rows from candidate pool, with recommended and strava_pr flags
+    # Build output rows: all rows from candidate pool, with recommended, strava_pr, and segment info
     output_rows: List[Dict] = []
     for m in candidate_moments:
         for row in (m["fly12"], m["fly6"]):
             row = dict(row)  # avoid mutating original enriched row list
             row["recommended"] = "true" if row["index"] in recommended_indices else "false"
             row["strava_pr"] = "true" if row["index"] in pr_indices else "false"
+            # Add segment details for PR clips (for trophy badge overlay)
+            if row["index"] in pr_indices:
+                epoch = _sf(row.get("abs_time_epoch"))
+                seg_info = segment_matcher.get_segment_info(epoch)
+                if seg_info:
+                    row["segment_name"] = seg_info.get("name", "")
+                    row["segment_distance"] = str(seg_info.get("distance", 0))
+                    row["segment_grade"] = str(seg_info.get("average_grade", 0))
+                else:
+                    row["segment_name"] = ""
+                    row["segment_distance"] = ""
+                    row["segment_grade"] = ""
+            else:
+                row["segment_name"] = ""
+                row["segment_distance"] = ""
+                row["segment_grade"] = ""
             output_rows.append(row)
 
     # Sort by aligned world time

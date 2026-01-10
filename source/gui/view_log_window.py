@@ -168,7 +168,7 @@ class ViewLogWindow(QDialog):
                 background-color: #FAFAFA;
                 border: 1px solid #E5E5E5;
                 border-radius: 4px;
-                font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+                font-family: 'Menlo', 'SF Mono', 'Monaco', 'Courier New';
                 font-size: 10px;
                 line-height: 1.5;
                 padding: 8px;
@@ -271,7 +271,7 @@ class ViewLogWindow(QDialog):
             )
             
             formatted.append(
-                f'<div style="color: {color}; font-family: Monaco, monospace; font-size: 10px;">{escaped}</div>'
+                f'<div style="color: {color}; font-family: Menlo, Monaco; font-size: 10px;">{escaped}</div>'
             )
         
         return ''.join(formatted)

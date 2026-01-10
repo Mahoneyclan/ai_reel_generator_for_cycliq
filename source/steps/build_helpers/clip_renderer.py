@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
+from ...utils.trophy_overlay import create_trophy_overlay
 from ...io_paths import _mk
 from .gauge_renderer import GaugeRenderer
 
@@ -48,6 +49,7 @@ class ClipRenderer:
         pip_row: Dict,
         clip_idx: int,
         minimap_path: Optional[Path],
+        elevation_path: Optional[Path],
         gauge_renderer: GaugeRenderer,
     ) -> Optional[Path]:
         """
@@ -91,6 +93,7 @@ class ClipRenderer:
             t_start_main=t_start_main,
             t_start_pip=t_start_pip,
             minimap_path=minimap_path,
+            elevation_path=elevation_path,
             duration=duration,
             main_row=main_row,
             clip_idx=clip_idx,
@@ -187,6 +190,7 @@ class ClipRenderer:
         t_start_main: float,
         t_start_pip: float,
         minimap_path: Optional[Path],
+        elevation_path: Optional[Path],
         duration: float,
         main_row: Dict,
         clip_idx: int,
@@ -229,13 +233,66 @@ class ClipRenderer:
         else:
             log.warning("[clip] PiP video missing; rendering main camera only")
 
-        # Minimap overlay
+        # Minimap overlay (size as fraction of video width, like PIP)
+        # Compute target minimap size: video_width * MINIMAP_SIZE_RATIO
+        # Standard Cycliq video is 1920px wide
+        video_width = 1920
+        minimap_target_size = int(video_width * CFG.MINIMAP_SIZE_RATIO)
+
         if minimap_path and minimap_path.exists():
             inputs.extend(["-i", str(minimap_path)])
             minimap_idx = len([a for a in inputs if a == "-i"]) - 1
             overlay_expr = self._anchor_expr(CFG.MINIMAP_ANCHOR, CFG.MINIMAP_MARGIN)
-            filters.append(f"{current_stream}[{minimap_idx}:v]overlay={overlay_expr}[vmap]")
+            # Scale minimap to target pixel size (not ratio of base render)
+            filters.append(
+                f"[{minimap_idx}:v]scale={minimap_target_size}:{minimap_target_size}[minimap_scaled];"
+                f"{current_stream}[minimap_scaled]overlay={overlay_expr}[vmap]"
+            )
             current_stream = "[vmap]"
+
+        # Elevation plot overlay (below minimap, same right alignment)
+        if elevation_path and elevation_path.exists() and CFG.SHOW_ELEVATION_PLOT:
+            inputs.extend(["-i", str(elevation_path)])
+            elev_idx = len([a for a in inputs if a == "-i"]) - 1
+            # Position: right-aligned with minimap, below it with 10px gap
+            elev_y = CFG.MINIMAP_MARGIN + minimap_target_size + 10
+            filters.append(
+                f"{current_stream}[{elev_idx}:v]overlay=W-w-{CFG.MINIMAP_MARGIN}:{elev_y}[velev]"
+            )
+            current_stream = "[velev]"
+
+        # PR Trophy badge overlay (top-left, only for Strava PR clips)
+        if str(main_row.get("strava_pr", "false")).lower() == "true":
+            segment_name = main_row.get("segment_name", "PR Segment")
+            # Parse segment details for badge display
+            try:
+                segment_distance = float(main_row.get("segment_distance", 0) or 0)
+            except (ValueError, TypeError):
+                segment_distance = 0
+            try:
+                segment_grade = float(main_row.get("segment_grade", 0) or 0)
+            except (ValueError, TypeError):
+                segment_grade = 0
+
+            trophy_path = self.output_dir / f"trophy_{clip_idx:04d}.png"
+            try:
+                create_trophy_overlay(
+                    segment_name,
+                    trophy_path,
+                    distance_m=segment_distance,
+                    grade_pct=segment_grade,
+                )
+                inputs.extend(["-loop", "1", "-t", f"{duration:.3f}", "-i", str(trophy_path)])
+                trophy_idx = len([a for a in inputs if a == "-i"]) - 1
+                # Position: top-left with margin (opposite from minimap)
+                trophy_margin = 30
+                filters.append(
+                    f"{current_stream}[{trophy_idx}:v]overlay={trophy_margin}:{trophy_margin}[vtrophy]"
+                )
+                current_stream = "[vtrophy]"
+                log.debug(f"[clip] Added PR badge for clip {clip_idx}: {segment_name}")
+            except Exception as e:
+                log.warning(f"[clip] Failed to create trophy badge for clip {clip_idx}: {e}")
 
         # Gauge overlays (based on main camera telemetry)
         current_stream = self._add_gauge_overlays(
