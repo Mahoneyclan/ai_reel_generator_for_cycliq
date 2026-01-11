@@ -323,6 +323,8 @@ class SegmentConcatenator:
         )
         
         # Build FFmpeg command with music seek
+        # Audio normalization: loudnorm to -16 LUFS (broadcast standard)
+        # Then apply volume adjustments for mixing balance
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             # Video input
@@ -331,11 +333,11 @@ class SegmentConcatenator:
             "-ss", f"{music_start:.3f}",  # Start at current offset
             "-stream_loop", "-1",          # Loop if music is shorter than needed
             "-i", str(self.selected_music_track),
-            # Audio mixing filter
+            # Audio mixing filter with normalization for consistent levels
             "-filter_complex",
-            f"[0:a]volume={raw_audio_volume}[raw];"
-            f"[1:a]volume={music_volume}[music];"
-            f"[raw][music]amix=inputs=2:dropout_transition=0[out]",
+            f"[0:a]loudnorm=I=-16:TP=-1.5:LRA=11,volume={raw_audio_volume}[raw];"
+            f"[1:a]loudnorm=I=-16:TP=-1.5:LRA=11,volume={music_volume}[music];"
+            f"[raw][music]amix=inputs=2:duration=first:dropout_transition=0[out]",
             # Output mapping
             "-map", "0:v", "-map", "[out]",
             # Output settings

@@ -258,10 +258,10 @@ class Config:
     # --- PiP & minimap overlay ---
     PIP_SCALE_RATIO: float = field(default_factory=lambda: _get_config_value('PIP_SCALE_RATIO', 0.30))
     PIP_MARGIN: int = field(default_factory=lambda: _get_config_value('PIP_MARGIN', 30))
-    # Minimap size as fraction of video width (like PIP), NOT base render size
-    # 0.28 = ~540px on 1920p video, similar to PIP
+    # Minimap size as fraction of video width (same as PIP_SCALE_RATIO for consistency)
+    # 0.30 = ~576px on 1920p video, matches PIP size exactly
     MINIMAP_SIZE_RATIO: float = field(
-        default_factory=lambda: _get_config_value('MINIMAP_SIZE_RATIO', 0.28)
+        default_factory=lambda: _get_config_value('MINIMAP_SIZE_RATIO', 0.30)
     )
     MINIMAP_MARGIN: int = field(default_factory=lambda: _get_config_value('MINIMAP_MARGIN', 30))
     MINIMAP_ANCHOR: str = "top_right"

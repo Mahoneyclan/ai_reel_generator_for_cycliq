@@ -193,27 +193,35 @@ def _render_base_figure(
     return fig, ax, (x_min, x_max, y_max, y_min)
 
 
-def _figure_to_image(fig: plt.Figure) -> Image.Image:
+def _figure_to_image(fig: plt.Figure, target_size: Tuple[int, int] = None) -> Image.Image:
     """
     Convert matplotlib figure to PIL Image.
-    
+
     Args:
         fig: Matplotlib figure to convert
-    
+        target_size: Optional (width, height) to resize output to exact dimensions
+
     Returns:
-        PIL Image in RGBA mode
+        PIL Image in RGBA mode at exact target_size if specified
     """
     buf = BytesIO()
+    # Use tight bbox to crop to actual map content
     fig.savefig(
-        buf, 
-        format="png", 
-        bbox_inches=None, 
-        pad_inches=0, 
-        transparent=True
+        buf,
+        format="png",
+        bbox_inches='tight',
+        pad_inches=0.02,  # Small padding around map content
+        transparent=False,
+        facecolor=(0.95, 0.95, 0.95)  # Light gray background (matches map tiles)
     )
     buf.seek(0)
     img = Image.open(buf).convert("RGBA")
     plt.close(fig)
+
+    # Resize to exact target dimensions - this will scale the map to fill the frame
+    if target_size:
+        img = img.resize(target_size, Image.LANCZOS)
+
     return img
 
 
@@ -265,7 +273,7 @@ def render_splash_map_with_xy(
 def render_overlay_minimap(
     gpx_points: List[GpxPoint],
     current_ts: float,
-    size: Tuple[int, int] = (512, 512),
+    size: Tuple[int, int] = (576, 576),
 ) -> Image.Image:
     """
     Render minimap with current position marker.
@@ -311,8 +319,9 @@ def render_overlay_minimap(
             )
         except Exception as e:
             log.warning(f"Marker plot failed: {e}")
-    
-    return _figure_to_image(fig)
+
+    # Ensure exact output size for consistent overlay positioning
+    return _figure_to_image(fig, target_size=size)
 
 
 def clear_map_caches() -> None:

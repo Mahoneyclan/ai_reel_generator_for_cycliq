@@ -233,31 +233,31 @@ class ClipRenderer:
         else:
             log.warning("[clip] PiP video missing; rendering main camera only")
 
-        # Minimap overlay (size as fraction of video width, like PIP)
-        # Compute target minimap size: video_width * MINIMAP_SIZE_RATIO
-        # Standard Cycliq video is 1920px wide
-        video_width = 1920
-        minimap_target_size = int(video_width * CFG.MINIMAP_SIZE_RATIO)
+        # Minimap overlay - positioned at top-right with 30px margin (same as PIP)
+        # Minimap is pre-rendered at 576x576 (30% of 1920px standard video width)
+        OVERLAY_MARGIN = 30  # Hardcoded for consistency
 
         if minimap_path and minimap_path.exists():
             inputs.extend(["-i", str(minimap_path)])
             minimap_idx = len([a for a in inputs if a == "-i"]) - 1
-            overlay_expr = self._anchor_expr(CFG.MINIMAP_ANCHOR, CFG.MINIMAP_MARGIN)
-            # Scale minimap to target pixel size (not ratio of base render)
+            # Position at top-right: X = W-w-margin, Y = margin
+            minimap_filter = f"[{minimap_idx}:v]overlay=W-w-{OVERLAY_MARGIN}:{OVERLAY_MARGIN}"
             filters.append(
-                f"[{minimap_idx}:v]scale={minimap_target_size}:{minimap_target_size}[minimap_scaled];"
-                f"{current_stream}[minimap_scaled]overlay={overlay_expr}[vmap]"
+                f"{current_stream}{minimap_filter}[vmap]"
             )
             current_stream = "[vmap]"
+            log.debug(f"[clip] Minimap filter: {minimap_filter}")
 
         # Elevation plot overlay (below minimap, same right alignment)
         if elevation_path and elevation_path.exists() and CFG.SHOW_ELEVATION_PLOT:
             inputs.extend(["-i", str(elevation_path)])
             elev_idx = len([a for a in inputs if a == "-i"]) - 1
             # Position: right-aligned with minimap, below it with 10px gap
-            elev_y = CFG.MINIMAP_MARGIN + minimap_target_size + 10
+            # minimap is 576px tall, so Y = margin + 576 + 10 = 616
+            minimap_size = 576
+            elev_y = OVERLAY_MARGIN + minimap_size + 10
             filters.append(
-                f"{current_stream}[{elev_idx}:v]overlay=W-w-{CFG.MINIMAP_MARGIN}:{elev_y}[velev]"
+                f"{current_stream}[{elev_idx}:v]overlay=W-w-{OVERLAY_MARGIN}:{elev_y}[velev]"
             )
             current_stream = "[velev]"
 
