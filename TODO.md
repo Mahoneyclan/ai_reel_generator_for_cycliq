@@ -39,18 +39,17 @@
 [x] **Fix score weights sum** - Weights must sum to 1.0
   - `source/config.py` ✓
 
-### PENDING
+[x] **Smooth clip transitions** - Professional crossfade transitions
+  - 0.2s crossfade between all clips using FFmpeg xfade filter
+  - 0.3s fade in on first clip (after intro)
+  - 0.3s fade out on last clip (before outro)
+  - Audio crossfade with acrossfade filter
+  - `source/steps/build_helpers/segment_concatenator.py` ✓
 
-[ ] **Smooth clip transitions** - Improve professionalism of clip transitions
-  - Current: hard cuts between clips
-  - Options: crossfade, dip-to-black, zoom/slide transitions
-  - `source/steps/build_helpers/segment_concatenator.py`
+### PENDING
 
 [ ] **GPX file location** - Relocate from raw movies to working files
 
-[ ] **Parallelize segment music overlay** - Complex refactor (deferred)
-  - `source/steps/build_helpers/segment_concatenator.py:110-127`
-  - Requires pre-calculating music offsets before parallel execution
 
 [ ] **Pre-composite gauge overlays** - 5 separate gauge inputs cause re-encoding
   - `source/steps/build_helpers/clip_renderer.py:298-335`
