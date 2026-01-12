@@ -20,9 +20,9 @@ from ...utils.draw_gauge import (
     draw_elev_gauge,
     draw_gradient_gauge,
 )
+from ...utils.gauge_overlay import compute_gauge_maxes
 from ...io_paths import _mk, select_path
 from ...utils.progress_reporter import report_progress
-from .gauge_renderer import GaugeRenderer
 
 log = setup_logger("steps.build_helpers.gauge_prerenderer")
 
@@ -36,8 +36,7 @@ class GaugePrerenderer:
             output_dir: Directory to save composite gauge images
         """
         self.output_dir = _mk(output_dir)
-        self.gauge_renderer = GaugeRenderer(output_dir, select_path())
-        self.gauge_maxes = self.gauge_renderer.gauge_maxes
+        self.gauge_maxes = compute_gauge_maxes(select_path())
 
         # Composite canvas size (matches PIP)
         self.width, self.height = CFG.GAUGE_COMPOSITE_SIZE
@@ -69,13 +68,15 @@ class GaugePrerenderer:
             }
 
             completed = 0
-            for future in as_completed(futures):
+            for future in as_completed(futures, timeout=300):  # 5 min timeout
                 idx = futures[future]
                 completed += 1
                 try:
-                    result = future.result()
+                    result = future.result(timeout=30)  # 30s per gauge
                     if result:
                         paths[idx] = result
+                except TimeoutError:
+                    log.warning(f"[gauge] Timeout rendering composite for clip {idx}")
                 except Exception as e:
                     log.warning(f"[gauge] Failed to render composite for clip {idx}: {e}")
 
