@@ -123,6 +123,7 @@ class Config:
     )
 
     # --- Detection settings ---
+    YOLO_MODEL: str = field(default_factory=lambda: _get_config_value('YOLO_MODEL', 'yolo11n.pt'))
     YOLO_DETECT_CLASSES: list = field(
         default_factory=lambda: _get_config_value('YOLO_DETECT_CLASSES', [0, 1, 2, 3, 5, 7, 9, 11])
     )
