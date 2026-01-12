@@ -20,6 +20,7 @@ from typing import List, Optional, Tuple
 
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
+from ...utils.progress_reporter import report_progress
 from ...io_paths import _mk
 
 log = setup_logger("steps.build_helpers.segment_concatenator")
@@ -120,6 +121,12 @@ class SegmentConcatenator:
             if not segment_clips:
                 continue
 
+            # Report progress
+            report_progress(
+                seg_idx + 1, num_segments,
+                f"Creating segment {seg_idx + 1}/{num_segments}"
+            )
+
             # Create segment with continuous music and transitions
             is_first = (seg_idx == 0)
             is_last = (seg_idx == num_segments - 1)
@@ -135,6 +142,7 @@ class SegmentConcatenator:
 
             if segment_path:
                 segment_paths.append(segment_path)
+                log.info(f"[segment] Segment {seg_idx + 1}/{num_segments} complete")
         
         # Cleanup temp files
         self._cleanup_temp_files()
