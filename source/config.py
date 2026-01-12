@@ -251,6 +251,10 @@ class Config:
     def GAUGE_DIR(self) -> Path:
         return self.PROJECT_DIR / "gauges"
 
+    @property
+    def ELEVATION_DIR(self) -> Path:
+        return self.PROJECT_DIR / "elevation"
+
     # --- Audio assets ---
     ASSETS_DIR = PROJECT_ROOT / "assets"
     MUSIC_DIR: Path = ASSETS_DIR / "music"

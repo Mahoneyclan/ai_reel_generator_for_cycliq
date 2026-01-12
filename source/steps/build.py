@@ -239,8 +239,7 @@ def run() -> Path:
     elevation_paths: Dict[int, Path] = {}
     if CFG.SHOW_ELEVATION_PLOT:
         log.info("[build] Pre-rendering elevation plots...")
-        elevation_dir = _mk(CFG.WORKING_DIR / "elevation_plots")
-        elevation_prerenderer = ElevationPrerenderer(elevation_dir)
+        elevation_prerenderer = ElevationPrerenderer(CFG.ELEVATION_DIR)
         elevation_paths = elevation_prerenderer.prerender_all(main_rows_for_minimap)
 
     # Step 2: Setup gauge renderer
