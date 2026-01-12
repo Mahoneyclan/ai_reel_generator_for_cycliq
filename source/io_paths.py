@@ -25,7 +25,8 @@ def _mk(path: Path) -> Path:
     return path
 
 
-# --- Working CSVs / JSON (in project folder) ---
+# --- Working CSVs / JSON / GPX (in project folder) ---
+def gpx_path() -> Path: return CFG.GPX_FILE
 def flatten_path() -> Path: return CFG.WORKING_DIR / "flatten.csv"
 def extract_path() -> Path: return CFG.WORKING_DIR / "extract.csv"
 def enrich_path() -> Path: return CFG.WORKING_DIR / "enriched.csv"

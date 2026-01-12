@@ -94,8 +94,9 @@ class StravaImportPanel(QWidget):
             QMessageBox.warning(self, "No selection", "Please select an activity.")
             return
 
-        # Force output path to raw video folder: <INPUT_DIR>/ride.gpx
-        out_path = CFG.INPUT_GPX_FILE
+        # Save to project working directory
+        out_path = CFG.GPX_FILE
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         ok = self.client.download_gpx(act_id, out_path)
 
         if ok:

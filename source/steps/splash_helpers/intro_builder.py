@@ -120,7 +120,7 @@ class IntroBuilder:
         
         # Stats line
         try:
-            gpx_pts = load_gpx(str(CFG.INPUT_GPX_FILE))
+            gpx_pts = load_gpx(str(CFG.GPX_FILE if CFG.GPX_FILE.exists() else CFG.INPUT_GPX_FILE))
             stats = compute_stats(gpx_pts)
             
             d_s = int(stats.get("duration_s", 0))
@@ -141,7 +141,7 @@ class IntroBuilder:
         
         # Map overlay - FIXED: Use correct 'size' parameter instead of non-existent 'gutters_px'
         try:
-            gpx_pts = load_gpx(str(CFG.INPUT_GPX_FILE))
+            gpx_pts = load_gpx(str(CFG.GPX_FILE if CFG.GPX_FILE.exists() else CFG.INPUT_GPX_FILE))
             if gpx_pts:
                 base, _ = render_splash_map_with_xy(gpx_pts, size=(OUT_W, OUT_H - BANNER_HEIGHT))
                 canvas.paste(base, (0, BANNER_HEIGHT))

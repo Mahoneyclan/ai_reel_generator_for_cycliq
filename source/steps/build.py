@@ -136,10 +136,12 @@ def _load_recommended_moments() -> List[Dict]:
 
 
 def _load_gpx_points():
-    """Load GPX points with safe failure handling."""
+    """Load GPX points with safe failure handling. Checks project dir then raw input."""
+    # Try project working directory first, fallback to raw input
+    gpx_path = CFG.GPX_FILE if CFG.GPX_FILE.exists() else CFG.INPUT_GPX_FILE
     try:
-        gpx_points = load_gpx(str(CFG.INPUT_GPX_FILE))
-        log.info(f"[build] Loaded {len(gpx_points)} GPX points")
+        gpx_points = load_gpx(str(gpx_path))
+        log.info(f"[build] Loaded {len(gpx_points)} GPX points from {gpx_path.name}")
         return gpx_points
     except Exception as e:
         log.warning(f"[build] No GPX data for minimaps: {e}")

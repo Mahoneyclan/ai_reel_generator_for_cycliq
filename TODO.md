@@ -46,9 +46,13 @@
   - Audio crossfade with acrossfade filter
   - `source/steps/build_helpers/segment_concatenator.py` ✓
 
-### PENDING
+[x] **GPX file location** - Relocate from raw movies to working files
+  - Added `CFG.GPX_FILE` property pointing to `WORKING_DIR / "ride.gpx"`
+  - Updated Strava/Garmin import panels to save GPX to project folder
+  - Pipeline steps (flatten, build, intro) check project dir first, fallback to raw input
+  - `source/config.py`, `source/importer/import_controller.py`, `source/io_paths.py` ✓
 
-[ ] **GPX file location** - Relocate from raw movies to working files
+### PENDING
 
 
 [ ] **Pre-composite gauge overlays** - 5 separate gauge inputs cause re-encoding

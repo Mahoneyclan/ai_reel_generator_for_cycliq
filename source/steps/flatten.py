@@ -30,21 +30,28 @@ def run():
             ])
         return out
     
-    # Step 1: Locate GPX file
+    # Step 1: Locate GPX file (project working directory, fallback to raw input)
     report_progress(1, 5, "Locating GPX file...")
-    gpx_fp = CFG.INPUT_GPX_FILE
-    
+    gpx_fp = CFG.GPX_FILE  # Project working directory
+
     if not gpx_fp.exists():
-        log.warning(f"[flatten] Configured GPX not found: {gpx_fp.name}")
-        gpx_files = list(CFG.INPUT_DIR.glob("*.gpx"))
-        
-        if not gpx_files:
-            log.error(f"[flatten] ❌ No GPX files found in {CFG.INPUT_DIR}")
-            log.error("[flatten] Pipeline will continue but all steps requiring GPS will be skipped")
-            return _write_empty_csv()
-        
-        gpx_fp = gpx_files[0]
-        log.info(f"[flatten] ✓ Auto-detected GPX file: {gpx_fp.name}")
+        log.info(f"[flatten] GPX not in working dir, checking raw input...")
+        # Fallback: check raw input folder (legacy location)
+        legacy_gpx = CFG.INPUT_GPX_FILE
+        if legacy_gpx.exists():
+            gpx_fp = legacy_gpx
+            log.info(f"[flatten] ✓ Found GPX in raw input: {gpx_fp.name}")
+        else:
+            # Auto-detect any .gpx in working dir or input dir
+            gpx_files = list(CFG.WORKING_DIR.glob("*.gpx")) + list(CFG.INPUT_DIR.glob("*.gpx"))
+
+            if not gpx_files:
+                log.error(f"[flatten] ❌ No GPX files found in working or input directories")
+                log.error("[flatten] Pipeline will continue but all steps requiring GPS will be skipped")
+                return _write_empty_csv()
+
+            gpx_fp = gpx_files[0]
+            log.info(f"[flatten] ✓ Auto-detected GPX file: {gpx_fp.name}")
     
     # Validate file
     try:

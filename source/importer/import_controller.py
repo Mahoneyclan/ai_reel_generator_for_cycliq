@@ -1,6 +1,6 @@
 """
 Unified GPX import controller:
-- Ensures GPX files are saved to CFG.INPUT_DIR
+- Ensures GPX files are saved to CFG.GPX_FILE (project working directory)
 - Provides consistent naming, logging, and error handling
 - Abstracts provider-specific download calls via 'downloader' callable
 """
@@ -9,14 +9,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Optional
 
-# Use your central config for input/log directories if available.
+# Use central config for GPX file location
 try:
-    from source.config import CFG
-    INPUT_DIR = Path(CFG.INPUT_DIR)
-except Exception:
-    INPUT_DIR = Path.home() / "Downloads"
-
-INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    from source.config import DEFAULT_CONFIG as CFG
+except ImportError:
+    CFG = None
 
 
 class ImportController:
@@ -28,9 +25,17 @@ class ImportController:
 
     def default_output_path(self, provider: str, activity_id: object) -> Path:
         """
-        Always return the fixed filename 'ride.gpx' in the input directory.
+        Return the project-scoped GPX path (working directory).
+        Falls back to ~/Downloads if config unavailable.
         """
-        return INPUT_DIR / "ride.gpx"
+        if CFG is not None and CFG.RIDE_FOLDER:
+            gpx_path = CFG.GPX_FILE
+            gpx_path.parent.mkdir(parents=True, exist_ok=True)
+            return gpx_path
+        # Fallback for when no project is selected
+        fallback = Path.home() / "Downloads" / "ride.gpx"
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        return fallback
 
     def download_gpx(
         self,

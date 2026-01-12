@@ -211,7 +211,13 @@ class Config:
 
     @property
     def INPUT_GPX_FILE(self) -> Path:
+        """Legacy: GPX in raw movies folder. Prefer GPX_FILE for project-scoped location."""
         return self.INPUT_DIR / "ride.gpx"
+
+    @property
+    def GPX_FILE(self) -> Path:
+        """Project-scoped GPX file in working directory."""
+        return self.WORKING_DIR / "ride.gpx"
 
     @property
     def FINAL_REEL_PATH(self) -> Path:
