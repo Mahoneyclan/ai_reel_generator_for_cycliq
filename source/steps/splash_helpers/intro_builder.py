@@ -139,12 +139,17 @@ class IntroBuilder:
         except Exception as e:
             log.warning(f"[intro] Could not load GPX stats: {e}")
         
-        # Map overlay - FIXED: Use correct 'size' parameter instead of non-existent 'gutters_px'
+        # Map overlay - centered, preserving aspect ratio
         try:
             gpx_pts = load_gpx(str(CFG.GPX_FILE if CFG.GPX_FILE.exists() else CFG.INPUT_GPX_FILE))
             if gpx_pts:
-                base, _ = render_splash_map_with_xy(gpx_pts, size=(OUT_W, OUT_H - BANNER_HEIGHT))
-                canvas.paste(base, (0, BANNER_HEIGHT))
+                map_area_h = OUT_H - BANNER_HEIGHT
+                base, _ = render_splash_map_with_xy(gpx_pts, size=(OUT_W, map_area_h))
+                # Center the map (may be smaller than requested due to aspect ratio)
+                map_w, map_h = base.size
+                x_offset = (OUT_W - map_w) // 2
+                y_offset = BANNER_HEIGHT + (map_area_h - map_h) // 2
+                canvas.paste(base, (x_offset, y_offset))
         except Exception as e:
             log.warning(f"[intro] Could not render map: {e}")
         

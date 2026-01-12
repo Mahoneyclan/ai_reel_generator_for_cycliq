@@ -250,7 +250,7 @@ def render_splash_map_with_xy(
         _splash_cache.move_to_end(cache_key)
         return _splash_cache[cache_key]
     
-    # Render new map
+    # Render new map (no resize - preserve aspect ratio)
     fig, ax, extent = _render_base_figure(gpx_points, size)
     if fig is None:
         # Handle rendering failure from _render_base_figure
