@@ -220,6 +220,43 @@ class GeneralSettingsWindow(QDialog):
         self.minimap_margin.setValue(CFG.MINIMAP_MARGIN)
         self.video_form.addRow("Minimap Margin", self.minimap_margin)
 
+        # Gauge settings
+        gauge_title = QLabel("Gauge Overlay")
+        gauge_title.setStyleSheet("font-weight: 700; margin: 12px 0 6px 0;")
+        self.video_form.addRow(gauge_title)
+
+        self.speed_gauge_size = _fix_size(QSpinBox())
+        self.speed_gauge_size.setRange(100, 500)
+        self.speed_gauge_size.setValue(CFG.SPEED_GAUGE_SIZE)
+        self.speed_gauge_size.setToolTip("Diameter of the large speed gauge (pixels)")
+        self.video_form.addRow("Speed Gauge Size", self.speed_gauge_size)
+
+        self.small_gauge_size = _fix_size(QSpinBox())
+        self.small_gauge_size.setRange(50, 300)
+        self.small_gauge_size.setValue(CFG.SMALL_GAUGE_SIZE)
+        self.small_gauge_size.setToolTip("Diameter of small gauges: cadence, HR, elevation, gradient (pixels)")
+        self.video_form.addRow("Small Gauge Size", self.small_gauge_size)
+
+        from PySide6.QtWidgets import QComboBox
+        self.gauge_layout = _fix_size(QComboBox())
+        self.gauge_layout.addItems(["cluster", "strip"])
+        self.gauge_layout.setCurrentText(CFG.GAUGE_LAYOUT)
+        self.gauge_layout.setToolTip("cluster: speed large center, small in corners. strip: all horizontal row")
+        self.video_form.addRow("Gauge Layout", self.gauge_layout)
+
+        # Gauge enable checkboxes
+        self.gauge_checks = {}
+        for gauge in ["speed", "cadence", "hr", "elev", "gradient"]:
+            cb = QCheckBox(gauge.upper())
+            cb.setChecked(gauge in CFG.ENABLED_GAUGES)
+            self.gauge_checks[gauge] = cb
+
+        gauge_row = QHBoxLayout()
+        for cb in self.gauge_checks.values():
+            gauge_row.addWidget(cb)
+        gauge_row.addStretch()
+        self.video_form.addRow("Enabled Gauges", gauge_row)
+
     def _create_m1_section(self):
         title = QLabel("M1 Performance")
         title.setStyleSheet("font-weight: 700; margin: 12px 0 6px 0;")
@@ -360,6 +397,14 @@ class GeneralSettingsWindow(QDialog):
         self.minimap_scale.setValue(float(cfg.MINIMAP_SIZE_RATIO))
         self.minimap_margin.setValue(int(cfg.MINIMAP_MARGIN))
 
+        # Gauge settings
+        self.speed_gauge_size.setValue(int(cfg.SPEED_GAUGE_SIZE))
+        self.small_gauge_size.setValue(int(cfg.SMALL_GAUGE_SIZE))
+        self.gauge_layout.setCurrentText(str(cfg.GAUGE_LAYOUT))
+        enabled_gauges = getattr(cfg, 'ENABLED_GAUGES', ["speed", "cadence", "hr", "elev", "gradient"])
+        for gauge, cb in self.gauge_checks.items():
+            cb.setChecked(gauge in enabled_gauges)
+
         self.use_mps.setChecked(bool(cfg.USE_MPS))
         self.yolo_batch.setValue(int(cfg.YOLO_BATCH_SIZE))
         self.ffmpeg_hw.setText(str(cfg.FFMPEG_HWACCEL))
@@ -390,6 +435,12 @@ class GeneralSettingsWindow(QDialog):
         overrides['PIP_MARGIN'] = int(self.pip_margin.value())
         overrides['MINIMAP_SIZE_RATIO'] = float(self.minimap_scale.value())
         overrides['MINIMAP_MARGIN'] = int(self.minimap_margin.value())
+
+        # Gauge settings
+        overrides['SPEED_GAUGE_SIZE'] = int(self.speed_gauge_size.value())
+        overrides['SMALL_GAUGE_SIZE'] = int(self.small_gauge_size.value())
+        overrides['GAUGE_LAYOUT'] = self.gauge_layout.currentText()
+        overrides['ENABLED_GAUGES'] = [g for g, cb in self.gauge_checks.items() if cb.isChecked()]
 
         overrides['USE_MPS'] = bool(self.use_mps.isChecked())
         overrides['YOLO_BATCH_SIZE'] = int(self.yolo_batch.value())
