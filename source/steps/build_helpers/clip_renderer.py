@@ -22,7 +22,6 @@ from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
 from ...utils.trophy_overlay import create_trophy_overlay
 from ...io_paths import _mk
-from .gauge_renderer import GaugeRenderer
 
 log = setup_logger("steps.build_helpers.clip_renderer")
 
@@ -50,7 +49,7 @@ class ClipRenderer:
         clip_idx: int,
         minimap_path: Optional[Path],
         elevation_path: Optional[Path],
-        gauge_renderer: GaugeRenderer,
+        gauge_path: Optional[Path],
     ) -> Optional[Path]:
         """
         Render single clip with all overlays (main + PiP + minimap + gauges).
@@ -97,7 +96,7 @@ class ClipRenderer:
             duration=duration,
             main_row=main_row,
             clip_idx=clip_idx,
-            gauge_renderer=gauge_renderer,
+            gauge_path=gauge_path,
         )
 
         cmd = self._build_encode_command(inputs, filter_complex, final_stream, output_path)
@@ -194,7 +193,7 @@ class ClipRenderer:
         duration: float,
         main_row: Dict,
         clip_idx: int,
-        gauge_renderer: GaugeRenderer,
+        gauge_path: Optional[Path],
     ) -> Tuple[List[str], List[str], str]:
         """
         Build ffmpeg inputs and filter_complex for all overlays.
@@ -293,46 +292,37 @@ class ClipRenderer:
             except Exception as e:
                 log.warning(f"[clip] Failed to create trophy badge for clip {clip_idx}: {e}")
 
-        # Gauge overlays (based on main camera telemetry)
-        current_stream = self._add_gauge_overlays(
-            filters, inputs, current_stream, main_row, clip_idx, duration, gauge_renderer
+        # Composite gauge overlay (single pre-rendered PNG at bottom-left)
+        current_stream = self._add_gauge_overlay(
+            filters, inputs, current_stream, gauge_path, duration
         )
 
         return inputs, filters, current_stream
 
-    def _add_gauge_overlays(
+    def _add_gauge_overlay(
         self,
         filters: List[str],
         inputs: List[str],
         current_stream: str,
-        main_row: Dict,
-        clip_idx: int,
+        gauge_path: Optional[Path],
         duration: float,
-        gauge_renderer: GaugeRenderer,
     ) -> str:
-        """Add gauge overlays to filter chain."""
-        gauge_images = gauge_renderer.render_gauges_for_clip(main_row, clip_idx)
-
-        if not gauge_images:
+        """Add single composite gauge overlay to filter chain."""
+        if not gauge_path or not gauge_path.exists():
             return current_stream
 
-        positions = gauge_renderer.calculate_gauge_positions(CFG.HUD_PADDING)
+        inputs.extend(
+            ["-loop", "1", "-t", f"{duration:.3f}", "-i", str(gauge_path)]
+        )
+        idx_in = len([a for a in inputs if a == "-i"]) - 1
 
-        for gauge_type, (x_expr, y_expr) in positions.items():
-            gauge_path = gauge_images.get(gauge_type)
-            if not gauge_path or not gauge_path.exists():
-                continue
+        # Position at bottom-left with HUD_PADDING
+        x, y = CFG.HUD_PADDING
+        filters.append(
+            f"{current_stream}[{idx_in}:v]overlay={x}:H-h-{y}[vhud]"
+        )
 
-            inputs.extend(
-                ["-loop", "1", "-t", f"{duration:.3f}", "-i", str(gauge_path)]
-            )
-            idx_in = len([a for a in inputs if a == "-i"]) - 1
-            filters.append(
-                f"{current_stream}[{idx_in}:v]overlay={x_expr}:{y_expr}[vhud]"
-            )
-            current_stream = "[vhud]"
-
-        return current_stream
+        return "[vhud]"
 
     def _build_encode_command(
         self,

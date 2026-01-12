@@ -302,6 +302,13 @@ class Config:
         "gradient_min": -10, "gradient_max": 10,
     })
 
+    # Composite gauge settings (pre-rendered single PNG)
+    GAUGE_COMPOSITE_SIZE: tuple[int, int] = (576, 324)  # Matches PIP size at 1920p
+    GAUGE_LAYOUT: str = field(default_factory=lambda: _get_config_value('GAUGE_LAYOUT', 'cluster'))
+    ENABLED_GAUGES: list[str] = field(default_factory=lambda: _get_config_value(
+        'ENABLED_GAUGES', ["speed", "cadence", "hr", "elev", "gradient"]
+    ))
+
     # --- Encoding ---
     VIDEO_CODEC: str = field(default_factory=lambda: _get_config_value('VIDEO_CODEC', 'libx264'))
     BITRATE: str = field(default_factory=lambda: _get_config_value('BITRATE', '8M'))

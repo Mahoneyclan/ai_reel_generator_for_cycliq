@@ -26,7 +26,7 @@ from ..utils.progress_reporter import progress_iter, report_progress
 from .build_helpers import (
     MinimapPrerenderer,
     ElevationPrerenderer,
-    GaugeRenderer,
+    GaugePrerenderer,
     ClipRenderer,
     SegmentConcatenator,
     cleanup_temp_files,
@@ -150,22 +150,22 @@ def _load_gpx_points():
 
 def _render_single_clip(
     clip_renderer: ClipRenderer,
-    gauge_renderer: GaugeRenderer,
     moment: Dict,
     idx: int,
     minimap_path: Optional[Path],
     elevation_path: Optional[Path],
+    gauge_path: Optional[Path],
 ) -> Tuple[int, Optional[Path]]:
     """
     Render a single clip (thread-safe for parallel execution).
 
     Args:
         clip_renderer: ClipRenderer instance
-        gauge_renderer: GaugeRenderer instance
         moment: Moment dict with main/pip rows
         idx: Clip index (1-based)
         minimap_path: Optional path to pre-rendered minimap
         elevation_path: Optional path to pre-rendered elevation plot
+        gauge_path: Optional path to pre-rendered composite gauge PNG
 
     Returns:
         Tuple of (clip_idx, output_path or None if failed)
@@ -180,7 +180,7 @@ def _render_single_clip(
             clip_idx=idx,
             minimap_path=minimap_path,
             elevation_path=elevation_path,
-            gauge_renderer=gauge_renderer,
+            gauge_path=gauge_path,
         )
         return (idx, clip_path)
 
@@ -242,9 +242,10 @@ def run() -> Path:
         elevation_prerenderer = ElevationPrerenderer(CFG.ELEVATION_DIR)
         elevation_paths = elevation_prerenderer.prerender_all(main_rows_for_minimap)
 
-    # Step 2: Setup gauge renderer
-    log.info("[build] Computing gauge maxes...")
-    gauge_renderer = GaugeRenderer(gauge_path, select_path())
+    # Step 2: Pre-render composite gauge overlays
+    log.info("[build] Pre-rendering composite gauge overlays...")
+    gauge_prerenderer = GaugePrerenderer(gauge_path)
+    gauge_paths = gauge_prerenderer.prerender_all(main_rows_for_minimap)
 
     # Step 3: Render individual clips (parallel)
     clip_renderer = ClipRenderer(out_dir)
@@ -267,11 +268,11 @@ def run() -> Path:
             executor.submit(
                 _render_single_clip,
                 clip_renderer,
-                gauge_renderer,
                 moment,
                 idx,
                 minimap_paths.get(idx),
                 elevation_paths.get(idx),
+                gauge_paths.get(idx),
             ): idx
             for idx, moment in enumerate(recommended_moments, start=1)
         }
