@@ -19,12 +19,12 @@
   - Added loudnorm to music mixing for consistent levels
   - `source/utils/ffmpeg.py`, `source/steps/build_helpers/segment_concatenator.py` ✓
 
-[x] **Minimap sizing and positioning** - Match PIP size and margin exactly
-  - MINIMAP_SIZE_RATIO: 0.30 (matches PIP_SCALE_RATIO)
-  - Fixed transparent padding issue causing incorrect positioning
-  - Now uses tight crop with opaque background, resized to 576x576
-  - 30px margin from top and right edges (same as PIP)
-  - `source/config.py`, `source/utils/map_overlay.py`, `source/steps/build_helpers/clip_renderer.py` ✓
+[~] **Minimap sizing and positioning** - Partially working
+  - ✓ Renders at route's geographic aspect ratio
+  - ✓ Scales to fit within PIP width and height constraints
+  - ✓ Dynamic elevation plot positioning based on actual minimap height
+  - ✗ Width still not always matching PIP exactly for some route shapes
+  - `source/utils/map_overlay.py`, `source/steps/build_helpers/minimap_prerenderer.py`, `source/steps/build_helpers/clip_renderer.py`
 
 [x] **Reduce log file count** - Filter to app modules only
   - `source/utils/log.py` - Added APP_LOG_PREFIXES filter ✓
@@ -54,6 +54,26 @@
 
 ### PENDING
 
+[ ] **Camera Offset Calibration Window** - Compare burnt-in timestamp to metadata
+  - **Priority**: High (run before analysis phase)
+  - **Purpose**: Adjust per-camera KNOWN_OFFSETS by visually comparing:
+    1. Burnt-in timestamp (visible in frame)
+    2. Raw metadata creation_time
+    3. Calculated start time (creation_time - duration + offset)
+  - **UI Layout** (based on manual_selection_window skeleton):
+    - Grid view: first frame from each clip, grouped by camera
+    - Left column: Fly6Pro clips with thumbnails + metadata
+    - Right column: Fly12Sport clips with thumbnails + metadata
+    - Each cell shows: thumbnail, filename, burnt-in time, metadata time, calculated time, delta
+  - **Data source**: align.csv and extract.csv (pre-analysis data)
+  - **Controls**:
+    - Spinbox per camera to adjust offset in real-time
+    - "Recalculate" button to update calculated times
+    - "Save to Config" button to persist KNOWN_OFFSETS
+  - **Files to create/modify**:
+    - NEW: `source/gui/camera_offset_window.py`
+    - Reference: `source/gui/manual_selection_window.py` (skeleton)
+    - Config: `source/config.py` (KNOWN_OFFSETS)
 
 [ ] **Pre-composite gauge overlays** - 5 separate gauge inputs cause re-encoding
   - `source/steps/build_helpers/clip_renderer.py:298-335`

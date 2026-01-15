@@ -252,9 +252,16 @@ class ClipRenderer:
             inputs.extend(["-i", str(elevation_path)])
             elev_idx = len([a for a in inputs if a == "-i"]) - 1
             # Position: right-aligned with minimap, below it with 10px gap
-            # minimap is 576px tall, so Y = margin + 576 + 10 = 616
-            minimap_size = 576
-            elev_y = OVERLAY_MARGIN + minimap_size + 10
+            # Get actual minimap height from file
+            minimap_height = 400  # Default fallback
+            if minimap_path and minimap_path.exists():
+                try:
+                    from PIL import Image
+                    with Image.open(minimap_path) as mm_img:
+                        minimap_height = mm_img.height
+                except Exception:
+                    pass
+            elev_y = OVERLAY_MARGIN + minimap_height + 10
             filters.append(
                 f"{current_stream}[{elev_idx}:v]overlay=W-w-{OVERLAY_MARGIN}:{elev_y}[velev]"
             )

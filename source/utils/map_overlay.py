@@ -120,34 +120,34 @@ def _get_gpx_index(gpx_points: List[GpxPoint]) -> GPXIndex:
 
 
 def _render_base_figure(
-    gpx_points: List[GpxPoint], 
+    gpx_points: List[GpxPoint],
     size: Tuple[int, int]
 ) -> Tuple[plt.Figure, plt.Axes, Tuple[float, float, float, float]] | Tuple[None, None, None]:
     """
     Render base map figure with route overlay.
-    
+
     Args:
         gpx_points: GPS trackpoints to render
-        size: Output image size (width, height) in pixels
-    
+        size: Target output size (width, height) - used to calculate render resolution
+
     Returns:
         Tuple of (figure, axes, extent) or (None, None, None) on failure. Extent is (x_min, x_max, y_max, y_min).
     """
     # Downsample for performance
     sampled = _sample_by_time(gpx_points, interval_s=getattr(CFG, "MAP_SAMPLE_INTERVAL_S", 6))
     coords = [(p.lon, p.lat) for p in sampled]
-    
+
     if len(coords) < 2:
         # Fallback for insufficient data
         log.warning("Cannot render map, less than 2 GPX points.")
         return None, None, None
-    
+
     # Create GeoDataFrame and project to Web Mercator
     gdf = gpd.GeoDataFrame(
-        geometry=[LineString(coords)], 
+        geometry=[LineString(coords)],
         crs="EPSG:4326"
     ).to_crs(epsg=3857)
-    
+
     # Calculate bounds with padding
     x_min, y_min, x_max, y_max = gdf.total_bounds
     pad_pct = getattr(CFG, "MAP_PADDING_PCT", 0.06)
@@ -156,40 +156,59 @@ def _render_base_figure(
     x_max += dx * pad_pct
     y_min -= dy * pad_pct
     y_max += dy * pad_pct
-    
-    # Create figure
-    fig = plt.figure(figsize=(size[0]/100, size[1]/100), dpi=100)
+
+    # Calculate figure size based on ROUTE aspect ratio, not target
+    # This ensures bbox_inches='tight' won't crop away target dimensions
+    route_width = x_max - x_min
+    route_height = y_max - y_min
+    route_aspect = route_width / route_height if route_height > 0 else 1.0
+
+    # Render at high resolution (2x target) for quality, then scale in _figure_to_image
+    base_dim = max(size[0], size[1]) * 2
+    if route_aspect >= 1.0:
+        # Wide route: width is limiting
+        fig_w = base_dim
+        fig_h = base_dim / route_aspect
+    else:
+        # Tall route: height is limiting
+        fig_h = base_dim
+        fig_w = base_dim * route_aspect
+
+    # Create figure matching route aspect ratio
+    fig = plt.figure(figsize=(fig_w/100, fig_h/100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.axis("off")
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
-    
+
     # Add basemap
     try:
         # Default to OpenStreetMap if not specified in config
         basemap_source = getattr(ctx.providers, CFG.MAP_BASEMAP_PROVIDER, ctx.providers.OpenStreetMap.Mapnik)
         ctx.add_basemap(
-            ax, 
-            crs="EPSG:3857", 
+            ax,
+            crs="EPSG:3857",
             source=basemap_source
         )
-        # Reapply limits after basemap
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
     except Exception as e:
         log.warning(f"Basemap load failed, using fallback: {e}")
         ax.set_facecolor((0.95, 0.95, 0.95, 1.0))
-    
+
+    # Reapply limits and aspect after basemap
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_aspect('equal')  # Preserve geographic proportions
+
     # Draw route
     route_color = getattr(CFG, "MAP_ROUTE_COLOR", (0, 255, 0))
     route_width = getattr(CFG, "MAP_ROUTE_WIDTH", 4)
     gdf.plot(
-        ax=ax, 
-        color=_rgba(route_color), 
-        linewidth=route_width, 
+        ax=ax,
+        color=_rgba(route_color),
+        linewidth=route_width,
         zorder=5
     )
-    
+
     return fig, ax, (x_min, x_max, y_max, y_min)
 
 
@@ -218,9 +237,19 @@ def _figure_to_image(fig: plt.Figure, target_size: Tuple[int, int] = None) -> Im
     img = Image.open(buf).convert("RGBA")
     plt.close(fig)
 
-    # Resize to exact target dimensions - this will scale the map to fill the frame
+    # Fit within target bounds preserving aspect ratio
+    # Result: width <= target_w, height <= target_h, no padding
     if target_size:
-        img = img.resize(target_size, Image.LANCZOS)
+        target_w, target_h = target_size
+        img_w, img_h = img.size
+
+        # Calculate scale to fit within bounds
+        scale = min(target_w / img_w, target_h / img_h)
+        new_w = int(img_w * scale)
+        new_h = int(img_h * scale)
+
+        # Resize preserving aspect ratio
+        img = img.resize((new_w, new_h), Image.LANCZOS)
 
     return img
 
@@ -250,13 +279,13 @@ def render_splash_map_with_xy(
         _splash_cache.move_to_end(cache_key)
         return _splash_cache[cache_key]
     
-    # Render new map (no resize - preserve aspect ratio)
+    # Render new map - scale to fill target area while preserving aspect ratio
     fig, ax, extent = _render_base_figure(gpx_points, size)
     if fig is None:
         # Handle rendering failure from _render_base_figure
         fallback_img = Image.new("RGBA", size, (0, 0, 0, 0))
         return fallback_img, (0, 0, 0, 0)
-    img = _figure_to_image(fig)
+    img = _figure_to_image(fig, target_size=size)
     
     # Cache result
     _splash_cache[cache_key] = (img, extent)
