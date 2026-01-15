@@ -75,11 +75,12 @@
     - Reference: `source/gui/manual_selection_window.py` (skeleton)
     - Config: `source/config.py` (KNOWN_OFFSETS)
 
-[ ] **Pre-composite gauge overlays** - 5 separate gauge inputs cause re-encoding
-  - `source/steps/build_helpers/clip_renderer.py:298-335`
-  - Render all gauges to single PNG, overlay once
+[x] **Pre-composite gauge overlays** - Single PNG per clip instead of 5 overlays
+  - `source/steps/build_helpers/gauge_prerenderer.py` - Parallel composite rendering
+  - `source/steps/build_helpers/clip_renderer.py` - Single overlay filter
+  - `source/steps/build.py` - Integration with GaugePrerenderer ✓
 
-[ ] **Parallelize splash PNG saves** - Sequential PIL saves
-  - `source/steps/splash_helpers/animation_renderer.py:203-205`
+[x] **Parallelize splash PNG saves** - Uses ThreadPoolExecutor
+  - `source/steps/splash_helpers/animation_renderer.py` - Parallel frame saving ✓
 
 [ ] **Auto-detect hardware capabilities** - Adjust settings for MacBook Air vs Mac Mini

@@ -6,6 +6,8 @@ Creates smooth tile-flip transitions from map to collage.
 
 from __future__ import annotations
 import math
+from concurrent.futures import ThreadPoolExecutor
+from os import cpu_count
 from pathlib import Path
 from typing import List, Tuple
 from PIL import Image
@@ -199,11 +201,17 @@ class AnimationRenderer:
         """
         import subprocess
         
-        # Save frames as PNGs
+        # Save frames as PNGs (parallelized for performance)
         temp_dir.mkdir(parents=True, exist_ok=True)
-        for idx, img in enumerate(frames):
+
+        def save_frame(args: Tuple[int, Image.Image]) -> None:
+            idx, img = args
             frame_path = temp_dir / f"flip_{idx:04d}.png"
             img.save(frame_path, quality=95)
+
+        num_workers = min(cpu_count() or 4, 8)
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            executor.map(save_frame, enumerate(frames))
         
         # Encode with FFmpeg (hardware accelerated if available)
         video_codec = "h264_videotoolbox" if CFG.FFMPEG_HWACCEL == "videotoolbox" else "libx264"
