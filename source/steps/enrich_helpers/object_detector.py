@@ -53,7 +53,7 @@ def get_model():
         torch = _get_torch()
 
         device = 'mps' if CFG.USE_MPS and torch.backends.mps.is_available() else 'cpu'
-        model_name = getattr(CFG, 'YOLO_MODEL', 'yolo11n.pt')
+        model_name = getattr(CFG, 'YOLO_MODEL', 'yolo11s.pt')
         log.info(f"Loading {model_name} on {device}...")
 
         _model_instance = YOLO(model_name).to(device)

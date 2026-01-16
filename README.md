@@ -8,7 +8,7 @@
 
   Key Features
 
-  - AI Scene Detection - Uses YOLO v8 to identify cyclists, vehicles, and interesting traffic events
+  - AI Scene Detection - Uses YOLO v11 to identify cyclists, vehicles, and interesting traffic events
   - Multi-Camera Sync - Automatically aligns front/rear cameras with Cycliq-specific timing offsets
   - Telemetry Gauges - Semi-transparent speed, cadence, heart rate, elevation displays
   - Route Minimap - Live position marker tracking on OpenStreetMap
@@ -24,7 +24,7 @@
 
   Tech Stack
 
-  - Python, PyTorch, YOLO v8, OpenCV, FFmpeg, PySide6
+  - Python, PyTorch, YOLO v11, OpenCV, FFmpeg, PySide6
   - Hardware-accelerated encoding optimized for Apple Silicon
   - Strava/Garmin integration for activity data
 
