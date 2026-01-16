@@ -241,6 +241,10 @@ class Config:
         return self.PROJECT_DIR / "frames"
 
     @property
+    def CALIBRATION_FRAMES_DIR(self) -> Path:
+        return self.PROJECT_DIR / "calibration_frames"
+
+    @property
     def SPLASH_ASSETS_DIR(self) -> Path:
         return self.PROJECT_DIR / "splash_assets"
 

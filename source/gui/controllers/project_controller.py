@@ -160,7 +160,7 @@ class ProjectController:
         try:
             # Create directories
             project_folder.mkdir(parents=True, exist_ok=True)
-            for sub in ["logs", "working", "clips", "frames",
+            for sub in ["logs", "working", "clips", "frames", "calibration_frames",
                         "splash_assets", "minimaps", "gauges"]:
                 (project_folder / sub).mkdir(exist_ok=True)
             

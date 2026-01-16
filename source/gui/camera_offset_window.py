@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 
 from source.config import DEFAULT_CONFIG as CFG
-from source.io_paths import flatten_path, frames_dir, _mk
+from source.io_paths import flatten_path, _mk
 from source.utils.log import setup_logger
 from source.utils.video_utils import (
     probe_video_metadata,
@@ -51,7 +51,7 @@ class CameraOffsetWindow(QDialog):
     def __init__(self, project_dir: Path, parent=None):
         super().__init__(parent)
         self.project_dir = project_dir
-        self.thumbnail_dir = _mk(frames_dir() / "calibration")
+        self.thumbnail_dir = _mk(CFG.CALIBRATION_FRAMES_DIR)
 
         # Current offset values - load from project_config.json if exists, else from default config
         self.offsets: Dict[str, float] = self._load_saved_offsets()
@@ -418,23 +418,23 @@ class CameraOffsetWindow(QDialog):
 
         source = video_path.name  # For thumbnail naming
 
-        # Check for cached thumbnail - use larger size for timestamp visibility
-        thumb_name = f"{Path(source).stem}_thumb.jpg"
+        # Check for cached thumbnail - use high resolution for readable timestamps
+        thumb_name = f"{Path(source).stem}_cal.png"
         thumb_path = self.thumbnail_dir / thumb_name
 
         if not thumb_path.exists():
-            # Extract first frame - save full frame scaled to reasonable size
+            # Extract first frame - save at high resolution (PNG for lossless quality)
             try:
                 frame = extract_frame_safe(video_path, 0)
                 if frame is not None:
                     from PIL import Image
                     img = Image.fromarray(frame)
-                    # Scale to width 832 (30% larger) for readable timestamps
+                    # Scale to 1280px width for clear timestamp readability
                     w, h = img.size
-                    new_w = 832
+                    new_w = 1280
                     new_h = int(h * new_w / w)
                     img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    img.save(thumb_path, quality=90)
+                    img.save(thumb_path)  # PNG = lossless
             except Exception as e:
                 log.warning(f"Failed to extract thumbnail from {source}: {e}")
                 label.setText(f"[Thumbnail error]")
