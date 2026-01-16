@@ -33,8 +33,9 @@ class GeneralSettingsWindow(QDialog):
     - Paths: Projects output, Source videos
     - Video Settings: codec, bitrate, buffers, volumes, PiP/minimap
     - M1 Settings: USE_MPS, YOLO_BATCH_SIZE, FFMPEG_HWACCEL
-    - Camera Offsets: creation_time offsets per camera model
     - Detection: YOLO confidence, image size, min detect score
+
+    Note: Camera timing calibration is per-project via Project Tools > Calibrate.
     """
 
     def __init__(self, parent=None):
@@ -44,7 +45,6 @@ class GeneralSettingsWindow(QDialog):
         self.setModal(True)
 
         self.overrides: Dict[str, Any] = {}
-        self.known_offsets_spinboxes: Dict[str, QDoubleSpinBox] = {}
 
         layout = QVBoxLayout(self)
 
@@ -56,14 +56,12 @@ class GeneralSettingsWindow(QDialog):
         self.paths_tab, self.paths_form = self._make_tab("Paths")
         self.video_tab, self.video_form = self._make_tab("Video Settings")
         self.m1_tab, self.m1_form = self._make_tab("M1 Settings")
-        self.camera_tab, self.camera_form = self._make_tab("Camera Timing")
         self.detect_tab, self.detect_form = self._make_tab("Detection")
 
         # Populate tabs
         self._create_paths_section()
         self._create_video_section()
         self._create_m1_section()
-        self._create_camera_offsets_section()
         self._create_detection_section()
 
         # Buttons
@@ -81,7 +79,7 @@ class GeneralSettingsWindow(QDialog):
         self.load_current_values()
 
         # Styling
-        for form in (self.paths_form, self.video_form, self.m1_form, self.camera_form, self.detect_form):
+        for form in (self.paths_form, self.video_form, self.m1_form, self.detect_form):
             form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
             form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             form.setSpacing(8)
@@ -286,41 +284,6 @@ class GeneralSettingsWindow(QDialog):
         except Exception:
             pass
 
-    def _create_camera_offsets_section(self):
-        """Global per-camera metadata correction (KNOWN_OFFSETS)."""
-        title = QLabel("Camera Metadata Correction (KNOWN_OFFSETS)")
-        title.setStyleSheet("font-weight: 700; margin-bottom: 6px;")
-        self.camera_form.addRow(title)
-
-        description = QLabel(
-            "Corrects per-camera metadata bias in creation_time.\n"
-            "Cycliq cameras write creation_time at the end of the clip, but each model "
-            "finalizes the file with a slightly different delay.\n"
-            "These values are global per camera model and do not change per ride."
-        )
-        description.setWordWrap(True)
-        description.setStyleSheet("font-size: 11px; color: #666; padding: 2px 0 10px 0;")
-        self.camera_form.addRow(description)
-
-        # Create spinboxes for each known offset entry
-        self.known_offsets_spinboxes: Dict[str, QDoubleSpinBox] = {}
-
-        for camera_name, offset_val in CFG.KNOWN_OFFSETS.items():
-            spin = _fix_size(QDoubleSpinBox())
-            spin.setRange(-10.0, 10.0)
-            spin.setSingleStep(0.1)
-            spin.setDecimals(2)
-            spin.setValue(float(offset_val))
-            spin.setToolTip(
-                f"Global metadata correction for {camera_name}.\n"
-                "Applied when inferring the real recording start time from creation_time.\n"
-                "Units: seconds. Positive = creation_time is later than true end."
-            )
-            self.camera_form.addRow(f"{camera_name} creation-time correction (s):", spin)
-            self.known_offsets_spinboxes[camera_name] = spin
-
-
-
     def _create_detection_section(self):
         """Detection and sampling settings."""
         title = QLabel("Detection & Sampling")
@@ -410,11 +373,6 @@ class GeneralSettingsWindow(QDialog):
         self.yolo_batch.setValue(int(cfg.YOLO_BATCH_SIZE))
         self.ffmpeg_hw.setText(str(cfg.FFMPEG_HWACCEL))
 
-        # Camera offsets
-        current_offsets = getattr(cfg, 'KNOWN_OFFSETS', {})
-        for camera_name, spinbox in self.known_offsets_spinboxes.items():
-            spinbox.setValue(current_offsets.get(camera_name, 0.0))
-
         # Detection settings
         self.extract_interval.setValue(int(cfg.EXTRACT_INTERVAL_SECONDS))
         self.gpx_tolerance.setValue(float(cfg.GPX_TOLERANCE))
@@ -446,10 +404,6 @@ class GeneralSettingsWindow(QDialog):
         overrides['USE_MPS'] = bool(self.use_mps.isChecked())
         overrides['YOLO_BATCH_SIZE'] = int(self.yolo_batch.value())
         overrides['FFMPEG_HWACCEL'] = self.ffmpeg_hw.text().strip()
-
-        # Camera offsets
-        known_offsets = {camera_name: spinbox.value() for camera_name, spinbox in self.known_offsets_spinboxes.items()}
-        overrides['KNOWN_OFFSETS'] = known_offsets
 
         # Detection settings
         overrides['EXTRACT_INTERVAL_SECONDS'] = int(self.extract_interval.value())

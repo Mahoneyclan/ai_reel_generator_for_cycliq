@@ -149,10 +149,10 @@ class PipelinePanel(QWidget):
         self.view_log_btn.clicked.connect(self.view_log_clicked.emit)
         special_layout.addWidget(self.view_log_btn)
 
-        # Project settings
+        # Project preferences
         self.project_settings_btn = self._create_special_button(
-            "Settings",
-            "Project-specific settings (audio track, pipeline parameters)"
+            "Preferences",
+            "Project-specific preferences (audio track, pipeline parameters)"
         )
         self.project_settings_btn.clicked.connect(self.project_settings_clicked.emit)
         special_layout.addWidget(self.project_settings_btn)
