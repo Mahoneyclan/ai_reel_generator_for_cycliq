@@ -19,11 +19,11 @@
   - Added loudnorm to music mixing for consistent levels
   - `source/utils/ffmpeg.py`, `source/steps/build_helpers/segment_concatenator.py` ✓
 
-[~] **Minimap sizing and positioning** - Partially working
+[x] **Minimap sizing and positioning** - Fixed
   - ✓ Renders at route's geographic aspect ratio
-  - ✓ Scales to fit within PIP width and height constraints
+  - ✓ Maximizes available space: width = PIP width, height = video - PIP - elevation - margins
   - ✓ Dynamic elevation plot positioning based on actual minimap height
-  - ✗ Width still not always matching PIP exactly for some route shapes
+  - ✓ Wide routes fill width (576px), tall routes fill height (532px)
   - `source/utils/map_overlay.py`, `source/steps/build_helpers/minimap_prerenderer.py`, `source/steps/build_helpers/clip_renderer.py`
 
 [x] **Reduce log file count** - Filter to app modules only

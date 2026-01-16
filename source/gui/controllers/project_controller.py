@@ -85,13 +85,48 @@ class ProjectController:
             
             # Reconfigure logging for this project
             reconfigure_loggers()
-            
+
+            # Load project-specific config overrides (e.g., KNOWN_OFFSETS)
+            self._load_project_config(project_path)
+
             return True
             
         except Exception as e:
             self.log(f"Failed to select project: {e}", "error")
             return False
     
+    def _load_project_config(self, project_path: Path) -> None:
+        """
+        Load project-specific config overrides from project_config.json.
+
+        This allows per-project settings like KNOWN_OFFSETS for camera calibration.
+
+        Args:
+            project_path: Path to project folder
+        """
+        import json
+        from ...models import reset_registry
+
+        config_path = project_path / "project_config.json"
+        if not config_path.exists():
+            return
+
+        try:
+            with config_path.open() as f:
+                overrides = json.load(f)
+
+            # Apply known overrides to CFG
+            if "KNOWN_OFFSETS" in overrides:
+                CFG.KNOWN_OFFSETS = dict(overrides["KNOWN_OFFSETS"])
+                self.log(f"Loaded project offsets: {CFG.KNOWN_OFFSETS}", "info")
+                # Reset camera registry to pick up new offsets
+                reset_registry()
+
+            controller_log.info(f"Loaded project config from {config_path}")
+
+        except Exception as e:
+            controller_log.warning(f"Failed to load project config: {e}")
+
     def create_project(self, source_folder: Path) -> Optional[Path]:
         """
         Create new project from source folder.

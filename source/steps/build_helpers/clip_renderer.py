@@ -232,9 +232,9 @@ class ClipRenderer:
         else:
             log.warning("[clip] PiP video missing; rendering main camera only")
 
-        # Minimap overlay - positioned at top-right with 30px margin (same as PIP)
-        # Minimap is pre-rendered at 576x576 (30% of 1920px standard video width)
-        OVERLAY_MARGIN = 30  # Hardcoded for consistency
+        # Minimap overlay - positioned at top-right with margin
+        # Minimap is pre-rendered to fit within PIP width x available height
+        OVERLAY_MARGIN = CFG.MINIMAP_MARGIN
 
         if minimap_path and minimap_path.exists():
             inputs.extend(["-i", str(minimap_path)])
@@ -252,8 +252,8 @@ class ClipRenderer:
             inputs.extend(["-i", str(elevation_path)])
             elev_idx = len([a for a in inputs if a == "-i"]) - 1
             # Position: right-aligned with minimap, below it with 10px gap
-            # Get actual minimap height from file
-            minimap_height = 400  # Default fallback
+            # Get actual minimap height from file (varies by route aspect ratio)
+            minimap_height = 500  # Default fallback
             if minimap_path and minimap_path.exists():
                 try:
                     from PIL import Image

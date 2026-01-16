@@ -34,19 +34,34 @@ class MinimapPrerenderer:
         self.output_dir = _mk(output_dir)
         self.gpx_points = gpx_points
 
-        # Calculate minimap size constraints based on PIP dimensions
-        # Width: same as PIP width
-        # Height: leave room for elevation plot below
-        video_width = 1920  # Standard width
+        # Calculate minimap size constraints to maximize available space
+        # Layout (top-right corner, top to bottom):
+        #   - top margin
+        #   - minimap
+        #   - gap
+        #   - elevation plot
+        #   - gap
+        #   - PIP video
+        #   - bottom margin
+        # Use MAP_SPLASH_SIZE as reference for output video dimensions
+        video_width, video_height = CFG.MAP_SPLASH_SIZE
         pip_width = int(video_width * CFG.PIP_SCALE_RATIO)
-        elev_height = int(pip_width * 0.25)  # Elevation is 25% of width
+        pip_height = int(video_height * CFG.PIP_SCALE_RATIO)
+        elev_height = int(pip_width * 0.25)  # Elevation is 25% of pip width
+        top_margin = CFG.MINIMAP_MARGIN
+        bottom_margin = CFG.PIP_MARGIN
+        gap_minimap_elev = 10  # Gap between minimap and elevation
+        gap_elev_pip = 10  # Gap between elevation and PIP
 
         self.max_width = pip_width  # Same as PIP width
-        # Max height: PIP width minus elevation height minus gap
-        # This ensures map + elevation fits in roughly square area
-        self.max_height = pip_width - elev_height - 20  # ~400px for standard
 
-        log.debug(f"[minimap] Size constraints: max {self.max_width}x{self.max_height}px")
+        # Max height: total available vertical space minus all other elements
+        available_height = (video_height - top_margin - bottom_margin
+                           - pip_height - elev_height
+                           - gap_minimap_elev - gap_elev_pip)
+        self.max_height = max(available_height, 200)  # Minimum 200px
+
+        log.info(f"[minimap] Video: {video_width}x{video_height}, PIP: {pip_width}x{pip_height}, max minimap: {self.max_width}x{self.max_height}px")
     
     def prerender_all(self, rows: List[Dict]) -> Dict[int, Path]:
         """
