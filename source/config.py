@@ -266,8 +266,8 @@ class Config:
     INTRO_MUSIC = ASSETS_DIR / "intro.mp3"
     OUTRO_MUSIC = ASSETS_DIR / "outro.mp3"
 
-    MUSIC_VOLUME: float = field(default_factory=lambda: _get_config_value('MUSIC_VOLUME', 0.5))
-    RAW_AUDIO_VOLUME: float = field(default_factory=lambda: _get_config_value('RAW_AUDIO_VOLUME', 0.6))
+    MUSIC_VOLUME: float = field(default_factory=lambda: _get_config_value('MUSIC_VOLUME', 0.7))
+    RAW_AUDIO_VOLUME: float = field(default_factory=lambda: _get_config_value('RAW_AUDIO_VOLUME', 0.3))
     SELECTED_MUSIC_TRACK: str = field(default_factory=lambda: _get_config_value('SELECTED_MUSIC_TRACK', ""))  # Empty = random
 
     # --- PiP & minimap overlay ---

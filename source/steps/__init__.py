@@ -2,7 +2,7 @@
 
 """Steps package - pipeline stages."""
 
-from . import flatten, align, extract, analyze, select, build, splash, concat
+from . import flatten, align, extract, enrich, select, build, splash, concat
 
 from enum import Enum
 
@@ -11,7 +11,7 @@ class PipelineStep(Enum):
     FLATTEN   = "flatten"
     ALIGN     = "align"
     EXTRACT   = "extract"
-    ANALYZE   = "analyze"
+    ENRICH    = "enrich"
     SELECT    = "select"
     BUILD     = "build"
     SPLASH    = "splash"
@@ -21,7 +21,7 @@ __all__ = [
     "flatten",
     "align",
     "extract",
-    "analyze",
+    "enrich",
     "select",
     "build",
     "splash",

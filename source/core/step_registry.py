@@ -2,8 +2,6 @@
 """
 Centralized registry for pipeline steps.
 Single source of truth - all step function mappings in one place.
-
-UPDATED: Replaced detect + enrich with combined analyze step.
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ PIPELINE_SEQUENCE = [
     "flatten",
     "align",
     "extract",
-    "analyze",
+    "enrich",
     "select",
     "build",
     "splash",
@@ -29,7 +27,7 @@ _STEP_FUNCTIONS: Dict[str, Callable] = {
     "flatten": steps.flatten.run,
     "align": steps.align.run,
     "extract": steps.extract.run,
-    "analyze": steps.analyze.run,
+    "enrich": steps.enrich.run,
     "select": steps.select.run,
     "build": steps.build.run,
     "splash": steps.splash.run,

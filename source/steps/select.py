@@ -36,7 +36,7 @@ from ..utils.log import setup_logger
 from ..utils.common import safe_float as _sf, read_csv as _load_csv
 from ..config import DEFAULT_CONFIG as CFG
 from ..models import get_registry
-from .analyze_helpers.segment_matcher import SegmentMatcher
+from .enrich_helpers.segment_matcher import SegmentMatcher
 
 log = setup_logger("steps.select")
 
@@ -471,9 +471,9 @@ def run() -> Path:
     enriched.sort(key=lambda r: _sf(r.get("abs_time_epoch")))
 
     # DO NOT recompute moment_id here.
-    # analyze.py already assigns correct moment_id using abs_time_epoch.
+    # enrich.py already assigns correct moment_id using abs_time_epoch.
     log.info(f"Loaded {len(enriched)} enriched frames")
-    log.info("Using moment_id from analyze.py (abs_time_epoch-based)")
+    log.info("Using moment_id from enrich.py (abs_time_epoch-based)")
 
     first_time = _sf(enriched[0].get("abs_time_epoch"))
     last_time = _sf(enriched[-1].get("abs_time_epoch"))

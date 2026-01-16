@@ -13,7 +13,7 @@ from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import enrich_path, select_path
 from .log import setup_logger
 from .common import safe_float as _sf, read_csv as _load_csv
-from ..steps.analyze_helpers.score_calculator import ScoreCalculator
+from ..steps.enrich_helpers.score_calculator import ScoreCalculator
 
 log = setup_logger("utils.selection_analyzer")
 

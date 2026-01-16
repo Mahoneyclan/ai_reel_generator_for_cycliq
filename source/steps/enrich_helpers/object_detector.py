@@ -1,4 +1,4 @@
-# source/steps/analyze_helpers/object_detector.py
+# source/steps/enrich_helpers/object_detector.py
 """
 YOLO-based object detection for frame analysis.
 Handles model loading, caching, and cleanup with thread-safety.
@@ -12,7 +12,7 @@ import threading
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyze_helpers.object_detector")
+log = setup_logger("steps.enrich_helpers.object_detector")
 
 # Thread-safe model management
 _model_lock = threading.Lock()
@@ -207,7 +207,7 @@ class ObjectDetector:
 
         except Exception as e:
             log.error(
-                f"[analyze.detector] Batch detection failed: "
+                f"[enrich.detector] Batch detection failed: "
                 f"batch_size={len(frames)}, valid_frames={len(valid_frames)}, "
                 f"error={type(e).__name__}: {e}"
             )

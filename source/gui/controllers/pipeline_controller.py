@@ -47,11 +47,11 @@ class PipelineController:
             raise ValueError("No project selected")
         self.executor.prepare()
     
-    def run_analyze(self):
-        """Run analysis step: analyze."""
+    def run_enrich(self):
+        """Run enrichment step: detection, scoring, telemetry."""
         if not self.current_project:
             raise ValueError("No project selected")
-        self.executor.analyze()
+        self.executor.enrich()
     
     def run_select(self):
         """Run selection step with manual review."""
@@ -74,16 +74,16 @@ class PipelineController:
         """
         return {
             "prepare_done": extract_path().exists(),
-            "analyze_done": enrich_path().exists(),
+            "enrich_done": enrich_path().exists(),
             "select_done": select_path().exists(),
         }
-    
-    def can_run_analyze(self) -> bool:
-        """Check if analyze step can be run (prepare must be done)."""
+
+    def can_run_enrich(self) -> bool:
+        """Check if enrich step can be run (prepare must be done)."""
         return extract_path().exists()
-    
+
     def can_run_select(self) -> bool:
-        """Check if select step can be run (analyze must be done)."""
+        """Check if select step can be run (enrich must be done)."""
         return enrich_path().exists()
     
     def can_run_finalize(self) -> bool:

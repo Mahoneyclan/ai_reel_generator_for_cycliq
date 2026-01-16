@@ -1,4 +1,4 @@
-# source/steps/analyze_helpers/score_calculator.py
+# source/steps/enrich_helpers/score_calculator.py
 """
 Composite scoring for frame ranking.
 Combines detection, scene change, speed, gradient, bbox area, and segment boost into final scores.
@@ -12,7 +12,7 @@ from ...utils.log import setup_logger
 from ...utils.common import safe_float as _sf
 from .segment_matcher import SegmentMatcher
 
-log = setup_logger("steps.analyze_helpers.score_calculator")
+log = setup_logger("steps.enrich_helpers.score_calculator")
 
 
 class ScoreCalculator:

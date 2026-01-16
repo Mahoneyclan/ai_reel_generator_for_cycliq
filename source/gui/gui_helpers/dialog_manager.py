@@ -51,7 +51,7 @@ class DialogManager:
             QMessageBox.warning(
                 self.parent,
                 "No Analysis Data",
-                "Please run the 'Analyze Frames' step first.\n\n"
+                "Please run the 'Enrich' step first.\n\n"
                 "The analysis tool needs enriched.csv to identify bottlenecks."
             )
             return

@@ -1,11 +1,10 @@
 # source/core/pipeline_executor.py
 """
 Unified pipeline executor for the four high-level actions:
-Prepare, Analyze, Select, Build.
+Prepare, Enrich, Select, Build.
 Each action runs its constituent steps with callbacks.
 
-UPDATED:
-- Enforces file-based dependencies before running each step.
+Enforces file-based dependencies before running each step.
 """
 
 from pathlib import Path
@@ -63,8 +62,8 @@ class PipelineExecutor:
             # Extract requires GPX timeline (uses GPX-anchored sampling grid)
             "extract": [flatten_path()],
 
-            # Analyze requires extracted frame metadata
-            "analyze": [extract_path()],
+            # Enrich requires extracted frame metadata
+            "enrich": [extract_path()],
 
             # Select requires enriched metadata
             "select": [enrich_path()],
@@ -150,9 +149,9 @@ class PipelineExecutor:
         for step in ["align", "extract"]:
             self._run_step(step)
 
-    def analyze(self):
-        """Run analysis only (enrichment, scoring, partner matching)."""
-        for step in ["analyze"]:
+    def enrich(self):
+        """Run enrichment (detection, scoring, telemetry, partner matching)."""
+        for step in ["enrich"]:
             self._run_step(step)
 
     def select(self, project_dir: Path):

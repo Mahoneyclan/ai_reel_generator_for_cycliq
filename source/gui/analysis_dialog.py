@@ -88,5 +88,5 @@ class AnalysisDialog(QDialog):
         except Exception as e:
             self.text_view.setPlainText(
                 f"❌ Analysis failed:\n\n{str(e)}\n\n"
-                f"Make sure you have run the Analyze and Select steps first."
+                f"Make sure you have run the Enrich and Select steps first."
             )

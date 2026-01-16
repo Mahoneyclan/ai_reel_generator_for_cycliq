@@ -1,6 +1,6 @@
-# source/steps/analyze_helpers/__init__.py
+# source/steps/enrich_helpers/__init__.py
 """
-Frame analysis components for the analyze pipeline step.
+Frame enrichment components for the enrich pipeline step.
 
 This package contains focused modules for different analysis tasks:
 - object_detector: YOLO-based bicycle detection

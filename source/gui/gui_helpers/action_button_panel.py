@@ -9,7 +9,7 @@ Buttons that DON'T require a project:
 - Settings (global app config)
 
 Project-specific buttons are in pipeline_panel.py:
-- Pipeline steps (GPX, Align, Analyze, Select, Build)
+- Pipeline steps (GPX, Align, Enrich, Select, Build)
 - Project Tools (Analyze Selection, View Log, Project Settings)
 """
 

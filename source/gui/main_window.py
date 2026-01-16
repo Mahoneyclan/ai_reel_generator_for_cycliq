@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
         # Pipeline panel (project-specific workflow)
         self.pipeline_panel.gpx_clicked.connect(self._show_gpx_import)
         self.pipeline_panel.prepare_clicked.connect(self._run_prepare)
-        self.pipeline_panel.analyze_clicked.connect(self._run_analyze)
+        self.pipeline_panel.enrich_clicked.connect(self._run_enrich)
         self.pipeline_panel.select_clicked.connect(self._run_select)
         self.pipeline_panel.build_clicked.connect(self._run_build)
 
@@ -236,12 +236,12 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._on_error("prepare", str(e))
 
-    def _run_analyze(self):
-        """Run analysis pipeline (enrichment and scoring)."""
+    def _run_enrich(self):
+        """Run enrichment pipeline (detection, scoring, telemetry)."""
         try:
-            self.pipeline_controller.run_analyze()
+            self.pipeline_controller.run_enrich()
         except Exception as e:
-            self._on_error("analyze", str(e))
+            self._on_error("enrich", str(e))
 
     def _run_select(self):
         """Run selection with manual review."""
@@ -345,7 +345,7 @@ class MainWindow(QMainWindow):
             "flatten": self.pipeline_panel.btn_gpx,
             "align": self.pipeline_panel.btn_prepare,
             "extract": self.pipeline_panel.btn_prepare,
-            "analyze": self.pipeline_panel.btn_analyze,
+            "enrich": self.pipeline_panel.btn_enrich,
             "select": self.pipeline_panel.btn_select,
             "build": self.pipeline_panel.btn_build,
             "splash": self.pipeline_panel.btn_build,
@@ -376,10 +376,10 @@ class MainWindow(QMainWindow):
 
         Mapping:
             Get GPX & Flatten → flatten.csv
-            Align & Extract    → extract.csv
-            Analyze            → enriched.csv
-            Select             → select.csv
-            Build              → final reel
+            Align & Extract   → extract.csv
+            Enrich            → enriched.csv
+            Select            → select.csv
+            Build             → final reel
         """
         if not self.project_controller.current_project:
             self.pipeline_panel.enable_all_buttons(False)
@@ -388,13 +388,13 @@ class MainWindow(QMainWindow):
         # Artifact existence
         gpx_done = flatten_path().exists()
         prepare_done = extract_path().exists()
-        analyze_done = enrich_path().exists()
+        enrich_done = enrich_path().exists()
         select_done = select_path().exists()
         build_done = self._check_finalize_done()
 
         # Enablement follows dependency chain:
         # - Align & Extract requires flatten.csv
-        # - Analyze requires extract.csv
+        # - Enrich requires extract.csv
         # - Select requires enriched.csv
         # - Build requires select.csv
         self.pipeline_panel.update_button_states(
@@ -404,10 +404,10 @@ class MainWindow(QMainWindow):
             prepare_enabled=gpx_done,
             prepare_done=prepare_done,
 
-            analyze_enabled=prepare_done,
-            analyze_done=analyze_done,
+            enrich_enabled=prepare_done,
+            enrich_done=enrich_done,
 
-            select_enabled=analyze_done,
+            select_enabled=enrich_done,
             select_done=select_done,
 
             build_enabled=select_done,

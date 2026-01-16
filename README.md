@@ -20,7 +20,7 @@
 
   8-Step Pipeline
 
-  Flatten → Align → Extract → Analyze → Select → Build → Splash → Concat
+  Flatten → Align → Extract → Enrich → Select → Build → Splash → Concat
 
   Tech Stack
 
@@ -100,12 +100,12 @@ ffprobe -version
   │   ├── flatten.py          # GPX to flat timeline
   │   ├── align.py            # Camera synchronization
   │   ├── extract.py          # Frame sampling
-  │   ├── analyze.py          # YOLO detection + scoring
+  │   ├── enrich.py           # YOLO detection + scoring
   │   ├── select.py           # Clip selection + manual review
   │   ├── build.py            # PiP compositing + overlays
   │   ├── splash.py           # Title cards
   │   ├── concat.py           # Final assembly with music
-  │   ├── analyze_helpers/    # Detection, scoring, matching
+  │   ├── enrich_helpers/     # Detection, scoring, matching
   │   ├── build_helpers/      # Rendering, gauges, minimaps
   │   └── splash_helpers/     # Intro/outro builders
   │
@@ -176,7 +176,7 @@ python run_gui.py
 # Outputs: extract.csv (frame_number, abs_time_epoch, video_path, etc.)
 ```
 
-#### 4. **Analyze** - AI Detection & Enrichment
+#### 4. **Enrich** - AI Detection & Enrichment
 ```bash
 # Runs YOLO object detection on sampled frames
 # Enriches with GPX telemetry (speed, gradient, elevation)

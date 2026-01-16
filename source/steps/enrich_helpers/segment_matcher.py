@@ -1,4 +1,4 @@
-# source/steps/analyze_helpers/segment_matcher.py
+# source/steps/enrich_helpers/segment_matcher.py
 """
 Match frame timestamps to Strava segment efforts for PR boost scoring.
 """
@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 from ...io_paths import segments_path
 from ...utils.log import setup_logger
 
-log = setup_logger("steps.analyze_helpers.segment_matcher")
+log = setup_logger("steps.enrich_helpers.segment_matcher")
 
 
 class SegmentMatcher:

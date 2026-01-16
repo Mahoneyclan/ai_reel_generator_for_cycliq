@@ -6,7 +6,7 @@ MIGRATED from pipeline_panel.py + project-specific buttons from action_button_pa
 Pipeline workflow:
 - Get GPX & Flatten
 - Align & Extract
-- Analyze
+- Enrich (detection, scoring, telemetry)
 - Select
 - Build
 
@@ -15,8 +15,8 @@ Special tools:
 - View Log
 
 Signal naming clarification:
-- analyze_clicked = Run the Analyze pipeline step
-- analyze_selection_clicked = Open selection analysis tool (was "analyze" in old action_button_panel)
+- enrich_clicked = Run the Enrich pipeline step
+- analyze_selection_clicked = Open selection analysis tool (debugging)
 """
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
@@ -32,7 +32,7 @@ class PipelinePanel(QWidget):
     # Pipeline step signals (from old pipeline_panel.py)
     gpx_clicked = Signal()          # Get GPX & Flatten
     prepare_clicked = Signal()      # Align & Extract
-    analyze_clicked = Signal()      # Runs analyze step
+    enrich_clicked = Signal()       # Runs enrich step (detection, scoring)
     select_clicked = Signal()
     build_clicked = Signal()        # Renamed from finalize_clicked
 
@@ -92,15 +92,15 @@ class PipelinePanel(QWidget):
         )
         layout.addWidget(self.btn_prepare)
 
-        # Analyze: detection, scene, telemetry, partner matching
-        self.btn_analyze = self._create_button(
-            "Analyze",
+        # Enrich: detection, scene, telemetry, partner matching
+        self.btn_enrich = self._create_button(
+            "Enrich",
             "Run object detection, scene detection, telemetry enrichment, and partner matching.\n"
             "Requires: extract.csv\n"
             "Produces: enriched.csv",
-            self.analyze_clicked
+            self.enrich_clicked
         )
-        layout.addWidget(self.btn_analyze)
+        layout.addWidget(self.btn_enrich)
 
         # Select: candidate pool + gap filtering + recommended clips
         self.btn_select = self._create_button(
@@ -174,7 +174,7 @@ class PipelinePanel(QWidget):
         self.pipeline_buttons = {
             "gpx": self.btn_gpx,
             "prepare": self.btn_prepare,
-            "analyze": self.btn_analyze,
+            "enrich": self.btn_enrich,
             "select": self.btn_select,
             "build": self.btn_build
         }
@@ -248,8 +248,8 @@ class PipelinePanel(QWidget):
         gpx_done: bool = False,
         prepare_enabled: bool = False,
         prepare_done: bool = False,
-        analyze_enabled: bool = False,
-        analyze_done: bool = False,
+        enrich_enabled: bool = False,
+        enrich_done: bool = False,
         select_enabled: bool = False,
         select_done: bool = False,
         build_enabled: bool = False,
@@ -264,7 +264,7 @@ class PipelinePanel(QWidget):
         """
         self._update_button(self.btn_gpx, gpx_enabled, gpx_done)
         self._update_button(self.btn_prepare, prepare_enabled, prepare_done)
-        self._update_button(self.btn_analyze, analyze_enabled, analyze_done)
+        self._update_button(self.btn_enrich, enrich_enabled, enrich_done)
         self._update_button(self.btn_select, select_enabled, select_done)
         self._update_button(self.btn_build, build_enabled, build_done)
 

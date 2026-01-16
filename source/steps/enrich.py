@@ -1,9 +1,9 @@
-# source/steps/analyze.py
+# source/steps/enrich.py
 """
-Frame analysis orchestrator.
+Frame enrichment orchestrator.
 Coordinates object detection, scene detection, GPS enrichment, and scoring.
 
-This is a thin orchestration layer - actual analysis logic is in analyze_helpers/ submodules.
+This is a thin orchestration layer - actual enrichment logic is in enrich_helpers/ submodules.
 """
 
 from __future__ import annotations
@@ -17,8 +17,8 @@ from ..io_paths import extract_path, enrich_path, _mk
 from ..utils.video_utils import VideoCache
 from ..utils.log import setup_logger
 
-# Import analysis components
-from .analyze_helpers import (
+# Import enrichment components
+from .enrich_helpers import (
     ObjectDetector,
     SceneDetector,
     GPSEnricher,
@@ -26,7 +26,7 @@ from .analyze_helpers import (
     cleanup_model,
 )
 
-log = setup_logger("steps.analyze")
+log = setup_logger("steps.enrich")
 
 
 def _assign_moment_ids(rows: List[Dict]) -> List[Dict]:
@@ -197,7 +197,7 @@ class FrameAnalyzer:
         """Clean up all components."""
         self.video_cache.close()  # Close cached video and log stats
         self.scene_detector.cleanup()
-        log.info(f"[analyze] Processed {self.frames_processed} frames")
+        log.info(f"[enrich] Processed {self.frames_processed} frames")
 
 
 def run() -> Path:
@@ -220,25 +220,25 @@ def run() -> Path:
 
     # Validate input
     if not extract_csv.exists():
-        log.error("[analyze] extract.csv missing - run extract step first")
+        log.error("[enrich] extract.csv missing - run extract step first")
         return out_csv
 
     # Load frame metadata
     try:
-        log.info("[analyze] Loading extract.csv...")
+        log.info("[enrich] Loading extract.csv...")
         with extract_csv.open() as f:
             rows = list(csv.DictReader(f))
-        log.info(f"[analyze] Loaded {len(rows)} frame metadata rows")
+        log.info(f"[enrich] Loaded {len(rows)} frame metadata rows")
     except Exception as e:
-        log.error(f"[analyze] Failed to load extract.csv: {e}")
+        log.error(f"[enrich] Failed to load extract.csv: {e}")
         return out_csv
 
     if not rows:
-        log.warning("[analyze] No frames to analyze")
+        log.warning("[enrich] No frames to analyze")
         return out_csv
 
     # Sort for scene continuity (same camera frames should be sequential)
-    log.info("[analyze] Sorting frames by camera and timestamp...")
+    log.info("[enrich] Sorting frames by camera and timestamp...")
     rows.sort(key=lambda r: (r.get("camera", ""), float(r.get("abs_time_epoch", 0) or 0.0)))
 
     # Initialize analyzer with batch size from config
@@ -249,8 +249,8 @@ def run() -> Path:
     )
     enriched_rows: List[Dict] = []
 
-    log.info(f"[analyze] Scene detection: comparing frames {CFG.SCENE_COMPARISON_WINDOW_S}s apart")
-    log.info(f"[analyze] Using batch size {batch_size} for YOLO inference")
+    log.info(f"[enrich] Scene detection: comparing frames {CFG.SCENE_COMPARISON_WINDOW_S}s apart")
+    log.info(f"[enrich] Using batch size {batch_size} for YOLO inference")
 
     try:
         # Process frames in batches for GPU efficiency
@@ -265,7 +265,7 @@ def run() -> Path:
 
         for batch_start, batch_end in progress_iter(
             batch_ranges,
-            desc=f"[analyze] Processing frames (batch={batch_size})",
+            desc=f"[enrich] Processing frames (batch={batch_size})",
             unit="batch"
         ):
             batch_rows = rows[batch_start:batch_end]
@@ -310,11 +310,11 @@ def run() -> Path:
         detection_frames = sum(1 for r in enriched_rows if r.get("object_detected") == "true")
 
         log.info(
-            f"[analyze] Complete: {len(enriched_rows)} frames; "
+            f"[enrich] Complete: {len(enriched_rows)} frames; "
             f"detections: {detection_frames}; "
             f"GPS: {stats.get('gps_matches', 0)}"
         )
-        log.info(f"[analyze] Scene detection stats: {stats}")
+        log.info(f"[enrich] Scene detection stats: {stats}")
 
     finally:
         # Always cleanup, even on error
@@ -325,10 +325,10 @@ def run() -> Path:
     enriched_rows.sort(key=lambda r: float(r.get("abs_time_epoch", 0) or 0.0))
 
     # Assign moment_ids to group paired frames
-    log.info("[analyze] Assigning moment IDs to paired frames...")
+    log.info("[enrich] Assigning moment IDs to paired frames...")
     enriched_rows = _assign_moment_ids(enriched_rows)
     paired_moments = sum(1 for r in enriched_rows if r.get("moment_id"))
-    log.info(f"[analyze] Assigned moment IDs: {paired_moments} frames in {paired_moments // 2} moments")
+    log.info(f"[enrich] Assigned moment IDs: {paired_moments} frames in {paired_moments // 2} moments")
 
     # Write enriched CSV
     if enriched_rows:
@@ -338,7 +338,7 @@ def run() -> Path:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(enriched_rows)
-        log.info(f"[analyze] Wrote {len(enriched_rows)} enriched frames → {out_csv}")
+        log.info(f"[enrich] Wrote {len(enriched_rows)} enriched frames → {out_csv}")
 
     return out_csv
 
