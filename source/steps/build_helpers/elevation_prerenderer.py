@@ -30,9 +30,10 @@ class ElevationPrerenderer:
         self.output_dir = _mk(output_dir)
         self.elevation_data = load_elevation_data(flatten_path())
 
-        # Width matches minimap (video_width * MINIMAP_SIZE_RATIO)
-        video_width = 1920  # Standard Cycliq video width
-        self.width = int(video_width * CFG.MINIMAP_SIZE_RATIO)
+        # Width matches PIP (same as minimap max_width)
+        video_width, video_height = CFG.MAP_SPLASH_SIZE
+        pip_width = int(video_width * CFG.PIP_SCALE_RATIO)
+        self.width = pip_width  # Same width as PIP
         # Height is ~25% of width for a wide strip
         self.height = max(80, int(self.width * 0.25))
 
