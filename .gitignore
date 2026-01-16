@@ -35,3 +35,4 @@ source/garmin/garmin_credentials.py
 # Ignore specific root scripts
 copy_rename.py
 
+user_config.json
