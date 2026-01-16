@@ -10,7 +10,7 @@ Buttons that DON'T require a project:
 
 Project-specific buttons are in pipeline_panel.py:
 - Pipeline steps (GPX, Extract, Enrich, Select, Build)
-- Project Tools (Analyze Selection, View Log, Project Settings)
+- Project Tools (Summary, View Log, Preferences, Calibrate)
 """
 
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame

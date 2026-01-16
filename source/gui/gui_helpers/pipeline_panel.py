@@ -11,12 +11,12 @@ Pipeline workflow:
 - Build
 
 Special tools:
-- Analyze Selection
+- Project Summary
 - View Log
 
 Signal naming clarification:
 - enrich_clicked = Run the Enrich pipeline step
-- analyze_selection_clicked = Open selection analysis tool (debugging)
+- project_summary_clicked = Open project summary report
 """
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
@@ -37,7 +37,7 @@ class PipelinePanel(QWidget):
     build_clicked = Signal()        # Renamed from finalize_clicked
 
     # Project tool signals
-    analyze_selection_clicked = Signal()
+    project_summary_clicked = Signal()
     view_log_clicked = Signal()
     project_settings_clicked = Signal()  # Project-specific settings (audio, pipeline params)
     camera_calibration_clicked = Signal()  # Camera offset calibration tool
@@ -133,13 +133,13 @@ class PipelinePanel(QWidget):
         special_layout = QHBoxLayout()
         special_layout.setSpacing(10)
 
-        # Selection analysis
-        self.analyze_selection_btn = self._create_special_button(
-            "📊 Analyze Selection",
-            "Analyze selection pipeline metrics and identify bottlenecks using enriched.csv and select.csv"
+        # Project summary
+        self.project_summary_btn = self._create_special_button(
+            "📊 Summary",
+            "View project summary with detection stats, selection metrics, and pipeline diagnostics"
         )
-        self.analyze_selection_btn.clicked.connect(self.analyze_selection_clicked.emit)
-        special_layout.addWidget(self.analyze_selection_btn)
+        self.project_summary_btn.clicked.connect(self.project_summary_clicked.emit)
+        special_layout.addWidget(self.project_summary_btn)
 
         # View log
         self.view_log_btn = self._create_special_button(
@@ -179,7 +179,7 @@ class PipelinePanel(QWidget):
             "build": self.btn_build
         }
 
-        self.special_buttons = [self.analyze_selection_btn, self.view_log_btn, self.project_settings_btn, self.camera_calibration_btn]
+        self.special_buttons = [self.project_summary_btn, self.view_log_btn, self.project_settings_btn, self.camera_calibration_btn]
 
     def _create_separator(self) -> QFrame:
         """Create horizontal separator."""

@@ -171,7 +171,7 @@ class MainWindow(QMainWindow):
         self.pipeline_panel.build_clicked.connect(self._run_build)
 
         # Special project tools
-        self.pipeline_panel.analyze_selection_clicked.connect(self.dialog_manager.show_analysis)
+        self.pipeline_panel.project_summary_clicked.connect(self.dialog_manager.show_analysis)
         self.pipeline_panel.view_log_clicked.connect(self.dialog_manager.show_log)
         self.pipeline_panel.project_settings_clicked.connect(self._show_preferences)
         self.pipeline_panel.camera_calibration_clicked.connect(self._show_camera_calibration)
