@@ -282,7 +282,7 @@ class Config:
     MAP_ROUTE_COLOR: tuple[int, int, int] = (40, 180, 60)
     MAP_ROUTE_WIDTH: int = 8
     MAP_MARKER_COLOR: tuple[int, int, int] = (230, 175, 0)
-    MAP_MARKER_RADIUS: int = 8
+    MAP_MARKER_RADIUS: int = 24  # Marker size on minimap (3x larger for visibility)
     MAP_PADDING_PCT: float = 0.25
     MAP_ZOOM_PIP: int = 14
     MAP_ZOOM_SPLASH: int = 12
