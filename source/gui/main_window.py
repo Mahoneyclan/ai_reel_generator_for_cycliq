@@ -375,11 +375,11 @@ class MainWindow(QMainWindow):
         based on the presence of key artifacts.
 
         Mapping:
-            Get GPX & Flatten → flatten.csv
-            Align & Extract   → extract.csv
-            Enrich            → enriched.csv
-            Select            → select.csv
-            Build             → final reel
+            Get GPX  → flatten.csv
+            Extract  → extract.csv
+            Enrich   → enriched.csv
+            Select   → select.csv
+            Build    → final reel
         """
         if not self.project_controller.current_project:
             self.pipeline_panel.enable_all_buttons(False)
@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
         build_done = self._check_finalize_done()
 
         # Enablement follows dependency chain:
-        # - Align & Extract requires flatten.csv
+        # - Extract requires flatten.csv
         # - Enrich requires extract.csv
         # - Select requires enriched.csv
         # - Build requires select.csv
@@ -460,7 +460,7 @@ class MainWindow(QMainWindow):
             self._refresh_projects()
 
     def _show_gpx_import(self):
-        """Show GPX import (Get GPX & Flatten)."""
+        """Show GPX import (Get GPX)."""
         if not self.project_controller.current_project:
             self.dialog_manager.show_no_project_warning()
             return

@@ -4,8 +4,8 @@ Pipeline steps panel with project-specific workflow.
 MIGRATED from pipeline_panel.py + project-specific buttons from action_button_panel.py
 
 Pipeline workflow:
-- Get GPX & Flatten
-- Align & Extract
+- Get GPX
+- Extract
 - Enrich (detection, scoring, telemetry)
 - Select
 - Build
@@ -30,8 +30,8 @@ class PipelinePanel(QWidget):
     """
 
     # Pipeline step signals (from old pipeline_panel.py)
-    gpx_clicked = Signal()          # Get GPX & Flatten
-    prepare_clicked = Signal()      # Align & Extract
+    gpx_clicked = Signal()          # Get GPX
+    prepare_clicked = Signal()      # Extract (align + extract)
     enrich_clicked = Signal()       # Runs enrich step (detection, scoring)
     select_clicked = Signal()
     build_clicked = Signal()        # Renamed from finalize_clicked
@@ -72,20 +72,20 @@ class PipelinePanel(QWidget):
         # Pipeline step buttons (with explicit dependencies and outputs)
         # ---------------------------------------------------------------------
 
-        # Get GPX & Flatten: download/import GPX and create flatten.csv
+        # Get GPX: download/import GPX and create flatten.csv
         self.btn_gpx = self._create_button(
-            "Get GPX & Flatten",
+            "Get GPX",
             "Download or import GPX (Strava/Garmin) and generate flatten.csv.\n"
-            "Required before alignment and extraction.\n"
+            "Required before extraction.\n"
             "Produces: ride.gpx, flatten.csv",
             self.gpx_clicked
         )
         layout.addWidget(self.btn_gpx)
 
-        # Align & Extract: align cameras and extract frame metadata
+        # Extract: align cameras and extract frame metadata
         self.btn_prepare = self._create_button(
-            "Align & Extract",
-            "Log camera timing diagnostics and generate frame metadata using GPX-anchored grid.\n"
+            "Extract",
+            "Align cameras and generate frame metadata using GPX-anchored grid.\n"
             "Requires: flatten.csv\n"
             "Produces: extract.csv",
             self.prepare_clicked

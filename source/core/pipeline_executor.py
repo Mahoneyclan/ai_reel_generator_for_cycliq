@@ -140,10 +140,10 @@ class PipelineExecutor:
 
     def prepare(self):
         """
-        Run preparation steps: alignment & extraction.
+        Run preparation steps: alignment diagnostics & extraction.
 
         Note:
-            Flatten is conceptually part of "Get GPX & Flatten" in the GUI,
+            Flatten is conceptually part of "Get GPX" in the GUI,
             and should have been run before calling prepare().
         """
         for step in ["align", "extract"]:
