@@ -2,18 +2,18 @@
 
 This document outlines performance optimizations for both Mac Mini (M1) and MacBook deployments.
 
-## Current State
+## Current State (Updated 2026-01-16)
 
 | Component | Current Setting | Notes |
 |-----------|----------------|-------|
-| Video codec | `libx264` (software) | Hardware encoding available on M1 |
+| Video codec | `h264_videotoolbox` | **DONE** - Hardware H.264 on Apple Silicon |
 | FFmpeg hwaccel | `videotoolbox` | Hardware decoding enabled |
-| Worker cap | `8` maximum | Limits parallelism on high-core machines |
-| YOLO batch | `8` fixed | Should be adaptive to GPU memory |
+| Worker scaling | Dynamic by task type | **DONE** - Removed 8-worker cap |
+| YOLO batch | Adaptive (8-64) | **DONE** - Based on system RAM |
 | YOLO model | `yolo11s.pt` | Good balance of speed/accuracy |
 | Pre-rendering | Parallel (minimaps, gauges, elevation) | Already optimized |
 
-## Priority 1: FFmpeg Codec Optimization
+## Priority 1: FFmpeg Codec Optimization - COMPLETED ✓
 
 **Impact: ~40-60% faster clip encoding**
 
@@ -68,7 +68,7 @@ def get_optimal_codec() -> str:
 
 ---
 
-## Priority 2: Dynamic Worker Scaling
+## Priority 2: Dynamic Worker Scaling - COMPLETED ✓
 
 **Impact: Better CPU utilization on high-core machines**
 
@@ -126,7 +126,7 @@ def get_worker_count(task_type: str = 'general') -> int:
 
 ---
 
-## Priority 3: Adaptive YOLO Batch Size
+## Priority 3: Adaptive YOLO Batch Size - COMPLETED ✓
 
 **Impact: ~20-30% faster detection on GPUs with more memory**
 
@@ -261,17 +261,17 @@ def _iter_csv_rows(csv_path: Path, chunk_size: int = 1000):
 
 ## Implementation Order
 
-### Phase 1: Quick Wins (Immediate)
-1. **FFmpeg codec optimization** - Single file change, major speedup
-2. **Dynamic worker scaling** - Remove arbitrary 8-worker cap
+### Phase 1: Quick Wins - COMPLETED ✓
+1. ✅ **FFmpeg codec optimization** - Using h264_videotoolbox on Apple Silicon
+2. ✅ **Dynamic worker scaling** - Task-specific worker counts, no arbitrary cap
 
-### Phase 2: Detection Optimization
-3. **Adaptive YOLO batch size** - Better GPU utilization
+### Phase 2: Detection Optimization - COMPLETED ✓
+3. ✅ **Adaptive YOLO batch size** - Scales with system RAM (8GB→8, 16GB→16, etc.)
 
-### Phase 3: Caching (Optional)
+### Phase 3: Caching (Optional) - PENDING
 4. **Asset cache** - Skip redundant pre-rendering
 
-### Phase 4: Large Project Support (Optional)
+### Phase 4: Large Project Support (Optional) - PENDING
 5. **CSV streaming** - Handle projects with 10,000+ frames
 
 ---
