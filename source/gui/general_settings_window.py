@@ -320,6 +320,7 @@ class GeneralSettingsWindow(QDialog):
             self.known_offsets_spinboxes[camera_name] = spin
 
 
+
     def _create_detection_section(self):
         """Detection and sampling settings."""
         title = QLabel("Detection & Sampling")
@@ -468,3 +469,4 @@ class GeneralSettingsWindow(QDialog):
 
         QMessageBox.information(self, "Saved", "General settings saved.")
         self.accept()
+

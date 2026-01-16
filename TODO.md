@@ -54,26 +54,13 @@
 
 ### PENDING
 
-[ ] **Camera Offset Calibration Window** - Compare burnt-in timestamp to metadata
-  - **Priority**: High (run before analysis phase)
-  - **Purpose**: Adjust per-camera KNOWN_OFFSETS by visually comparing:
-    1. Burnt-in timestamp (visible in frame)
-    2. Raw metadata creation_time
-    3. Calculated start time (creation_time - duration + offset)
-  - **UI Layout** (based on manual_selection_window skeleton):
-    - Grid view: first frame from each clip, grouped by camera
-    - Left column: Fly6Pro clips with thumbnails + metadata
-    - Right column: Fly12Sport clips with thumbnails + metadata
-    - Each cell shows: thumbnail, filename, burnt-in time, metadata time, calculated time, delta
-  - **Data source**: align.csv and extract.csv (pre-analysis data)
-  - **Controls**:
-    - Spinbox per camera to adjust offset in real-time
-    - "Recalculate" button to update calculated times
-    - "Save to Config" button to persist KNOWN_OFFSETS
-  - **Files to create/modify**:
-    - NEW: `source/gui/camera_offset_window.py`
-    - Reference: `source/gui/manual_selection_window.py` (skeleton)
-    - Config: `source/config.py` (KNOWN_OFFSETS)
+[x] **Camera Offset Calibration Window** - Visual offset adjustment tool
+  - `source/gui/camera_offset_window.py` - New calibration window
+  - Shows thumbnails with burnt-in timestamps vs calculated times
+  - Per-camera spinbox controls for real-time adjustment
+  - Saves to project_config.json (per-project) and updates CameraRegistry
+  - Accessible via Pipeline Panel > Project Tools > Calibrate button
+  - Note: H.265 vs H.264 codec choice affects write timing (use same codec on both cameras) ✓
 
 [x] **Pre-composite gauge overlays** - Single PNG per clip instead of 5 overlays
   - `source/steps/build_helpers/gauge_prerenderer.py` - Parallel composite rendering

@@ -174,6 +174,7 @@ class MainWindow(QMainWindow):
         self.pipeline_panel.analyze_selection_clicked.connect(self.dialog_manager.show_analysis)
         self.pipeline_panel.view_log_clicked.connect(self.dialog_manager.show_log)
         self.pipeline_panel.project_settings_clicked.connect(self._show_preferences)
+        self.pipeline_panel.camera_calibration_clicked.connect(self._show_camera_calibration)
 
     def _log_to_panel(self, message: str, level: str = "info"):
         """Route project controller logs to activity panel."""
@@ -429,6 +430,18 @@ class MainWindow(QMainWindow):
             return
 
         self.dialog_manager.show_preferences()
+
+    def _show_camera_calibration(self):
+        """Show camera offset calibration window."""
+        if not self.project_controller.current_project:
+            self.dialog_manager.show_no_project_warning()
+            return
+
+        from source.gui.camera_offset_window import CameraOffsetWindow
+        from source.config import DEFAULT_CONFIG as CFG
+
+        window = CameraOffsetWindow(CFG.PROJECT_DIR, parent=self)
+        window.exec()
 
     def _show_general_settings(self):
         """Show general settings dialog (no project required)."""

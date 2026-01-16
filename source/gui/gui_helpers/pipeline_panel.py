@@ -40,6 +40,7 @@ class PipelinePanel(QWidget):
     analyze_selection_clicked = Signal()
     view_log_clicked = Signal()
     project_settings_clicked = Signal()  # Project-specific settings (audio, pipeline params)
+    camera_calibration_clicked = Signal()  # Camera offset calibration tool
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -150,11 +151,20 @@ class PipelinePanel(QWidget):
 
         # Project settings
         self.project_settings_btn = self._create_special_button(
-            "🎛️ Project Settings",
+            "Settings",
             "Project-specific settings (audio track, pipeline parameters)"
         )
         self.project_settings_btn.clicked.connect(self.project_settings_clicked.emit)
         special_layout.addWidget(self.project_settings_btn)
+
+        # Camera calibration (same row)
+        self.camera_calibration_btn = self._create_special_button(
+            "Calibrate",
+            "Compare burnt-in timestamps with calculated times to calibrate camera timing offsets.\n"
+            "Use this to verify/adjust KNOWN_OFFSETS based on actual video footage."
+        )
+        self.camera_calibration_btn.clicked.connect(self.camera_calibration_clicked.emit)
+        special_layout.addWidget(self.camera_calibration_btn)
 
         layout.addLayout(special_layout)
 
@@ -169,7 +179,7 @@ class PipelinePanel(QWidget):
             "build": self.btn_build
         }
 
-        self.special_buttons = [self.analyze_selection_btn, self.view_log_btn, self.project_settings_btn]
+        self.special_buttons = [self.analyze_selection_btn, self.view_log_btn, self.project_settings_btn, self.camera_calibration_btn]
 
     def _create_separator(self) -> QFrame:
         """Create horizontal separator."""
