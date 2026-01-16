@@ -6,13 +6,13 @@ Combines all enabled gauges into a single PNG matching PIP size.
 
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from os import cpu_count
 from pathlib import Path
 from typing import Dict, List
 from PIL import Image
 
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
+from ...utils.hardware import get_worker_count
 from ...utils.draw_gauge import (
     draw_speed_gauge,
     draw_cadence_gauge,
@@ -53,7 +53,7 @@ class GaugePrerenderer:
         Returns:
             Dict mapping clip_idx -> composite_gauge_path
         """
-        num_workers = min(cpu_count() or 4, 8)
+        num_workers = get_worker_count('io')
         log.info(
             f"[gauge] Pre-rendering {len(rows)} composite gauges "
             f"({self.width}x{self.height}px, layout={self.layout}) "

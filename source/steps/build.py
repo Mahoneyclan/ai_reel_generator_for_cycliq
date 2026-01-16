@@ -10,7 +10,6 @@ Moment-based version:
 
 from __future__ import annotations
 import csv
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -21,6 +20,7 @@ from ..io_paths import select_path, clips_dir, minimap_dir, gauge_dir, _mk
 from ..utils.log import setup_logger
 from ..utils.gpx import load_gpx
 from ..utils.progress_reporter import progress_iter, report_progress
+from ..utils.hardware import get_worker_count, log_system_info
 
 # Import build helpers
 from .build_helpers import (
@@ -193,12 +193,10 @@ def _get_max_workers() -> int:
     """
     Determine optimal number of parallel FFmpeg workers.
 
-    Uses half of available CPUs to avoid overloading the system,
-    with a minimum of 1 and maximum of 8 workers.
+    Uses hardware detection to scale workers based on CPU cores
+    and task type (FFmpeg encoding is GPU-accelerated on Apple Silicon).
     """
-    cpu_count = os.cpu_count() or 4
-    workers = max(1, min(8, cpu_count // 2))
-    return workers
+    return get_worker_count('ffmpeg')
 
 
 def run() -> Path:
@@ -216,6 +214,9 @@ def run() -> Path:
     Returns:
         Path to clips directory
     """
+    # Log system info for diagnostics
+    log_system_info()
+
     # Setup output directories
     out_dir = _mk(clips_dir())
     minimap_path = _mk(minimap_dir())

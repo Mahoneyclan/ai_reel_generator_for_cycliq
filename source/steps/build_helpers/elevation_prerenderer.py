@@ -6,12 +6,12 @@ Uses parallel processing for faster rendering.
 
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from os import cpu_count
 from pathlib import Path
 from typing import Dict, List
 
 from ...utils.log import setup_logger
 from ...utils.elevation_plot import load_elevation_data, render_elevation_plot
+from ...utils.hardware import get_worker_count
 from ...io_paths import flatten_path, _mk
 from ...config import DEFAULT_CONFIG as CFG
 from ...utils.progress_reporter import report_progress
@@ -51,7 +51,7 @@ class ElevationPrerenderer:
             log.warning("[elev] No elevation data available, skipping plots")
             return {}
 
-        num_workers = min(cpu_count() or 4, 8)
+        num_workers = get_worker_count('io')
         log.info(f"[elev] Pre-rendering {len(rows)} elevation plots ({self.width}x{self.height}px) with {num_workers} workers...")
         paths: Dict[int, Path] = {}
 

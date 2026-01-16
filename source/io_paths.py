@@ -12,6 +12,7 @@ Layout:
         minimaps/
         gauges/
         elevation/
+        trophies/
 """
 
 from pathlib import Path
@@ -43,6 +44,7 @@ def splash_assets_dir() -> Path: return CFG.SPLASH_ASSETS_DIR
 def minimap_dir() -> Path: return CFG.MINIMAP_DIR
 def gauge_dir() -> Path: return CFG.GAUGE_DIR
 def elevation_dir() -> Path: return CFG.ELEVATION_DIR
+def trophy_dir() -> Path: return CFG.TROPHY_DIR
 
 # --- Logs (in project folder) ---
 def logs_dir() -> Path: return CFG.LOG_DIR

@@ -21,7 +21,8 @@ from ...config import DEFAULT_CONFIG as CFG
 from ...utils.log import setup_logger
 from ...utils.ffmpeg import mux_audio
 from ...utils.trophy_overlay import create_trophy_overlay
-from ...io_paths import _mk
+from ...utils.hardware import get_optimal_video_codec, is_apple_silicon
+from ...io_paths import _mk, trophy_dir
 
 log = setup_logger("steps.build_helpers.clip_renderer")
 
@@ -280,7 +281,7 @@ class ClipRenderer:
             except (ValueError, TypeError):
                 segment_grade = 0
 
-            trophy_path = self.output_dir / f"trophy_{clip_idx:04d}.png"
+            trophy_path = _mk(trophy_dir()) / f"trophy_{clip_idx:04d}.png"
             try:
                 create_trophy_overlay(
                     segment_name,
@@ -338,11 +339,11 @@ class ClipRenderer:
         final_stream: str,
         output_path: Path,
     ) -> List[str]:
-        """Build complete ffmpeg encoding command with optional hardware acceleration."""
+        """Build complete ffmpeg encoding command with optimal hardware acceleration."""
         cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
 
-        # Add hardware acceleration for decoding if configured
-        if CFG.FFMPEG_HWACCEL == "videotoolbox":
+        # Add hardware acceleration for decoding on Apple Silicon
+        if is_apple_silicon() and CFG.FFMPEG_HWACCEL == "videotoolbox":
             cmd.extend(["-hwaccel", "videotoolbox"])
 
         cmd.extend(inputs)
@@ -353,11 +354,11 @@ class ClipRenderer:
         else:
             cmd.extend(["-map", "0:v"])
 
-        # Use hardware encoder if available, otherwise fall back to configured codec
-        if CFG.FFMPEG_HWACCEL == "videotoolbox":
-            video_codec = "h264_videotoolbox"
+        # Select optimal video codec based on hardware and config
+        if CFG.PREFERRED_CODEC == 'auto':
+            video_codec = get_optimal_video_codec()
         else:
-            video_codec = CFG.VIDEO_CODEC
+            video_codec = CFG.PREFERRED_CODEC
 
         cmd.extend(
             [

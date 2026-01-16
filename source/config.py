@@ -176,6 +176,8 @@ class Config:
     # --- M1 hardware acceleration ---
     USE_MPS: bool = field(default_factory=lambda: _get_config_value('USE_MPS', True))
     FFMPEG_HWACCEL: str = field(default_factory=lambda: _get_config_value('FFMPEG_HWACCEL', 'videotoolbox'))
+    # Video codec: 'auto' = detect optimal, or specify: 'hevc_videotoolbox', 'h264_videotoolbox', 'libx264'
+    PREFERRED_CODEC: str = field(default_factory=lambda: _get_config_value('PREFERRED_CODEC', 'auto'))
 
     # --- Time alignment ---
     CAMERA_CREATION_TIME_TZ = timezone(timedelta(hours=10))
@@ -259,6 +261,10 @@ class Config:
     @property
     def ELEVATION_DIR(self) -> Path:
         return self.PROJECT_DIR / "elevation"
+
+    @property
+    def TROPHY_DIR(self) -> Path:
+        return self.PROJECT_DIR / "trophies"
 
     # --- Audio assets ---
     ASSETS_DIR = PROJECT_ROOT / "assets"
