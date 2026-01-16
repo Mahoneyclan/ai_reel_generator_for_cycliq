@@ -279,28 +279,28 @@ Projects are stored in `PROJECTS_ROOT/{ride_name}/`:
 
 ## Camera-Specific Timing
 
-### Cycliq Metadata Quirks
+### Video Codec Timing Offsets
 
-Both Cycliq cameras store `creation_time` in MP4 metadata, but with different behaviors:
+Cycliq cameras store `creation_time` in MP4 metadata at the end of recording, but different video codecs have different processing times that affect when this timestamp is written:
 
-| Camera | creation_time | Correction |
-|--------|--------------|------------|
-| **Fly12Sport** | End of recording **+ 2 seconds** | Subtract `duration + 2` |
-| **Fly6Pro** | Exact end of recording | Subtract `duration + 0` |
+| Codec | Typical Offset | Notes |
+|-------|---------------|-------|
+| **H.264** | ~0 seconds | Faster encoding, creation_time written immediately |
+| **H.265/HEVC** | ~2 seconds | Slower encoding, creation_time delayed by processing |
 
-This is **automatically detected** by `video_utils.detect_camera_creation_time_offset()`.
+**Important:** If your cameras use different codecs, their timestamps may be offset from each other. Use the **Camera Calibration** tool (Project Tools → Calibrate) to visually compare burnt-in timestamps with calculated times and adjust offsets per-project.
 
 ### Why This Matters
 
 Without correction:
-- Timestamps drift 2 seconds late for Fly12Sport
-- Camera offset incorrectly calculated as 13s (should be 11s)
 - Frame timestamps don't match burnt-in video timestamps
+- Cameras appear out of sync even when recording started together
+- GPX telemetry won't align correctly with video
 
-With correction:
+With proper calibration:
 - Frame timestamps align perfectly with burnt-in video display
-- Correct camera offset (11s in test footage)
-- Accurate GPX sync for speed/elevation overlays
+- Both cameras sync correctly for PiP compositing
+- Accurate GPX overlay for speed/elevation gauges
 
 
 
