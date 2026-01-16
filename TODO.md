@@ -52,8 +52,6 @@
   - Pipeline steps (flatten, build, intro) check project dir first, fallback to raw input
   - `source/config.py`, `source/importer/import_controller.py`, `source/io_paths.py` ✓
 
-### PENDING
-
 [x] **Camera Offset Calibration Window** - Visual offset adjustment tool
   - `source/gui/camera_offset_window.py` - New calibration window
   - Shows thumbnails with burnt-in timestamps vs calculated times
@@ -70,4 +68,19 @@
 [x] **Parallelize splash PNG saves** - Uses ThreadPoolExecutor
   - `source/steps/splash_helpers/animation_renderer.py` - Parallel frame saving ✓
 
-[ ] **Auto-detect hardware capabilities** - Adjust settings for MacBook Air vs Mac Mini
+[x] **Auto-detect hardware capabilities** - Adjust settings for MacBook Air vs Mac Mini
+  - `source/utils/hardware.py` - New hardware detection module
+  - Auto-detects Apple Silicon, selects optimal codec (h264_videotoolbox)
+  - Dynamic worker scaling based on CPU cores and task type
+  - Adaptive YOLO batch size based on system RAM
+  - `source/config.py` - Added PREFERRED_CODEC setting ✓
+
+[x] **Trophy overlays in separate folder** - Moved from clips/ to trophies/
+  - `source/config.py` - Added TROPHY_DIR property
+  - `source/io_paths.py` - Added trophy_dir() function
+  - `source/steps/build_helpers/clip_renderer.py` - Updated trophy path ✓
+
+### PENDING
+
+[ ] **Asset caching** - Skip re-rendering unchanged minimaps/gauges/elevation
+[ ] **CSV streaming** - Memory-efficient handling for large projects (10,000+ frames)
