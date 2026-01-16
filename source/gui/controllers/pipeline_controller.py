@@ -42,7 +42,7 @@ class PipelineController:
         self.current_project = project_path
     
     def run_prepare(self):
-        """Run preparation steps: align → extract."""
+        """Run extraction step."""
         if not self.current_project:
             raise ValueError("No project selected")
         self.executor.prepare()

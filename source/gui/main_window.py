@@ -343,7 +343,6 @@ class MainWindow(QMainWindow):
         """Update button to show in-progress state."""
         step_button_map = {
             "flatten": self.pipeline_panel.btn_gpx,
-            "align": self.pipeline_panel.btn_prepare,
             "extract": self.pipeline_panel.btn_prepare,
             "enrich": self.pipeline_panel.btn_enrich,
             "select": self.pipeline_panel.btn_select,

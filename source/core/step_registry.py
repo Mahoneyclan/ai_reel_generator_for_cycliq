@@ -13,7 +13,6 @@ from .. import steps
 # Ordered list of all pipeline steps in execution sequence
 PIPELINE_SEQUENCE = [
     "flatten",
-    "align",
     "extract",
     "enrich",
     "select",
@@ -25,7 +24,6 @@ PIPELINE_SEQUENCE = [
 # Function registry mapping step names to their run functions
 _STEP_FUNCTIONS: Dict[str, Callable] = {
     "flatten": steps.flatten.run,
-    "align": steps.align.run,
     "extract": steps.extract.run,
     "enrich": steps.enrich.run,
     "select": steps.select.run,

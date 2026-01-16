@@ -18,9 +18,9 @@
   - Manual Review GUI - Fine-tune AI-selected clips before final render
   - Settings UI - Global settings and per-project preferences
 
-  8-Step Pipeline
+  7-Step Pipeline
 
-  Flatten → Align → Extract → Enrich → Select → Build → Splash → Concat
+  Flatten → Extract → Enrich → Select → Build → Splash → Concat
 
   Tech Stack
 
@@ -96,9 +96,8 @@ ffprobe -version
   │   ├── pipeline_executor.py
   │   └── step_registry.py
   │
-  ├── steps/                  # 8 pipeline stages
+  ├── steps/                  # 7 pipeline stages
   │   ├── flatten.py          # GPX to flat timeline
-  │   ├── align.py            # Camera synchronization
   │   ├── extract.py          # Frame sampling
   │   ├── enrich.py           # YOLO detection + scoring
   │   ├── select.py           # Clip selection + manual review
@@ -159,15 +158,7 @@ python run_gui.py
 # Outputs: flatten.csv (gpx_epoch, lat, lon, elevation, speed, etc.)
 ```
 
-#### 2. **Align** - Camera Diagnostics
-```bash
-# Probes video metadata to log recording start times
-# Logs timing differences between cameras
-# Compares camera times to GPX timeline
-# Outputs: Diagnostic logs only (informational)
-```
-
-#### 3. **Extract** - Frame Metadata Generation
+#### 2. **Extract** - Frame Metadata Generation
 ```bash
 # Uses GPX-anchored global sampling grid
 # Grid: gpx_start + 0, gpx_start + 5s, gpx_start + 10s, ...
@@ -176,7 +167,7 @@ python run_gui.py
 # Outputs: extract.csv (frame_number, abs_time_epoch, video_path, etc.)
 ```
 
-#### 4. **Enrich** - AI Detection & Enrichment
+#### 3. **Enrich** - AI Detection & Enrichment
 ```bash
 # Runs YOLO object detection on sampled frames
 # Enriches with GPX telemetry (speed, gradient, elevation)
@@ -184,7 +175,7 @@ python run_gui.py
 # Outputs: enrich.csv (detect_score, speed_kmh, gradient, bbox_area, etc.)
 ```
 
-#### 5. **Select** - Clip Selection
+#### 4. **Select** - Clip Selection
 ```bash
 # AI pre-selection based on scoring weights
 # Partner matching (finds synchronized front/rear moments)
@@ -203,21 +194,21 @@ SCORE_WEIGHTS = {
 }
 ```
 
-#### 6. **Build** - Video Composition
+#### 5. **Build** - Video Composition
 ```bash
 # Extracts selected clips from source videos
 # Applies PiP compositing (main view + secondary)
 # Outputs: Individual clip files in clips/
 ```
 
-#### 7. **Splash** - Title Cards
+#### 6. **Splash** - Title Cards
 ```bash
 # Generates intro/outro with ride stats
 # Renders route overview map
 # Outputs: splash_intro.mp4, splash_outro.mp4
 ```
 
-#### 8. **Concat** - Final Assembly
+#### 7. **Concat** - Final Assembly
 ```bash
 # Concatenates: intro + clips + outro
 # Adds background music with ducking

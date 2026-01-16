@@ -56,9 +56,6 @@ class PipelineExecutor:
             # GPX + flatten
             "flatten": [],  # root of the telemetry timeline
 
-            # Camera alignment (diagnostics only)
-            "align": [flatten_path()],
-
             # Extract requires GPX timeline (uses GPX-anchored sampling grid)
             "extract": [flatten_path()],
 
@@ -140,14 +137,13 @@ class PipelineExecutor:
 
     def prepare(self):
         """
-        Run preparation steps: alignment diagnostics & extraction.
+        Run extraction step to generate frame metadata.
 
         Note:
             Flatten is conceptually part of "Get GPX" in the GUI,
             and should have been run before calling prepare().
         """
-        for step in ["align", "extract"]:
-            self._run_step(step)
+        self._run_step("extract")
 
     def enrich(self):
         """Run enrichment (detection, scoring, telemetry, partner matching)."""

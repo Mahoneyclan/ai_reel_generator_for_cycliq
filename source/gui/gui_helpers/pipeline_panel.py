@@ -31,7 +31,7 @@ class PipelinePanel(QWidget):
 
     # Pipeline step signals (from old pipeline_panel.py)
     gpx_clicked = Signal()          # Get GPX
-    prepare_clicked = Signal()      # Extract (align + extract)
+    prepare_clicked = Signal()      # Extract
     enrich_clicked = Signal()       # Runs enrich step (detection, scoring)
     select_clicked = Signal()
     build_clicked = Signal()        # Renamed from finalize_clicked
@@ -82,10 +82,10 @@ class PipelinePanel(QWidget):
         )
         layout.addWidget(self.btn_gpx)
 
-        # Extract: align cameras and extract frame metadata
+        # Extract: generate frame metadata using GPX-anchored grid
         self.btn_prepare = self._create_button(
             "Extract",
-            "Align cameras and generate frame metadata using GPX-anchored grid.\n"
+            "Generate frame metadata using GPX-anchored sampling grid.\n"
             "Requires: flatten.csv\n"
             "Produces: extract.csv",
             self.prepare_clicked
