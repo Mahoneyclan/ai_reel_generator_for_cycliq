@@ -294,7 +294,7 @@ class Config:
     MAP_MARKER_COLOR: tuple[int, int, int] = (230, 175, 0)
     MAP_MARKER_RADIUS: int = 24  # Marker size on minimap (3x larger for visibility)
     MAP_PADDING_PCT: float = 0.25
-    MAP_ZOOM_PIP: int = 14
+    MAP_ZOOM_PIP: int = 15
     MAP_ZOOM_SPLASH: int = 12
     MAP_SPLASH_SIZE: tuple[int, int] = (2560, 1440)
     MAP_BASEMAP_PROVIDER: str = field(
