@@ -104,6 +104,32 @@
 
 ### PENDING (Optional)
 
+[ ] **Review highlight selection algorithm** - Some high-value clips not being selected
+  - Problem: Not all clips in project files are producing highlights despite having high value imagery
+  - Investigation needed: Review scoring algorithm and selection thresholds
+  - Check if certain visual features are being underweighted
+  - Verify clip candidates aren't being filtered out prematurely
+  - `source/analysis/scoring.py` - Scoring weights and thresholds
+  - `source/steps/analyze.py` - Clip selection logic
+
+[ ] **Improve raw file visualization in manual_select** - Distinguish source video files
+  - Problem: Hard to identify which raw video file each clip originates from
+  - Solution: Add visual separators or labels showing source file boundaries
+  - Could use: color coding, section headers, file name labels, or timeline markers
+  - `source/gui/manual_select.py` - Manual selection interface
+
+[ ] **iMovie-style timeline selection** - More dynamic clip selection interface
+  - Problem: Current selection uses discrete thumbnail grid, not intuitive for video editing
+  - Solution: Research timeline-based selection like iMovie's scrubbing interface
+  - Features to investigate:
+    - Filmstrip view: continuous strip of frames you can scrub through
+    - Drag to select: click and drag to define in/out points on timeline
+    - Hover preview: show frame preview as mouse moves over timeline
+    - Zoom in/out: adjust timeline granularity (seconds vs minutes)
+    - Waveform display: audio visualization to help find interesting moments
+  - Libraries to research: PyQt timeline widgets, video editing UI frameworks
+  - `source/gui/manual_select.py` - Would need significant redesign
+
 [ ] **Asset caching** - Skip re-rendering unchanged minimaps/gauges/elevation
   - Cache with content hashes
   - Check hash before rendering, skip if unchanged
@@ -112,3 +138,61 @@
 [ ] **CSV streaming** - Memory-efficient handling for large projects (10,000+ frames)
   - Stream CSV rows in chunks instead of loading entire file
   - Only needed for very large projects
+
+
+[ ] **Distance-based elevation plot** - Switch x-axis from time to distance
+  - Problem: When ride is paused (stationary periods), time-based plot shows flat sections
+  - Solution: Use cumulative km travelled on x-axis instead of time
+  - Provides consistent visual scale regardless of stops/pauses
+  - `source/steps/build_helpers/elevation_prerenderer.py` - Update x-axis calculation
+  - `source/analysis/elevation.py` - May need distance calculation utilities
+  - Consider: Should handle zero-distance segments (GPS drift while stationary)
+
+[ ] **Allow non-reciprocal clip pairs** - Don't require matching front/rear segments
+  - Problem: Currently may require both Fly12 (front) and Fly6 (rear) footage for same timespan
+  - Solution: Allow clips from only one camera if the other has no interesting content
+  - Use case: Overtaking vehicle only visible from rear, or scenic view only from front
+  - Benefits: More flexible clip selection, better utilization of single-camera moments
+  - `source/analysis/scoring.py` or `source/steps/analyze.py` - Clip pairing logic
+  - `source/steps/build_helpers/segment_concatenator.py` - Handle single-camera segments
+  - Consider: How to display single-camera clips (full width? maintain PIP layout with blank?)
+
+[ ] **Handle single-camera segments** - Continue processing when one camera battery dies
+  - Problem: If Fly12 or Fly6 battery goes flat mid-ride, pipeline may fail or skip remaining footage
+  - Solution: Allow clips from only available camera for any time period
+  - Real-world scenario: Front camera dies at 2hr mark, rear camera continues to 3hr mark
+  - Pipeline should: 
+    - Detect when only one camera has footage for a timespan
+    - Score and select clips from available camera only
+    - Render single-camera clips with appropriate layout
+  - **PIP handling options:**
+    - Option A: Show available camera full-width, no PIP inset
+   
+  - `source/steps/analyze.py` - Camera availability detection per timestamp
+  - `source/analysis/scoring.py` - Single-camera scoring logic
+  - `source/steps/build_helpers/clip_renderer.py` - PIP layout logic for single-camera
+  - `source/steps/build_helpers/segment_concatenator.py` - Handle mixed paired/single clips
+
+[ ] **Hide gauges with null data** - Don't display gauges when data is unavailable
+  - Problem: Gauges may show placeholder or zero values when data is null/missing
+  - Solution: Check each gauge's data before rendering; skip if null
+  - Examples: No speed data (GPS dropout), no heart rate (sensor disconnected), no elevation
+  - `source/steps/build_helpers/gauge_prerenderer.py` - Add null checks before rendering each gauge
+  - Consider: Show partial gauge panel with only available data vs hide entire panel
+
+[ ] **Per-second gauge rendering** - Generate gauge overlays for each second of footage
+  - Problem: Current gauges show static values per clip segment (e.g., one gauge for 10-second clip)
+  - Solution: Generate unique gauge overlay for every second to show real-time data changes
+  - Benefits: 
+    - Speed gauge updates live as you accelerate/decelerate
+    - Distance/elevation increment visibly throughout clip
+    - More dynamic and engaging overlays
+  - Implementation:
+    - `source/steps/build_helpers/gauge_prerenderer.py` - Generate gauge per second instead of per clip
+    - Storage: Create gauges/second_XXXXX.png for each timestamp
+    - `source/steps/build_helpers/clip_renderer.py` - Apply time-indexed gauge sequence to video
+    - FFmpeg: Use overlay with frame-accurate timing or concat filter with 1fps gauge video
+  - Considerations:
+    - Storage: ~3600 gauge PNGs for 1hr ride vs ~30 for highlight reel
+    - Performance: Pre-rendering takes longer but playback unaffected
+    - Caching strategy important for iterative builds
