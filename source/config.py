@@ -320,6 +320,8 @@ class Config:
     ENABLED_GAUGES: list[str] = field(default_factory=lambda: _get_config_value(
         'ENABLED_GAUGES', ["speed", "cadence", "hr", "elev", "gradient"]
     ))
+    # Dynamic gauge mode: True = per-second updates (video), False = static PNG per clip
+    DYNAMIC_GAUGES: bool = field(default_factory=lambda: _get_config_value('DYNAMIC_GAUGES', True))
 
     # --- Encoding ---
     VIDEO_CODEC: str = field(default_factory=lambda: _get_config_value('VIDEO_CODEC', 'libx264'))

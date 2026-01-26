@@ -242,9 +242,10 @@ def run() -> Path:
         elevation_prerenderer = ElevationPrerenderer(CFG.ELEVATION_DIR)
         elevation_paths = elevation_prerenderer.prerender_all(main_rows_for_minimap)
 
-    # Step 2: Pre-render composite gauge overlays
-    log.info("[build] Pre-rendering composite gauge overlays...")
-    gauge_prerenderer = GaugePrerenderer(gauge_path)
+    # Step 2: Pre-render gauge overlays (static PNG or dynamic video per-second)
+    gauge_mode = "dynamic (per-second)" if CFG.DYNAMIC_GAUGES else "static"
+    log.info(f"[build] Pre-rendering {gauge_mode} gauge overlays...")
+    gauge_prerenderer = GaugePrerenderer(gauge_path, dynamic_mode=CFG.DYNAMIC_GAUGES)
     gauge_paths = gauge_prerenderer.prerender_all(main_rows_for_minimap)
 
     # Step 3: Render individual clips (parallel)

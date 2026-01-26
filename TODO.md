@@ -122,12 +122,11 @@
   - Gap filtering: Consider reducing `MIN_GAP_BETWEEN_CLIPS` 15s → 10s
   - Weight tuning: May need further adjustment based on results
 
-[ ] **Hide gauges with null data** - Don't display gauges when data is unavailable
-  - Problem: Gauges may show placeholder or zero values when data is null/missing
-  - Solution: Check each gauge's data before rendering; skip if null
-  - Examples: No speed data (GPS dropout), no heart rate (sensor disconnected), no elevation
-  - `source/steps/build_helpers/gauge_prerenderer.py` - Add null checks before rendering each gauge
-  - Consider: Show partial gauge panel with only available data vs hide entire panel
+[x] **Hide gauges with null data** - Don't display gauges when data is unavailable
+  - Added `_is_value_available()` helper to detect null/empty/invalid values ✓
+  - Gauges with missing data are now hidden (not rendered) ✓
+  - Partial gauge panel shows only available data ✓
+  - `source/steps/build_helpers/gauge_prerenderer.py` - `_extract_telemetry()` with null detection ✓
 
 #### P2 - Workflow Improvements
 
@@ -166,33 +165,15 @@
   - Check hash before rendering, skip if unchanged
   - Medium complexity, affects all pre-renderer classes
 
-[ ] **Dynamic gauge rendering** - Real-time telemetry updates without storage explosion
-  - Problem: Current gauges show static values per clip segment (e.g., one gauge for 4.5-second clip)
-  - Goal: Speed/cadence/HR update live during playback without generating thousands of PNGs
-  - **Current approach:** 1 PNG per clip (~30 files for highlight reel) - efficient but static
-  - **Research findings - Alternative approaches:**
-    | Approach | Storage | Dynamic | Complexity |
-    |----------|---------|---------|------------|
-    | FFmpeg drawtext | Zero | Per-frame | Low |
-    | Gauge video loop + text | ~5-10 MB | Per-frame | Medium |
-    | Per-second cached PNGs | ~500-1000 files | Per-second | Low |
-  - **Recommended: FFmpeg drawtext filter**
-    - Zero PNG generation overhead
-    - Per-frame telemetry accuracy via expression evaluation
-    - Filter: `drawtext=text='Speed\: %{expr}':x=30:y=30`
-    - Trade-off: text-only display (loses circular gauge visuals)
-  - **Alternative: Hybrid gauge loop + drawtext**
-    - Pre-render 2-second looping gauge background videos (~1-2 MB each)
-    - Overlay with drawtext for live values
-    - Maintains visual appeal + dynamic updates
-  - **Implementation steps:**
-    1. Pre-interpolate telemetry to frame resolution in ClipRenderer
-    2. Use FFmpeg drawtext with expressions for live values
-    3. Optional: create looping gauge background videos for visual appeal
-  - **Files to modify:**
-    - `source/steps/build_helpers/clip_renderer.py` - Add drawtext filter chain
-    - `source/steps/build_helpers/gauge_prerenderer.py` - May become optional/removed
-  - **Note:** Current approach is fine for highlight reels; this is only needed if dynamic updates are desired
+[x] **Dynamic gauge rendering** - Per-second telemetry updates
+  - **Implemented:** Per-second PNG rendering compiled to ProRes video with alpha ✓
+  - Telemetry lookup from flatten.csv timeline at each second offset ✓
+  - Storage: ~25MB for 4-min reel (~265 per-second PNGs → videos)
+  - Enabled via `CFG.DYNAMIC_GAUGES` (default: True) ✓
+  - Fallback to static PNG if video compilation fails ✓
+  - `source/config.py` - Added `DYNAMIC_GAUGES` setting ✓
+  - `source/steps/build_helpers/gauge_prerenderer.py` - Complete rewrite with dual-mode support ✓
+  - `source/steps/build_helpers/clip_renderer.py` - Handles both PNG and video overlays ✓
 
 #### P5 - Future / Research
 

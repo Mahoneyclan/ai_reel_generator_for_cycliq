@@ -330,13 +330,24 @@ class ClipRenderer:
         gauge_path: Optional[Path],
         duration: float,
     ) -> str:
-        """Add single composite gauge overlay to filter chain."""
+        """Add gauge overlay to filter chain.
+
+        Supports both static PNG (looped) and dynamic video (per-second updates).
+        """
         if not gauge_path or not gauge_path.exists():
             return current_stream
 
-        inputs.extend(
-            ["-loop", "1", "-t", f"{duration:.3f}", "-i", str(gauge_path)]
-        )
+        # Check if gauge is a video (dynamic) or PNG (static)
+        is_video = gauge_path.suffix.lower() in ('.mov', '.mp4', '.webm')
+
+        if is_video:
+            # Video gauge: use directly without looping
+            inputs.extend(["-t", f"{duration:.3f}", "-i", str(gauge_path)])
+        else:
+            # Static PNG: loop for clip duration
+            inputs.extend(
+                ["-loop", "1", "-t", f"{duration:.3f}", "-i", str(gauge_path)]
+            )
         idx_in = len([a for a in inputs if a == "-i"]) - 1
 
         # Position at bottom-left with HUD_PADDING
