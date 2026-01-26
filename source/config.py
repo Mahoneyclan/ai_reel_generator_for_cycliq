@@ -166,11 +166,12 @@ class Config:
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
         "detect_score": 0.15,
-        "scene_boost": 0.35,
+        "scene_boost": 0.30,      # Reduced from 0.35 to make room for dual_camera
         "speed_kmh": 0.15,
         "gradient": 0.10,
         "bbox_area": 0.10,
-        "segment_boost": 0.15,  # Strava PR/top-3 segment efforts
+        "segment_boost": 0.15,    # Strava PR/top-3 segment efforts
+        "dual_camera": 0.05,      # Bonus for moments with both front/rear cameras
     })  # Must sum to 1.0
 
     # --- M1 hardware acceleration ---

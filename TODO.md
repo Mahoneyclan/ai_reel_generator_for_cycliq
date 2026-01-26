@@ -100,17 +100,36 @@
   - `source/utils/hardware.py` - Detects Apple Silicon, RAM, CPU cores
   - Logs system info at build start for diagnostics ✓
 
+#### Clip Selection
+[x] **Allow single-camera moments** - Relax strict camera pairing requirement
+  - Single-camera moments now allowed in selection (previously dropped 20-50%)
+  - Added `dual_camera` weight (0.05) to prefer dual-perspective moments
+  - Reduced `scene_boost` weight from 0.35 → 0.30 to accommodate
+  - `source/config.py` - Added `dual_camera` to SCORE_WEIGHTS ✓
+  - `source/steps/select.py` - Relaxed `_group_rows_by_moment()` pairing logic ✓
+  - Added `is_single_camera` flag to select.csv output ✓
+
 ---
 
-### PENDING (Optional)
+### PENDING
 
-[ ] **Review highlight selection algorithm** - Some high-value clips not being selected
-  - Problem: Not all clips in project files are producing highlights despite having high value imagery
-  - Investigation needed: Review scoring algorithm and selection thresholds
-  - Check if certain visual features are being underweighted
-  - Verify clip candidates aren't being filtered out prematurely
-  - `source/analysis/scoring.py` - Scoring weights and thresholds
-  - `source/steps/analyze.py` - Clip selection logic
+#### P1 - High Impact / Core Quality
+
+[ ] **Further selection algorithm tuning** - Additional improvements if needed
+  - ~~Camera pairing too strict~~ ✓ FIXED - single-camera moments now allowed
+  - Sampling grid: 5-second intervals may miss peak action
+  - Candidate pool: Consider increasing `CANDIDATE_FRACTION` 2.5 → 5.0
+  - Gap filtering: Consider reducing `MIN_GAP_BETWEEN_CLIPS` 15s → 10s
+  - Weight tuning: May need further adjustment based on results
+
+[ ] **Hide gauges with null data** - Don't display gauges when data is unavailable
+  - Problem: Gauges may show placeholder or zero values when data is null/missing
+  - Solution: Check each gauge's data before rendering; skip if null
+  - Examples: No speed data (GPS dropout), no heart rate (sensor disconnected), no elevation
+  - `source/steps/build_helpers/gauge_prerenderer.py` - Add null checks before rendering each gauge
+  - Consider: Show partial gauge panel with only available data vs hide entire panel
+
+#### P2 - Workflow Improvements
 
 [ ] **Improve raw file visualization in manual_select** - Distinguish source video files
   - Problem: Hard to identify which raw video file each clip originates from
@@ -118,27 +137,14 @@
   - Could use: color coding, section headers, file name labels, or timeline markers
   - `source/gui/manual_select.py` - Manual selection interface
 
-[ ] **iMovie-style timeline selection** - More dynamic clip selection interface
-  - Problem: Current selection uses discrete thumbnail grid, not intuitive for video editing
-  - Solution: Research timeline-based selection like iMovie's scrubbing interface
-  - Features to investigate:
-    - Filmstrip view: continuous strip of frames you can scrub through
-    - Drag to select: click and drag to define in/out points on timeline
-    - Hover preview: show frame preview as mouse moves over timeline
-    - Zoom in/out: adjust timeline granularity (seconds vs minutes)
-    - Waveform display: audio visualization to help find interesting moments
-  - Libraries to research: PyQt timeline widgets, video editing UI frameworks
-  - `source/gui/manual_select.py` - Would need significant redesign
+[ ] **Single-camera clip rendering** - Display layout for single-perspective clips
+  - Selection now allows single-camera moments ✓
+  - **Remaining:** Rendering layout for single-camera clips
+  - Options: Full-width display, or maintain PIP layout with placeholder
+  - `source/steps/build_helpers/clip_renderer.py` - PIP layout logic for single-camera
+  - `source/steps/build_helpers/segment_concatenator.py` - Handle mixed paired/single clips
 
-[ ] **Asset caching** - Skip re-rendering unchanged minimaps/gauges/elevation
-  - Cache with content hashes
-  - Check hash before rendering, skip if unchanged
-  - Medium complexity, affects all pre-renderer classes
-
-[ ] **CSV streaming** - Memory-efficient handling for large projects (10,000+ frames)
-  - Stream CSV rows in chunks instead of loading entire file
-  - Only needed for very large projects
-
+#### P3 - Visual Enhancements
 
 [ ] **Distance-based elevation plot** - Switch x-axis from time to distance
   - Problem: When ride is paused (stationary periods), time-based plot shows flat sections
@@ -148,51 +154,97 @@
   - `source/analysis/elevation.py` - May need distance calculation utilities
   - Consider: Should handle zero-distance segments (GPS drift while stationary)
 
-[ ] **Allow non-reciprocal clip pairs** - Don't require matching front/rear segments
-  - Problem: Currently may require both Fly12 (front) and Fly6 (rear) footage for same timespan
-  - Solution: Allow clips from only one camera if the other has no interesting content
-  - Use case: Overtaking vehicle only visible from rear, or scenic view only from front
-  - Benefits: More flexible clip selection, better utilization of single-camera moments
-  - `source/analysis/scoring.py` or `source/steps/analyze.py` - Clip pairing logic
-  - `source/steps/build_helpers/segment_concatenator.py` - Handle single-camera segments
-  - Consider: How to display single-camera clips (full width? maintain PIP layout with blank?)
-
-[ ] **Handle single-camera segments** - Continue processing when one camera battery dies
-  - Problem: If Fly12 or Fly6 battery goes flat mid-ride, pipeline may fail or skip remaining footage
-  - Solution: Allow clips from only available camera for any time period
+[ ] **Handle single-camera segments in rendering** - Layout when one camera battery dies
+  - Selection now handles single-camera moments ✓
+  - **Remaining:** Rendering layout for single-camera clips
   - Real-world scenario: Front camera dies at 2hr mark, rear camera continues to 3hr mark
-  - Pipeline should: 
-    - Detect when only one camera has footage for a timespan
-    - Score and select clips from available camera only
-    - Render single-camera clips with appropriate layout
-  - **PIP handling options:**
+  - PIP handling options:
     - Option A: Show available camera full-width, no PIP inset
-   
-  - `source/steps/analyze.py` - Camera availability detection per timestamp
-  - `source/analysis/scoring.py` - Single-camera scoring logic
+    - Option B: Keep layout with blank/placeholder PIP
   - `source/steps/build_helpers/clip_renderer.py` - PIP layout logic for single-camera
   - `source/steps/build_helpers/segment_concatenator.py` - Handle mixed paired/single clips
 
-[ ] **Hide gauges with null data** - Don't display gauges when data is unavailable
-  - Problem: Gauges may show placeholder or zero values when data is null/missing
-  - Solution: Check each gauge's data before rendering; skip if null
-  - Examples: No speed data (GPS dropout), no heart rate (sensor disconnected), no elevation
-  - `source/steps/build_helpers/gauge_prerenderer.py` - Add null checks before rendering each gauge
-  - Consider: Show partial gauge panel with only available data vs hide entire panel
+#### P4 - Performance / Infrastructure
 
-[ ] **Per-second gauge rendering** - Generate gauge overlays for each second of footage
-  - Problem: Current gauges show static values per clip segment (e.g., one gauge for 10-second clip)
-  - Solution: Generate unique gauge overlay for every second to show real-time data changes
-  - Benefits: 
-    - Speed gauge updates live as you accelerate/decelerate
-    - Distance/elevation increment visibly throughout clip
-    - More dynamic and engaging overlays
-  - Implementation:
-    - `source/steps/build_helpers/gauge_prerenderer.py` - Generate gauge per second instead of per clip
-    - Storage: Create gauges/second_XXXXX.png for each timestamp
-    - `source/steps/build_helpers/clip_renderer.py` - Apply time-indexed gauge sequence to video
-    - FFmpeg: Use overlay with frame-accurate timing or concat filter with 1fps gauge video
-  - Considerations:
-    - Storage: ~3600 gauge PNGs for 1hr ride vs ~30 for highlight reel
-    - Performance: Pre-rendering takes longer but playback unaffected
-    - Caching strategy important for iterative builds
+[ ] **Asset caching** - Skip re-rendering unchanged minimaps/gauges/elevation
+  - Cache with content hashes
+  - Check hash before rendering, skip if unchanged
+  - Medium complexity, affects all pre-renderer classes
+
+[ ] **Dynamic gauge rendering** - Real-time telemetry updates without storage explosion
+  - Problem: Current gauges show static values per clip segment (e.g., one gauge for 4.5-second clip)
+  - Goal: Speed/cadence/HR update live during playback without generating thousands of PNGs
+  - **Current approach:** 1 PNG per clip (~30 files for highlight reel) - efficient but static
+  - **Research findings - Alternative approaches:**
+    | Approach | Storage | Dynamic | Complexity |
+    |----------|---------|---------|------------|
+    | FFmpeg drawtext | Zero | Per-frame | Low |
+    | Gauge video loop + text | ~5-10 MB | Per-frame | Medium |
+    | Per-second cached PNGs | ~500-1000 files | Per-second | Low |
+  - **Recommended: FFmpeg drawtext filter**
+    - Zero PNG generation overhead
+    - Per-frame telemetry accuracy via expression evaluation
+    - Filter: `drawtext=text='Speed\: %{expr}':x=30:y=30`
+    - Trade-off: text-only display (loses circular gauge visuals)
+  - **Alternative: Hybrid gauge loop + drawtext**
+    - Pre-render 2-second looping gauge background videos (~1-2 MB each)
+    - Overlay with drawtext for live values
+    - Maintains visual appeal + dynamic updates
+  - **Implementation steps:**
+    1. Pre-interpolate telemetry to frame resolution in ClipRenderer
+    2. Use FFmpeg drawtext with expressions for live values
+    3. Optional: create looping gauge background videos for visual appeal
+  - **Files to modify:**
+    - `source/steps/build_helpers/clip_renderer.py` - Add drawtext filter chain
+    - `source/steps/build_helpers/gauge_prerenderer.py` - May become optional/removed
+  - **Note:** Current approach is fine for highlight reels; this is only needed if dynamic updates are desired
+
+#### P5 - Future / Research
+
+[ ] **iMovie-style timeline selection** - Manual clip selection when algorithm fails
+  - **Why needed:** Algorithm is missing high-value clips; need manual scrubbing to find them
+  - Problem: Current grid-based card UI not intuitive for finding moments in long footage
+  - Solution: Timeline-based selection like iMovie's scrubbing interface
+  - **Research findings:**
+    - **Recommended approach:** QGraphicsView-based timeline (used by Shotcut, Kdenlive)
+    - **Reference library:** [asnunes/QTimeLine](https://github.com/asnunes/QTimeLine) - PyQt5 timeline widget
+    - **Key features:**
+      - Filmstrip view: horizontal strip of frame thumbnails (50-100px each)
+      - Drag-to-select: click and drag to define in/out points
+      - Hover preview: show frame time/enlarged thumbnail on hover
+      - Zoom in/out: seconds vs minutes granularity (Ctrl+/- or slider)
+      - Waveform display: librosa for audio visualization
+    - **Architecture:**
+      ```
+      TimelineGraphicsView (QGraphicsView)
+      └── TimelineScene (QGraphicsScene)
+          ├── RulerTrack (time labels + grid)
+          ├── FilmstripTrack (ThumbnailItems[])
+          ├── SelectionOverlay (drag handles for in/out)
+          ├── PlayheadCursor (vertical line)
+          └── WaveformTrack (audio visualization)
+      ```
+    - **Thumbnail optimization:**
+      - FFmpeg seeking (`-ss` before `-i`) = 3.8x faster extraction
+      - QPixmapCache for runtime caching
+      - Pre-cache during enrichment phase
+      - Viewport culling (QGraphicsView renders only visible items)
+    - **Dependencies to add:** `librosa`, `soundfile`, `scipy`
+  - **Complexity:** High (~40-60 hours total)
+    | Feature | Effort |
+    |---------|--------|
+    | Basic filmstrip + scroll | 4-6h |
+    | Zoom in/out | 6-8h |
+    | Selection handles (drag) | 6-8h |
+    | Thumbnail caching | 4-6h |
+    | Waveform display | 6-8h |
+    | Full integration | 15-20h |
+  - **Phased approach:**
+    1. Foundation: TimelineGraphicsView + static filmstrip + time ruler
+    2. Interaction: zoom + selection overlay + drag handles
+    3. Polish: hover preview + metadata panel
+    4. Advanced: waveform + keyboard shortcuts
+  - **Files to modify/create:**
+    - `source/gui/timeline_window.py` - New timeline UI
+    - `source/gui/manual_selection_window.py` - May integrate or replace
+  - **Note:** Keep moment-based model; timeline selects moment groups, not individual frames

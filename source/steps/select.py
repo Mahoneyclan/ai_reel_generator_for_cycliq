@@ -121,16 +121,18 @@ def _group_rows_by_moment(rows: List[Dict]) -> List[Dict]:
         {
             "moment_id": int,
             "moment_epoch": float,
-            "fly12": Dict,
-            "fly6": Dict,
+            "fly12": Dict or None,      # None if front camera unavailable
+            "fly6": Dict or None,       # None if rear camera unavailable
             "clip_num": int,
             "score_fly12": float,
             "score_fly6": float,
-            "best_score": float,
+            "best_score": float,        # Includes dual_camera bonus if both perspectives
             "scene_boost_max": float,
+            "is_dual_camera": bool,     # True if both perspectives available
         }
 
-    Moments missing one perspective are dropped.
+    Single-camera moments are allowed but receive no dual_camera bonus.
+    Dual-camera moments receive a scoring bonus from SCORE_WEIGHTS["dual_camera"].
     """
     by_moment: Dict[str, List[Dict]] = {}
     for r in rows:
@@ -141,6 +143,11 @@ def _group_rows_by_moment(rows: List[Dict]) -> List[Dict]:
 
     moments: List[Dict] = []
     dropped = 0
+    single_camera_count = 0
+    dual_camera_count = 0
+
+    # Get dual_camera bonus weight
+    dual_camera_weight = CFG.SCORE_WEIGHTS.get("dual_camera", 0.0)
 
     for mid, group in by_moment.items():
         # Expect at most one row per camera per moment
@@ -154,32 +161,66 @@ def _group_rows_by_moment(rows: List[Dict]) -> List[Dict]:
             elif registry.is_rear_camera(cam):
                 fly6_row = r
 
-        if not fly12_row or not fly6_row:
+        # Require at least one camera perspective
+        if not fly12_row and not fly6_row:
             dropped += 1
             continue
 
-        # Use the earlier abs_time_epoch as canonical moment_epoch
-        t12 = _sf(fly12_row.get("abs_time_epoch"))
-        t6 = _sf(fly6_row.get("abs_time_epoch"))
-        moment_epoch = min(t12, t6)
+        is_dual_camera = fly12_row is not None and fly6_row is not None
+        if is_dual_camera:
+            dual_camera_count += 1
+        else:
+            single_camera_count += 1
 
-        # clip_num: we trust they are aligned; fall back sensibly if not
-        try:
-            clip_num_12 = int(fly12_row.get("clip_num", "0"))
-        except Exception:
-            clip_num_12 = 0
-        try:
-            clip_num_6 = int(fly6_row.get("clip_num", "0"))
-        except Exception:
-            clip_num_6 = 0
-        clip_num = clip_num_12 if clip_num_12 == clip_num_6 else min(clip_num_12, clip_num_6)
+        # Use abs_time_epoch from available camera(s) as canonical moment_epoch
+        if fly12_row and fly6_row:
+            t12 = _sf(fly12_row.get("abs_time_epoch"))
+            t6 = _sf(fly6_row.get("abs_time_epoch"))
+            moment_epoch = min(t12, t6)
+        elif fly12_row:
+            moment_epoch = _sf(fly12_row.get("abs_time_epoch"))
+        else:
+            moment_epoch = _sf(fly6_row.get("abs_time_epoch"))
 
-        score_fly12 = _sf(fly12_row.get("score_weighted"))
-        score_fly6 = _sf(fly6_row.get("score_weighted"))
-        best_score = max(score_fly12, score_fly6)
+        # clip_num from available camera(s)
+        clip_num = 0
+        if fly12_row and fly6_row:
+            try:
+                clip_num_12 = int(fly12_row.get("clip_num", "0"))
+            except Exception:
+                clip_num_12 = 0
+            try:
+                clip_num_6 = int(fly6_row.get("clip_num", "0"))
+            except Exception:
+                clip_num_6 = 0
+            clip_num = clip_num_12 if clip_num_12 == clip_num_6 else min(clip_num_12, clip_num_6)
+        elif fly12_row:
+            try:
+                clip_num = int(fly12_row.get("clip_num", "0"))
+            except Exception:
+                clip_num = 0
+        else:
+            try:
+                clip_num = int(fly6_row.get("clip_num", "0"))
+            except Exception:
+                clip_num = 0
 
-        scene12 = _sf(fly12_row.get("scene_boost"))
-        scene6 = _sf(fly6_row.get("scene_boost"))
+        # Scores from available cameras
+        score_fly12 = _sf(fly12_row.get("score_weighted")) if fly12_row else 0.0
+        score_fly6 = _sf(fly6_row.get("score_weighted")) if fly6_row else 0.0
+        base_score = max(score_fly12, score_fly6)
+
+        # Apply dual_camera bonus: dual-perspective moments score higher
+        # This ensures dual-camera moments are preferred but single-camera
+        # high-value moments can still make it through
+        if is_dual_camera:
+            best_score = base_score + dual_camera_weight
+        else:
+            best_score = base_score
+
+        # Scene boost from available cameras
+        scene12 = _sf(fly12_row.get("scene_boost")) if fly12_row else 0.0
+        scene6 = _sf(fly6_row.get("scene_boost")) if fly6_row else 0.0
         scene_boost_max = max(scene12, scene6)
 
         moments.append({
@@ -192,6 +233,7 @@ def _group_rows_by_moment(rows: List[Dict]) -> List[Dict]:
             "score_fly6": score_fly6,
             "best_score": best_score,
             "scene_boost_max": scene_boost_max,
+            "is_dual_camera": is_dual_camera,
         })
 
     moments.sort(key=lambda m: m["moment_epoch"])
@@ -202,7 +244,10 @@ def _group_rows_by_moment(rows: List[Dict]) -> List[Dict]:
     log.info("=" * 60)
     log.info(f"Total enriched rows: {len(rows)}")
     log.info(f"Moments built: {len(moments)}")
-    log.info(f"Moments dropped (missing perspective): {dropped}")
+    log.info(f"  - Dual-camera moments: {dual_camera_count}")
+    log.info(f"  - Single-camera moments: {single_camera_count}")
+    log.info(f"Moments dropped (no camera data): {dropped}")
+    log.info(f"Dual-camera bonus weight: {dual_camera_weight:.2f}")
     return moments
 
 
@@ -297,12 +342,20 @@ def _apply_gap_filter(moments: List[Dict], target_clips: int) -> List[Dict]:
 
     for i, m in enumerate(moments):
         t = int(m["moment_epoch"])
-        time_iso = (
-            m["fly12"].get("abs_time_iso", "")
-            or m["fly6"].get("abs_time_iso", "")
-        )[:19]
-        idx1 = m["fly12"]["index"]
-        idx2 = m["fly6"]["index"]
+        # Handle single-camera moments (fly12 or fly6 may be None)
+        fly12 = m["fly12"]
+        fly6 = m["fly6"]
+        if fly12 and fly6:
+            time_iso = (fly12.get("abs_time_iso", "") or fly6.get("abs_time_iso", ""))[:19]
+            idx1 = fly12["index"]
+            idx2 = fly6["index"]
+            idx_display = f"{idx1} ↔ {idx2}"
+        elif fly12:
+            time_iso = fly12.get("abs_time_iso", "")[:19]
+            idx_display = f"{fly12['index']} (front only)"
+        else:
+            time_iso = fly6.get("abs_time_iso", "")[:19]
+            idx_display = f"{fly6['index']} (rear only)"
 
         scene_boost = m["scene_boost_max"]
 
@@ -320,13 +373,14 @@ def _apply_gap_filter(moments: List[Dict], target_clips: int) -> List[Dict]:
 
         time_since_last = (t - last_time) if last_time is not None else float("inf")
 
+        dual_tag = "" if m.get("is_dual_camera", True) else " [single-cam]"
         if window not in used_windows:
             accepted.append(m)
             for offset in range(-1, 2):
                 used_windows.add(window + offset)
 
-            log.info(f"✓ ACCEPT [{len(accepted)}/{target_clips}] @ {time_iso}")
-            log.info(f"    {idx1} ↔ {idx2}")
+            log.info(f"✓ ACCEPT [{len(accepted)}/{target_clips}] @ {time_iso}{dual_tag}")
+            log.info(f"    {idx_display}")
             log.info(
                 f"    Best score: {m['best_score']:.3f} | Scene: {scene_boost:.3f} ({gap_reason})"
             )
@@ -335,8 +389,8 @@ def _apply_gap_filter(moments: List[Dict], target_clips: int) -> List[Dict]:
 
             last_time = t
         else:
-            log.info(f"✗ REJECT [{i+1}] @ {time_iso}")
-            log.info(f"    {idx1} ↔ {idx2}")
+            log.info(f"✗ REJECT [{i+1}] @ {time_iso}{dual_tag}")
+            log.info(f"    {idx_display}")
             log.info(
                 f"    Best score: {m['best_score']:.3f} | Scene: {scene_boost:.3f}"
             )
@@ -440,14 +494,18 @@ def _find_zone_moments(
         if start_zone:
             log.info(f"🚀 Start zone: adding {len(start_zone)} bonus clips")
             for m in start_zone:
-                t_iso = (m["fly12"].get("abs_time_iso", "") or m["fly6"].get("abs_time_iso", ""))[:19]
-                log.info(f"   {t_iso} - score {m['best_score']:.3f}")
+                fly12, fly6 = m["fly12"], m["fly6"]
+                t_iso = ((fly12 or fly6).get("abs_time_iso", ""))[:19]
+                dual_tag = "" if m.get("is_dual_camera", True) else " [single-cam]"
+                log.info(f"   {t_iso} - score {m['best_score']:.3f}{dual_tag}")
 
         if end_zone:
             log.info(f"🏁 End zone: adding {len(end_zone)} bonus clips")
             for m in end_zone:
-                t_iso = (m["fly12"].get("abs_time_iso", "") or m["fly6"].get("abs_time_iso", ""))[:19]
-                log.info(f"   {t_iso} - score {m['best_score']:.3f}")
+                fly12, fly6 = m["fly12"], m["fly6"]
+                t_iso = ((fly12 or fly6).get("abs_time_iso", ""))[:19]
+                dual_tag = "" if m.get("is_dual_camera", True) else " [single-cam]"
+                log.info(f"   {t_iso} - score {m['best_score']:.3f}{dual_tag}")
 
     return start_zone, end_zone
 
@@ -505,12 +563,16 @@ def run() -> Path:
     log.info("TOP SCORING CANDIDATE MOMENTS")
     log.info("=" * 60)
     for i, m in enumerate(candidate_moments[:20], 1):
-        t_iso = (
-            m["fly12"].get("abs_time_iso", "")
-            or m["fly6"].get("abs_time_iso", "")
-        )[:19]
-        log.info(f"{i:2d}. Score {m['best_score']:.3f} @ {t_iso}")
-        log.info(f"    {m['fly12']['index']} ↔ {m['fly6']['index']}")
+        fly12, fly6 = m["fly12"], m["fly6"]
+        t_iso = ((fly12 or fly6).get("abs_time_iso", ""))[:19]
+        dual_tag = "" if m.get("is_dual_camera", True) else " [single-cam]"
+        log.info(f"{i:2d}. Score {m['best_score']:.3f} @ {t_iso}{dual_tag}")
+        if fly12 and fly6:
+            log.info(f"    {fly12['index']} ↔ {fly6['index']}")
+        elif fly12:
+            log.info(f"    {fly12['index']} (front only)")
+        else:
+            log.info(f"    {fly6['index']} (rear only)")
         log.info(
             f"    Fly12: {m['score_fly12']:.3f} | Fly6: {m['score_fly6']:.3f} | "
             f"Scene: {m['scene_boost_max']:.3f}"
@@ -565,17 +627,33 @@ def run() -> Path:
     pr_indices = set()  # Track which indices are from PR segments
 
     for m in recommended_moments:
+        fly12 = m["fly12"]
+        fly6 = m["fly6"]
         score12 = m["score_fly12"]
         score6 = m["score_fly6"]
+        is_dual = m.get("is_dual_camera", True)
 
-        if score12 >= score6:
-            chosen = m["fly12"]
-            other = m["fly6"]
+        # Handle single-camera moments
+        if not fly12:
+            # Rear camera only
+            chosen = fly6
+            other = None
+            chosen_score = score6
+            other_score = None
+        elif not fly6:
+            # Front camera only
+            chosen = fly12
+            other = None
+            chosen_score = score12
+            other_score = None
+        elif score12 >= score6:
+            chosen = fly12
+            other = fly6
             chosen_score = score12
             other_score = score6
         else:
-            chosen = m["fly6"]
-            other = m["fly12"]
+            chosen = fly6
+            other = fly12
             chosen_score = score6
             other_score = score12
 
@@ -585,23 +663,31 @@ def run() -> Path:
         is_pr = m.get("is_strava_pr", False)
         if is_pr:
             pr_indices.add(chosen["index"])
-            pr_indices.add(other["index"])
+            if other:
+                pr_indices.add(other["index"])
 
-        time_iso = (chosen.get("abs_time_iso", "") or other.get("abs_time_iso", ""))[:19]
+        time_iso = chosen.get("abs_time_iso", "")[:19]
         pr_badge = " 🏆 PR" if is_pr else ""
-        log.info(f"✓ {time_iso}: {chosen['index']} (score {chosen_score:.3f}){pr_badge}")
-        log.info(
-            f"  Chosen: {chosen.get('camera')} - score={chosen_score:.3f} | "
-            f"Other: {other.get('camera')} - score={other_score:.3f}"
-        )
+        dual_tag = "" if is_dual else " [single-cam]"
+        log.info(f"✓ {time_iso}: {chosen['index']} (score {chosen_score:.3f}){pr_badge}{dual_tag}")
+        if other:
+            log.info(
+                f"  Chosen: {chosen.get('camera')} - score={chosen_score:.3f} | "
+                f"Other: {other.get('camera')} - score={other_score:.3f}"
+            )
+        else:
+            log.info(f"  Camera: {chosen.get('camera')} - score={chosen_score:.3f} (single perspective)")
 
     # Build output rows: all rows from candidate pool, with recommended, strava_pr, and segment info
     output_rows: List[Dict] = []
     for m in candidate_moments:
-        for row in (m["fly12"], m["fly6"]):
+        # Handle single-camera moments (fly12 or fly6 may be None)
+        rows_to_process = [r for r in (m["fly12"], m["fly6"]) if r is not None]
+        for row in rows_to_process:
             row = dict(row)  # avoid mutating original enriched row list
             row["recommended"] = "true" if row["index"] in recommended_indices else "false"
             row["strava_pr"] = "true" if row["index"] in pr_indices else "false"
+            row["is_single_camera"] = "true" if not m.get("is_dual_camera", True) else "false"
             # Add segment details for PR clips (for trophy badge overlay)
             if row["index"] in pr_indices:
                 epoch = _sf(row.get("abs_time_epoch"))
