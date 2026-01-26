@@ -75,13 +75,9 @@ def _load_recommended_moments() -> List[Dict]:
 
     moments: List[Dict] = []
     dropped = 0
+    single_camera_count = 0
 
     for mid, group in by_moment.items():
-        # Expect exactly two cameras per moment
-        if len(group) < 2:
-            dropped += 1
-            continue
-
         # Identify main (recommended) and pip (other camera)
         main_row = None
         pip_row = None
@@ -94,13 +90,14 @@ def _load_recommended_moments() -> List[Dict]:
             # No recommended row in this moment → not part of final reel
             continue
 
-        # PiP row = any other row in same moment
+        # PiP row = any other row in same moment (may be None for single-camera)
         candidates = [r for r in group if r is not main_row]
-        if not candidates:
-            dropped += 1
-            continue
+        pip_row = candidates[0] if candidates else None
 
-        pip_row = candidates[0]
+        # Track single-camera moments
+        is_single_camera = pip_row is None
+        if is_single_camera:
+            single_camera_count += 1
 
         try:
             moment_id_int = int(mid)
@@ -111,12 +108,13 @@ def _load_recommended_moments() -> List[Dict]:
             {
                 "moment_id": moment_id_int,
                 "main": main_row,
-                "pip": pip_row,
+                "pip": pip_row,  # Can be None for single-camera moments
+                "is_single_camera": is_single_camera,
             }
         )
 
     if not moments:
-        log.warning("[build] No recommended moments with both perspectives available")
+        log.warning("[build] No recommended moments available")
         return []
 
     # Sort by aligned world time (abs_time_epoch)
@@ -128,9 +126,10 @@ def _load_recommended_moments() -> List[Dict]:
         )
     )
 
+    dual_camera_count = len(moments) - single_camera_count
     log.info(
         f"[build] Loaded {len(moments)} recommended moments "
-        f"(dropped {dropped} incomplete moments)"
+        f"({dual_camera_count} dual-camera, {single_camera_count} single-camera)"
     )
     return moments
 
@@ -161,7 +160,7 @@ def _render_single_clip(
 
     Args:
         clip_renderer: ClipRenderer instance
-        moment: Moment dict with main/pip rows
+        moment: Moment dict with main/pip rows (pip may be None for single-camera)
         idx: Clip index (1-based)
         minimap_path: Optional path to pre-rendered minimap
         elevation_path: Optional path to pre-rendered elevation plot
@@ -171,7 +170,7 @@ def _render_single_clip(
         Tuple of (clip_idx, output_path or None if failed)
     """
     main_row = moment["main"]
-    pip_row = moment["pip"]
+    pip_row = moment.get("pip")  # Can be None for single-camera moments
 
     try:
         clip_path = clip_renderer.render_clip(

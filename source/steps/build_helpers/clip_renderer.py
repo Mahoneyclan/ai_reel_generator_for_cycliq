@@ -46,7 +46,7 @@ class ClipRenderer:
     def render_clip(
         self,
         main_row: Dict,
-        pip_row: Dict,
+        pip_row: Optional[Dict],
         clip_idx: int,
         minimap_path: Optional[Path],
         elevation_path: Optional[Path],
@@ -54,6 +54,9 @@ class ClipRenderer:
     ) -> Optional[Path]:
         """
         Render single clip with all overlays (main + PiP + minimap + gauges).
+
+        For single-camera clips (pip_row=None), renders main camera full-width
+        without PiP overlay.
 
         Time model:
             abs_time_epoch      = world-aligned timestamp of the moment
@@ -67,21 +70,26 @@ class ClipRenderer:
         """
 
         main_video = CFG.INPUT_VIDEOS_DIR / main_row["source"]
-        pip_video = CFG.INPUT_VIDEOS_DIR / pip_row["source"]
+
+        # Handle single-camera clips (pip_row may be None)
+        is_single_camera = pip_row is None
+        pip_video = None if is_single_camera else CFG.INPUT_VIDEOS_DIR / pip_row["source"]
 
         # ---------------------------------------------------------------------
-        # Compute t_start for BOTH cameras (they may differ!)
+        # Compute t_start for cameras (pip only if available)
         # ---------------------------------------------------------------------
         t_start_main = self._compute_t_start(main_row, clip_idx, "main")
-        t_start_pip = self._compute_t_start(pip_row, clip_idx, "pip")
 
         if t_start_main is None:
             log.error(f"[clip] Failed to compute t_start for main camera (clip {clip_idx})")
             return None
 
-        if t_start_pip is None:
-            log.warning(f"[clip] Failed to compute t_start for pip camera (clip {clip_idx})")
-            t_start_pip = t_start_main  # Fallback to main timing
+        t_start_pip = None
+        if not is_single_camera:
+            t_start_pip = self._compute_t_start(pip_row, clip_idx, "pip")
+            if t_start_pip is None:
+                log.warning(f"[clip] Failed to compute t_start for pip camera (clip {clip_idx})")
+                t_start_pip = t_start_main  # Fallback to main timing
 
         duration = CFG.CLIP_OUT_LEN_S
         output_path = self.output_dir / f"clip_{clip_idx:04d}.mp4"
@@ -107,10 +115,13 @@ class ClipRenderer:
             if not output_path.exists():
                 log.error(f"[clip] FFmpeg reported success but {output_path} was not created")
                 return None
-            log.debug(
-                f"[clip] Encoded clip {clip_idx:04d} "
-                f"(main@{t_start_main:.3f}s, pip@{t_start_pip:.3f}s)"
-            )
+            if is_single_camera:
+                log.debug(f"[clip] Encoded clip {clip_idx:04d} (single-camera, main@{t_start_main:.3f}s)")
+            else:
+                log.debug(
+                    f"[clip] Encoded clip {clip_idx:04d} "
+                    f"(main@{t_start_main:.3f}s, pip@{t_start_pip:.3f}s)"
+                )
         except subprocess.CalledProcessError as e:
             log.error(f"[clip] FFmpeg failed for clip {clip_idx}: {e}")
             return None
@@ -188,7 +199,7 @@ class ClipRenderer:
         main_video: Path,
         pip_video: Optional[Path],
         t_start_main: float,
-        t_start_pip: float,
+        t_start_pip: Optional[float],
         minimap_path: Optional[Path],
         elevation_path: Optional[Path],
         duration: float,
@@ -199,7 +210,8 @@ class ClipRenderer:
         """
         Build ffmpeg inputs and filter_complex for all overlays.
 
-        CRITICAL: Uses separate t_start values for main and pip cameras.
+        For single-camera clips (pip_video=None), renders main camera full-width.
+        CRITICAL: Uses separate t_start values for main and pip cameras when both present.
         """
         inputs: List[str] = [
             "-ss",
@@ -212,8 +224,8 @@ class ClipRenderer:
         filters: List[str] = []
         current_stream = "[0:v]"
 
-        # PiP overlay (with its own t_start!)
-        if pip_video and pip_video.exists():
+        # PiP overlay (with its own t_start!) - skip for single-camera clips
+        if pip_video is not None and pip_video.exists() and t_start_pip is not None:
             inputs.extend(
                 [
                     "-ss",
@@ -230,6 +242,9 @@ class ClipRenderer:
                 f"{current_stream}[pip]overlay=W-w-{CFG.PIP_MARGIN}:H-h-{CFG.PIP_MARGIN}[v1]"
             )
             current_stream = "[v1]"
+        elif pip_video is None:
+            # Single-camera clip: render main camera full-width (no PiP)
+            log.debug(f"[clip] Single-camera clip {clip_idx}: rendering without PiP")
         else:
             log.warning("[clip] PiP video missing; rendering main camera only")
 

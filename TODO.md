@@ -137,12 +137,11 @@
   - Could use: color coding, section headers, file name labels, or timeline markers
   - `source/gui/manual_select.py` - Manual selection interface
 
-[ ] **Single-camera clip rendering** - Display layout for single-perspective clips
-  - Selection now allows single-camera moments ✓
-  - **Remaining:** Rendering layout for single-camera clips
-  - Options: Full-width display, or maintain PIP layout with placeholder
-  - `source/steps/build_helpers/clip_renderer.py` - PIP layout logic for single-camera
-  - `source/steps/build_helpers/segment_concatenator.py` - Handle mixed paired/single clips
+[x] **Single-camera clip rendering** - Display layout for single-perspective clips
+  - Selection allows single-camera moments ✓
+  - Rendering renders main camera full-width (no PiP) for single-camera clips ✓
+  - `source/steps/build.py` - `_load_recommended_moments()` allows pip=None ✓
+  - `source/steps/build_helpers/clip_renderer.py` - Handles `pip_row=None` ✓
 
 #### P3 - Visual Enhancements
 
@@ -154,15 +153,11 @@
   - `source/analysis/elevation.py` - May need distance calculation utilities
   - Consider: Should handle zero-distance segments (GPS drift while stationary)
 
-[ ] **Handle single-camera segments in rendering** - Layout when one camera battery dies
-  - Selection now handles single-camera moments ✓
-  - **Remaining:** Rendering layout for single-camera clips
+[x] **Handle single-camera segments** - Continue processing when one camera battery dies
+  - Selection handles single-camera moments ✓
+  - Rendering handles single-camera clips (full-width, no PiP) ✓
   - Real-world scenario: Front camera dies at 2hr mark, rear camera continues to 3hr mark
-  - PIP handling options:
-    - Option A: Show available camera full-width, no PIP inset
-    - Option B: Keep layout with blank/placeholder PIP
-  - `source/steps/build_helpers/clip_renderer.py` - PIP layout logic for single-camera
-  - `source/steps/build_helpers/segment_concatenator.py` - Handle mixed paired/single clips
+  - Implemented: Option A - Show available camera full-width, no PIP inset ✓
 
 #### P4 - Performance / Infrastructure
 
