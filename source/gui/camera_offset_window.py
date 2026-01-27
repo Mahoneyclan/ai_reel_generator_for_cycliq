@@ -98,30 +98,27 @@ class CameraOffsetWindow(QDialog):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        # Timezone selector at top
+        # Timezone selector at top (compact single row)
         tz_layout = QHBoxLayout()
         tz_layout.setSpacing(8)
-        tz_label = QLabel("Ride Timezone:")
+        tz_layout.setContentsMargins(0, 0, 0, 0)
+        tz_label = QLabel("Timezone:")
         tz_label.setStyleSheet("font-weight: 600; font-size: 12px;")
 
         self.timezone_combo = QComboBox()
-        self.timezone_combo.setFixedWidth(200)
+        self.timezone_combo.setFixedWidth(220)
         self._populate_timezone_options()
         self.timezone_combo.currentTextChanged.connect(self._on_timezone_changed)
 
-        tz_help = QLabel("(Where the ride took place)")
-        tz_help.setStyleSheet("color: #666; font-size: 11px;")
-
         tz_layout.addWidget(tz_label)
         tz_layout.addWidget(self.timezone_combo)
-        tz_layout.addWidget(tz_help)
         tz_layout.addStretch()
         layout.addLayout(tz_layout)
 
-        # Splitter for two camera columns (no header - title is in window titlebar)
+        # Splitter for two camera columns
         splitter = QSplitter(Qt.Horizontal)
 
         # Left column: Fly12Sport (front)
@@ -158,12 +155,12 @@ class CameraOffsetWindow(QDialog):
         group = QGroupBox(display_name)
         group.setStyleSheet("""
             QGroupBox {
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 600;
                 border: 1px solid #ddd;
                 border-radius: 4px;
-                margin-top: 8px;
-                padding: 2px;
+                margin-top: 2px;
+                padding-top: 4px;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -173,8 +170,8 @@ class CameraOffsetWindow(QDialog):
         """)
 
         outer_layout = QVBoxLayout(group)
-        outer_layout.setContentsMargins(4, 4, 4, 4)
-        outer_layout.setSpacing(4)
+        outer_layout.setContentsMargins(4, 2, 4, 4)
+        outer_layout.setSpacing(2)
 
         # Offset control for this camera (compact)
         offset_layout = QHBoxLayout()
