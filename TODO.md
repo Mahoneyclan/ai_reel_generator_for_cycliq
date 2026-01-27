@@ -62,6 +62,12 @@
   - `source/steps/build_helpers/clip_renderer.py` - Single overlay filter
   - `source/steps/build.py` - Integration with GaugePrerenderer ✓
 
+[x] **Hide gauges with null data** - Don't display gauges when data is unavailable
+  - Added `_is_value_available()` helper to detect null/empty/invalid values
+  - Gauges with missing data are now hidden (not rendered)
+  - Partial gauge panel shows only available data
+  - `source/steps/build_helpers/gauge_prerenderer.py` - `_extract_telemetry()` with null detection ✓
+
 [x] **Parallelize splash PNG saves** - Uses ThreadPoolExecutor
   - `source/steps/splash_helpers/animation_renderer.py` - Parallel frame saving ✓
 
@@ -100,6 +106,14 @@
   - `source/utils/hardware.py` - Detects Apple Silicon, RAM, CPU cores
   - Logs system info at build start for diagnostics ✓
 
+[x] **Per-project timezone setting** - Camera time correction for different locations
+  - Create Project dialog with timezone dropdown (defaults to Brisbane UTC+10)
+  - Timezone saved to `project_config.json` per project
+  - Camera Offset Calibration window allows editing timezone for existing projects
+  - Fixes 30-minute alignment error for Adelaide rides (UTC+10:30 vs UTC+10)
+  - `source/gui/create_project_dialog.py` - New project creation dialog ✓
+  - `source/gui/controllers/project_controller.py` - Loads/saves timezone ✓
+
 #### Clip Selection
 [x] **Allow single-camera moments** - Relax strict camera pairing requirement
   - Single-camera moments now allowed in selection (previously dropped 20-50%)
@@ -122,12 +136,6 @@
   - Gap filtering: Consider reducing `MIN_GAP_BETWEEN_CLIPS` 15s → 10s
   - Weight tuning: May need further adjustment based on results
 
-[x] **Hide gauges with null data** - Don't display gauges when data is unavailable
-  - Added `_is_value_available()` helper to detect null/empty/invalid values ✓
-  - Gauges with missing data are now hidden (not rendered) ✓
-  - Partial gauge panel shows only available data ✓
-  - `source/steps/build_helpers/gauge_prerenderer.py` - `_extract_telemetry()` with null detection ✓
-
 #### P2 - Workflow Improvements
 
 [ ] **Improve raw file visualization in manual_select** - Distinguish source video files
@@ -144,13 +152,13 @@
 
 #### P3 - Visual Enhancements
 
-[ ] **Distance-based elevation plot** - Switch x-axis from time to distance
+[x] **Distance-based elevation plot** - Switch x-axis from time to distance
   - Problem: When ride is paused (stationary periods), time-based plot shows flat sections
   - Solution: Use cumulative km travelled on x-axis instead of time
-  - Provides consistent visual scale regardless of stops/pauses
-  - `source/steps/build_helpers/elevation_prerenderer.py` - Update x-axis calculation
-  - `source/analysis/elevation.py` - May need distance calculation utilities
-  - Consider: Should handle zero-distance segments (GPS drift while stationary)
+  - Haversine formula for GPS distance calculation
+  - GPS noise filtering (>500m jumps ignored)
+  - Total distance label added to plot (e.g., "42.5km")
+  - `source/utils/elevation_plot.py` - Complete rewrite ✓
 
 [x] **Handle single-camera segments** - Continue processing when one camera battery dies
   - Selection handles single-camera moments ✓
