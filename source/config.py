@@ -286,7 +286,8 @@ class Config:
         default_factory=lambda: _get_config_value('SHOW_ELEVATION_PLOT', True)
     )
     MAP_ROUTE_COLOR: tuple[int, int, int] = (40, 180, 60)
-    MAP_ROUTE_WIDTH: int = 12  # Thicker route line
+    MAP_ROUTE_WIDTH: int = 12  # Route width for minimap overlay
+    MAP_SPLASH_ROUTE_WIDTH: int = 24  # Route width for splash map (larger image)
     MAP_MARKER_COLOR: tuple[int, int, int] = (230, 175, 0)
     MAP_MARKER_RADIUS: int = 36  # Larger marker for visibility
     MAP_PADDING_PCT: float = 0.25

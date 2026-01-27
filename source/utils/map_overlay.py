@@ -121,7 +121,8 @@ def _get_gpx_index(gpx_points: List[GpxPoint]) -> GPXIndex:
 
 def _render_base_figure(
     gpx_points: List[GpxPoint],
-    size: Tuple[int, int]
+    size: Tuple[int, int],
+    is_splash: bool = False,
 ) -> Tuple[plt.Figure, plt.Axes, Tuple[float, float, float, float]] | Tuple[None, None, None]:
     """
     Render base map figure with route overlay.
@@ -129,6 +130,7 @@ def _render_base_figure(
     Args:
         gpx_points: GPS trackpoints to render
         size: Target output size (width, height) - used to calculate render resolution
+        is_splash: True for splash map (uses thicker route width)
 
     Returns:
         Tuple of (figure, axes, extent) or (None, None, None) on failure. Extent is (x_min, x_max, y_max, y_min).
@@ -209,11 +211,14 @@ def _render_base_figure(
 
     # Draw route
     route_color = getattr(CFG, "MAP_ROUTE_COLOR", (0, 255, 0))
-    route_width = getattr(CFG, "MAP_ROUTE_WIDTH", 4)
+    if is_splash:
+        route_line_width = getattr(CFG, "MAP_SPLASH_ROUTE_WIDTH", 24)
+    else:
+        route_line_width = getattr(CFG, "MAP_ROUTE_WIDTH", 12)
     gdf.plot(
         ax=ax,
         color=_rgba(route_color),
-        linewidth=route_width,
+        linewidth=route_line_width,
         zorder=5
     )
 
@@ -288,7 +293,7 @@ def render_splash_map_with_xy(
         return _splash_cache[cache_key]
     
     # Render new map - scale to fill target area while preserving aspect ratio
-    fig, ax, extent = _render_base_figure(gpx_points, size)
+    fig, ax, extent = _render_base_figure(gpx_points, size, is_splash=True)
     if fig is None:
         # Handle rendering failure from _render_base_figure
         fallback_img = Image.new("RGBA", size, (0, 0, 0, 0))
