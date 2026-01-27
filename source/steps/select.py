@@ -333,7 +333,7 @@ def _apply_gap_filter(moments: List[Dict], target_clips: int) -> List[Dict]:
     log.info("=" * 60)
     log.info(f"Target: {target_clips} moments")
     log.info(f"Min gap: {CFG.MIN_GAP_BETWEEN_CLIPS}s")
-    log.info(f"Scene thresholds: High={CFG.SCENE_HIGH_THRESHOLD}, Major={CFG.SCENE_MAJOR_THRESHOLD}")
+    log.info(f"Scene threshold: {CFG.SCENE_HIGH_THRESHOLD} (gap multiplier: {CFG.SCENE_HIGH_GAP_MULTIPLIER})")
     log.info("")
 
     accepted: List[Dict] = []
