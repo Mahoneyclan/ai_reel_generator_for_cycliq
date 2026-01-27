@@ -444,19 +444,19 @@ def _find_pr_moments(moments: List[Dict], segment_matcher: SegmentMatcher) -> Li
 
 def _find_zone_moments(
     candidate_moments: List[Dict],
-    recommended_moment_ids: set,
+    recommended_moments: List[Dict],
     first_epoch: float,
     last_epoch: float,
 ) -> Tuple[List[Dict], List[Dict]]:
     """
     Find additional moments from start and end zones.
 
-    These are bonus clips beyond the target duration to capture
-    the beginning and end of the ride.
+    These are bonus clips to fill up to MAX zone clips if the main
+    selection didn't already include enough from start/end zones.
 
     Args:
         candidate_moments: All candidate moments (sorted by score)
-        recommended_moment_ids: Already-recommended moment IDs to exclude
+        recommended_moments: Already-recommended moments
         first_epoch: Timestamp of first frame
         last_epoch: Timestamp of last frame
 
@@ -472,24 +472,36 @@ def _find_zone_moments(
     if max_start == 0 and max_end == 0:
         return [], []
 
+    # Count existing zone clips in recommended
+    recommended_ids = {m["moment_id"] for m in recommended_moments}
+    existing_start = sum(1 for m in recommended_moments if m["moment_epoch"] <= start_zone_end)
+    existing_end = sum(1 for m in recommended_moments if m["moment_epoch"] >= end_zone_start)
+
+    # Calculate remaining quota
+    remaining_start = max(0, max_start - existing_start)
+    remaining_end = max(0, max_end - existing_end)
+
+    if remaining_start == 0 and remaining_end == 0:
+        return [], []
+
     # Filter to moments not already recommended
-    available = [m for m in candidate_moments if m["moment_id"] not in recommended_moment_ids]
+    available = [m for m in candidate_moments if m["moment_id"] not in recommended_ids]
 
-    # Find start zone moments (sorted by score, take top N)
+    # Find start zone moments (sorted by score, take remaining quota)
     start_zone = [m for m in available if m["moment_epoch"] <= start_zone_end]
-    start_zone = sorted(start_zone, key=lambda m: m["best_score"], reverse=True)[:max_start]
+    start_zone = sorted(start_zone, key=lambda m: m["best_score"], reverse=True)[:remaining_start]
 
-    # Find end zone moments (sorted by score, take top N)
+    # Find end zone moments (sorted by score, take remaining quota)
     end_zone = [m for m in available if m["moment_epoch"] >= end_zone_start]
-    end_zone = sorted(end_zone, key=lambda m: m["best_score"], reverse=True)[:max_end]
+    end_zone = sorted(end_zone, key=lambda m: m["best_score"], reverse=True)[:remaining_end]
 
     if start_zone or end_zone:
         log.info("")
         log.info("=" * 60)
         log.info("ZONE BONUS CLIPS")
         log.info("=" * 60)
-        log.info(f"Start zone: first {CFG.START_ZONE_DURATION_M:.0f} min, max {max_start} clips")
-        log.info(f"End zone: last {CFG.END_ZONE_DURATION_M:.0f} min, max {max_end} clips")
+        log.info(f"Start zone: {existing_start} existing + {len(start_zone)} bonus = {existing_start + len(start_zone)} (max {max_start})")
+        log.info(f"End zone: {existing_end} existing + {len(end_zone)} bonus = {existing_end + len(end_zone)} (max {max_end})")
 
         if start_zone:
             log.info(f"🚀 Start zone: adding {len(start_zone)} bonus clips")
@@ -508,6 +520,131 @@ def _find_zone_moments(
                 log.info(f"   {t_iso} - score {m['best_score']:.3f}{dual_tag}")
 
     return start_zone, end_zone
+
+
+def _enforce_zone_limits(
+    recommended: List[Dict],
+    candidates: List[Dict],
+    first_epoch: float,
+    last_epoch: float,
+) -> List[Dict]:
+    """
+    Enforce MAX_START_ZONE_CLIPS and MAX_END_ZONE_CLIPS on the main selection.
+
+    If too many clips are from start/end zones, remove extras and replace
+    with the next-best mid-ride clips from the candidate pool.
+
+    Args:
+        recommended: Currently recommended moments from gap filter
+        candidates: Full candidate pool (sorted by score descending)
+        first_epoch: Timestamp of first frame
+        last_epoch: Timestamp of last frame
+
+    Returns:
+        Adjusted list of recommended moments
+    """
+    start_zone_end = first_epoch + (CFG.START_ZONE_DURATION_M * 60)
+    end_zone_start = last_epoch - (CFG.END_ZONE_DURATION_M * 60)
+
+    max_start = CFG.MAX_START_ZONE_CLIPS
+    max_end = CFG.MAX_END_ZONE_CLIPS
+
+    # Separate into zones
+    start_zone = []
+    end_zone = []
+    mid_ride = []
+
+    for m in recommended:
+        t = m["moment_epoch"]
+        if t <= start_zone_end:
+            start_zone.append(m)
+        elif t >= end_zone_start:
+            end_zone.append(m)
+        else:
+            mid_ride.append(m)
+
+    start_excess = max(0, len(start_zone) - max_start)
+    end_excess = max(0, len(end_zone) - max_end)
+
+    if start_excess == 0 and end_excess == 0:
+        return recommended
+
+    log.info("")
+    log.info("=" * 60)
+    log.info("ZONE LIMIT ENFORCEMENT")
+    log.info("=" * 60)
+    log.info(f"Start zone: {len(start_zone)} clips (max {max_start})")
+    log.info(f"End zone: {len(end_zone)} clips (max {max_end})")
+    log.info(f"Mid-ride: {len(mid_ride)} clips")
+
+    # Keep only top N from each zone (sorted by score)
+    start_zone_sorted = sorted(start_zone, key=lambda m: m["best_score"], reverse=True)
+    end_zone_sorted = sorted(end_zone, key=lambda m: m["best_score"], reverse=True)
+
+    kept_start = start_zone_sorted[:max_start]
+    kept_end = end_zone_sorted[:max_end]
+    removed_start = start_zone_sorted[max_start:]
+    removed_end = end_zone_sorted[max_end:]
+
+    if removed_start:
+        log.info(f"⚠️  Removing {len(removed_start)} excess start zone clips:")
+        for m in removed_start:
+            t_iso = ((m["fly12"] or m["fly6"]).get("abs_time_iso", ""))[:19]
+            log.info(f"   - {t_iso} score={m['best_score']:.3f}")
+
+    if removed_end:
+        log.info(f"⚠️  Removing {len(removed_end)} excess end zone clips:")
+        for m in removed_end:
+            t_iso = ((m["fly12"] or m["fly6"]).get("abs_time_iso", ""))[:19]
+            log.info(f"   - {t_iso} score={m['best_score']:.3f}")
+
+    # Build new recommended list
+    new_recommended = kept_start + mid_ride + kept_end
+    kept_ids = {m["moment_id"] for m in new_recommended}
+
+    # Find replacement clips from mid-ride candidates
+    slots_to_fill = start_excess + end_excess
+    if slots_to_fill > 0:
+        log.info(f"🔄 Finding {slots_to_fill} replacement clips from mid-ride...")
+
+        # Find mid-ride candidates not already selected
+        mid_ride_candidates = [
+            m for m in candidates
+            if m["moment_id"] not in kept_ids
+            and start_zone_end < m["moment_epoch"] < end_zone_start
+        ]
+
+        # Apply simple gap filtering to replacements
+        min_gap = CFG.MIN_GAP_BETWEEN_CLIPS
+        used_times = {int(m["moment_epoch"]) for m in new_recommended}
+        added = 0
+
+        for m in mid_ride_candidates:
+            if added >= slots_to_fill:
+                break
+
+            t = int(m["moment_epoch"])
+            # Check gap from existing clips
+            too_close = any(abs(t - ut) < min_gap for ut in used_times)
+            if not too_close:
+                new_recommended.append(m)
+                used_times.add(t)
+                added += 1
+                t_iso = ((m["fly12"] or m["fly6"]).get("abs_time_iso", ""))[:19]
+                log.info(f"   + {t_iso} score={m['best_score']:.3f}")
+
+        if added < slots_to_fill:
+            log.info(f"   (Only found {added} suitable replacements)")
+
+    # Sort by time for consistent output
+    new_recommended.sort(key=lambda m: m["moment_epoch"])
+
+    log.info(f"Final selection: {len(new_recommended)} clips")
+    log.info(f"  Start zone: {len([m for m in new_recommended if m['moment_epoch'] <= start_zone_end])}")
+    log.info(f"  Mid-ride: {len([m for m in new_recommended if start_zone_end < m['moment_epoch'] < end_zone_start])}")
+    log.info(f"  End zone: {len([m for m in new_recommended if m['moment_epoch'] >= end_zone_start])}")
+
+    return new_recommended
 
 
 # -----------------------------
@@ -581,6 +718,14 @@ def run() -> Path:
     # Gap filtering on candidate pool
     recommended_moments = _apply_gap_filter(candidate_moments, target_clips)
 
+    # Enforce zone limits (cap start/end zone clips, replace with mid-ride)
+    recommended_moments = _enforce_zone_limits(
+        recommended_moments,
+        candidate_moments,
+        first_time,
+        last_time,
+    )
+
     # Check for Strava PR segments to auto-include
     segment_matcher = SegmentMatcher()
     pr_moments = _find_pr_moments(candidate_moments, segment_matcher)
@@ -601,7 +746,7 @@ def run() -> Path:
     # Add zone bonus clips (start/end of ride)
     start_zone_moments, end_zone_moments = _find_zone_moments(
         candidate_moments,
-        recommended_moment_ids,
+        recommended_moments,
         first_time,
         last_time,
     )

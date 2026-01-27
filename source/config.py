@@ -27,14 +27,14 @@ def _get_config_value(key: str, default: Any) -> Any:
 
 # Default weights for YOLO classes, used if not overridden by user config
 DEFAULT_YOLO_CLASS_WEIGHTS = {
-    "person": 2.0,
+    "person": 0.5,
     "bicycle": 3.0,
-    "car": 1.0,
-    "motorcycle": 1.0,
-    "bus": 1.0,
-    "truck": 1.0,
-    "traffic light": 2.0,
-    "stop sign": 2.0,
+    "car": 0.5,
+    "motorcycle": 0.5,
+    "bus": 0.5,
+    "truck": 0.5,
+    "traffic light": 0.5,
+    "stop sign": 0.5,
 }
 
 @dataclass
@@ -66,13 +66,13 @@ class Config:
     )
 
     HIGHLIGHT_TARGET_DURATION_M: float = field(
-        default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_M', 4.0)
+        default_factory=lambda: _get_config_value('HIGHLIGHT_TARGET_DURATION_M', 5.0)
     )
     CLIP_PRE_ROLL_S: float = field(default_factory=lambda: _get_config_value('CLIP_PRE_ROLL_S', 0.5))
-    CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 4.5))
+    CLIP_OUT_LEN_S: float = field(default_factory=lambda: _get_config_value('CLIP_OUT_LEN_S', 3.5))
 
     MIN_GAP_BETWEEN_CLIPS: float = field(
-        default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 15.0)
+        default_factory=lambda: _get_config_value('MIN_GAP_BETWEEN_CLIPS', 10.0)
     )
 
     # --- Scene-aware selection ---
@@ -92,7 +92,7 @@ class Config:
         default_factory=lambda: _get_config_value('SCENE_HIGH_GAP_MULTIPLIER', 0.75)
     )
     SCENE_COMPARISON_WINDOW_S: float = field(
-        default_factory=lambda: _get_config_value('SCENE_COMPARISON_WINDOW_S', 8.0)
+        default_factory=lambda: _get_config_value('SCENE_COMPARISON_WINDOW_S', 10.0)
     )
 
     # --- YOLO settings ---
@@ -135,6 +135,8 @@ class Config:
 
 
     # --- Candidate selection ---
+    # Multiplier for candidate pool size (candidates = target_clips * CANDIDATE_FRACTION)
+    # Higher = more clips shown in manual_selection for user to choose from
     CANDIDATE_FRACTION: float = field(
         default_factory=lambda: _get_config_value('CANDIDATE_FRACTION', 2.5)
     )
@@ -144,11 +146,11 @@ class Config:
 
     # --- Zone filtering (additional clips beyond target) ---
     START_ZONE_DURATION_M: float = field(
-        default_factory=lambda: _get_config_value('START_ZONE_DURATION_M', 15.0)
+        default_factory=lambda: _get_config_value('START_ZONE_DURATION_M', 20.0)
     )
     # Max additional clips from start zone (first N minutes of ride)
     MAX_START_ZONE_CLIPS: int = field(
-        default_factory=lambda: int(_get_config_value('MAX_START_ZONE_CLIPS', 3))
+        default_factory=lambda: int(_get_config_value('MAX_START_ZONE_CLIPS', 4))
     )
 
     END_ZONE_DURATION_M: float = field(
@@ -156,22 +158,22 @@ class Config:
     )
     # Max additional clips from end zone (last N minutes of ride)
     MAX_END_ZONE_CLIPS: int = field(
-        default_factory=lambda: int(_get_config_value('MAX_END_ZONE_CLIPS', 3))
+        default_factory=lambda: int(_get_config_value('MAX_END_ZONE_CLIPS', 4))
     )
 
     # --- Scoring weights ---
     CAMERA_WEIGHTS: dict = field(default_factory=lambda: {
-        "Fly12Sport": 1.5,
+        "Fly12Sport": 1.0,
         "Fly6Pro": 1.0,
     })
     SCORE_WEIGHTS: dict = field(default_factory=lambda: {
-        "detect_score": 0.15,
-        "scene_boost": 0.30,      # Reduced from 0.35 to make room for dual_camera
-        "speed_kmh": 0.15,
-        "gradient": 0.10,
-        "bbox_area": 0.10,
-        "segment_boost": 0.15,    # Strava PR/top-3 segment efforts
-        "dual_camera": 0.05,      # Bonus for moments with both front/rear cameras
+        "detect_score": 0.30,
+        "scene_boost": 0.10,   
+        "speed_kmh": 0.20,
+        "gradient": 0.20,
+        "bbox_area": 0.05,
+        "segment_boost": 0.05,    # Strava PR/top-3 segment efforts
+        "dual_camera": 0.10,      # Bonus for moments with both front/rear cameras
     })  # Must sum to 1.0
 
     # --- M1 hardware acceleration ---
@@ -291,9 +293,9 @@ class Config:
         default_factory=lambda: _get_config_value('SHOW_ELEVATION_PLOT', True)
     )
     MAP_ROUTE_COLOR: tuple[int, int, int] = (40, 180, 60)
-    MAP_ROUTE_WIDTH: int = 8
+    MAP_ROUTE_WIDTH: int = 12  # Thicker route line
     MAP_MARKER_COLOR: tuple[int, int, int] = (230, 175, 0)
-    MAP_MARKER_RADIUS: int = 24  # Marker size on minimap (3x larger for visibility)
+    MAP_MARKER_RADIUS: int = 36  # Larger marker for visibility
     MAP_PADDING_PCT: float = 0.25
     MAP_ZOOM_PIP: int = 15
     MAP_ZOOM_SPLASH: int = 12

@@ -181,18 +181,26 @@ def _render_base_figure(
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
 
-    # Add basemap
-    try:
-        # Default to OpenStreetMap if not specified in config
-        basemap_source = getattr(ctx.providers, CFG.MAP_BASEMAP_PROVIDER, ctx.providers.OpenStreetMap.Mapnik)
-        ctx.add_basemap(
-            ax,
-            crs="EPSG:3857",
-            source=basemap_source
-        )
-    except Exception as e:
-        log.warning(f"Basemap load failed, using fallback: {e}")
-        ax.set_facecolor((0.95, 0.95, 0.95, 1.0))
+    # Check if transparent mode is enabled (no basemap, semi-transparent background)
+    use_transparent = getattr(CFG, "MAP_TRANSPARENT_MODE", True)
+
+    if use_transparent:
+        # Semi-transparent dark background like gauges/elevation plot
+        fig.patch.set_alpha(0.0)
+        ax.set_facecolor((0, 0, 0, 0.5))
+    else:
+        # Add basemap tiles
+        try:
+            # Default to OpenStreetMap if not specified in config
+            basemap_source = getattr(ctx.providers, CFG.MAP_BASEMAP_PROVIDER, ctx.providers.OpenStreetMap.Mapnik)
+            ctx.add_basemap(
+                ax,
+                crs="EPSG:3857",
+                source=basemap_source
+            )
+        except Exception as e:
+            log.warning(f"Basemap load failed, using fallback: {e}")
+            ax.set_facecolor((0.95, 0.95, 0.95, 1.0))
 
     # Reapply limits and aspect after basemap
     ax.set_xlim(x_min, x_max)
