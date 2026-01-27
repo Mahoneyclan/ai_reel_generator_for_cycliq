@@ -202,12 +202,12 @@ class MainWindow(QMainWindow):
             clear_map_caches()
 
     def _create_project(self):
-        """Create new project from source folder."""
-        source_folder = self.dialog_manager.select_source_folder()
+        """Create new project from source folder with timezone."""
+        source_folder, timezone = self.dialog_manager.show_create_project()
         if not source_folder:
             return
 
-        project_path = self.project_controller.create_project(source_folder)
+        project_path = self.project_controller.create_project(source_folder, timezone=timezone)
         if project_path:
             self._refresh_projects()
             self.project_panel.select_project(project_path)

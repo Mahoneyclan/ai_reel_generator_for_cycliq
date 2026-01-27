@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QWidget, QGridLayout, QMessageBox, QFrame,
-    QDoubleSpinBox, QGroupBox, QSplitter
+    QDoubleSpinBox, QGroupBox, QSplitter, QComboBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
@@ -56,12 +56,16 @@ class CameraOffsetWindow(QDialog):
         # Current offset values - load from project_config.json if exists, else from default config
         self.offsets: Dict[str, float] = self._load_saved_offsets()
 
+        # Current timezone - load from project_config.json if exists
+        self.current_timezone: str = self._load_saved_timezone()
+
         # Clip data grouped by camera
         self.clips_by_camera: Dict[str, List[Dict]] = {}
 
         # UI references for updating
         self.time_labels: Dict[str, List[QLabel]] = {}  # camera -> [labels]
         self.spinboxes: Dict[str, QDoubleSpinBox] = {}
+        self.timezone_combo: QComboBox = None
 
         self.setWindowTitle("Camera Offset Calibration")
         self.resize(1400, 900)
@@ -96,6 +100,26 @@ class CameraOffsetWindow(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(4)
+
+        # Timezone selector at top
+        tz_layout = QHBoxLayout()
+        tz_layout.setSpacing(8)
+        tz_label = QLabel("Ride Timezone:")
+        tz_label.setStyleSheet("font-weight: 600; font-size: 12px;")
+
+        self.timezone_combo = QComboBox()
+        self.timezone_combo.setFixedWidth(200)
+        self._populate_timezone_options()
+        self.timezone_combo.currentTextChanged.connect(self._on_timezone_changed)
+
+        tz_help = QLabel("(Where the ride took place)")
+        tz_help.setStyleSheet("color: #666; font-size: 11px;")
+
+        tz_layout.addWidget(tz_label)
+        tz_layout.addWidget(self.timezone_combo)
+        tz_layout.addWidget(tz_help)
+        tz_layout.addStretch()
+        layout.addLayout(tz_layout)
 
         # Splitter for two camera columns (no header - title is in window titlebar)
         splitter = QSplitter(Qt.Horizontal)
@@ -451,7 +475,7 @@ class CameraOffsetWindow(QDialog):
             label.setText("[No thumbnail]")
 
     def _calculate_start_time(self, clip: Dict, camera_name: str) -> str:
-        """Calculate recording start time with current offset."""
+        """Calculate recording start time with current offset and timezone."""
         creation_time_str = clip.get("creation_time", "")
         duration_s = float(clip.get("duration_s", 0))
 
@@ -462,13 +486,22 @@ class CameraOffsetWindow(QDialog):
             # Parse creation time
             creation_dt = datetime.fromisoformat(creation_time_str.replace("Z", "+00:00"))
 
-            # Apply Cycliq UTC bug fix if needed
+            # Apply Cycliq UTC bug fix using the SELECTED timezone (not CFG default)
             if CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z:
-                creation_dt = fix_cycliq_utc_bug(
-                    creation_dt,
-                    CFG.CAMERA_CREATION_TIME_TZ,
-                    CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
-                )
+                selected_tz = self._parse_timezone_string(self.current_timezone)
+                if selected_tz:
+                    creation_dt = fix_cycliq_utc_bug(
+                        creation_dt,
+                        selected_tz,
+                        CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
+                    )
+                else:
+                    # Fallback to config default
+                    creation_dt = fix_cycliq_utc_bug(
+                        creation_dt,
+                        CFG.CAMERA_CREATION_TIME_TZ,
+                        CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
+                    )
 
             # Get current offset for this camera
             offset = self.offsets.get(camera_name, 0.0)
@@ -481,6 +514,30 @@ class CameraOffsetWindow(QDialog):
         except Exception as e:
             log.warning(f"Failed to calculate start time: {e}")
             return "Error"
+
+    def _parse_timezone_string(self, tz_str: str):
+        """Parse timezone string like 'UTC+10:30' to timezone object."""
+        import re
+
+        if not tz_str:
+            return None
+
+        # Parse UTC offset format: "UTC+10:30", "UTC+10", "UTC-5", etc.
+        pattern = r'^UTC([+-])(\d{1,2})(?::(\d{2}))?$'
+        match = re.match(pattern, tz_str.strip())
+
+        if match:
+            sign = match.group(1)
+            hours = int(match.group(2))
+            minutes = int(match.group(3) or 0)
+
+            total_minutes = hours * 60 + minutes
+            if sign == '-':
+                total_minutes = -total_minutes
+
+            return timezone(timedelta(minutes=total_minutes))
+
+        return None
 
     def _get_video_codec(self, video_path: Path) -> str:
         """Get video codec name from file metadata."""
@@ -550,11 +607,84 @@ class CameraOffsetWindow(QDialog):
         # Fall back to default config
         return dict(CFG.KNOWN_OFFSETS)
 
+    def _load_saved_timezone(self) -> str:
+        """Load timezone from project config if exists, else from default config."""
+        import json
+
+        # Project-specific config
+        config_path = self.project_dir / "project_config.json"
+
+        if config_path.exists():
+            try:
+                with config_path.open() as f:
+                    data = json.load(f)
+                    if "CAMERA_TIMEZONE" in data:
+                        tz = data["CAMERA_TIMEZONE"]
+                        log.info(f"Loaded project timezone from {config_path}: {tz}")
+                        return tz
+            except Exception as e:
+                log.warning(f"Failed to load timezone from project_config.json: {e}")
+
+        # Fall back to default config timezone
+        # Convert the timezone object to a string representation
+        tz = CFG.CAMERA_CREATION_TIME_TZ
+        offset = tz.utcoffset(None)
+        if offset:
+            total_seconds = int(offset.total_seconds())
+            hours, remainder = divmod(abs(total_seconds), 3600)
+            minutes = remainder // 60
+            sign = '+' if total_seconds >= 0 else '-'
+            if minutes:
+                return f"UTC{sign}{hours}:{minutes:02d}"
+            else:
+                return f"UTC{sign}{hours}"
+        return "UTC+10"
+
+    def _populate_timezone_options(self):
+        """Populate timezone combo with common Australian timezones."""
+        timezones = [
+            ("UTC+10:30 - Adelaide (ACDT)", "UTC+10:30"),
+            ("UTC+10 - Brisbane/Sydney (AEST)", "UTC+10"),
+            ("UTC+11 - Sydney DST (AEDT)", "UTC+11"),
+            ("UTC+9:30 - Adelaide Std (ACST)", "UTC+9:30"),
+            ("UTC+8 - Perth (AWST)", "UTC+8"),
+            ("UTC+0 - UTC/GMT", "UTC+0"),
+        ]
+
+        for label, value in timezones:
+            self.timezone_combo.addItem(label, value)
+
+        # Select current timezone
+        for i in range(self.timezone_combo.count()):
+            if self.timezone_combo.itemData(i) == self.current_timezone:
+                self.timezone_combo.setCurrentIndex(i)
+                break
+
+    def _on_timezone_changed(self, text: str):
+        """Handle timezone combo change."""
+        new_tz = self.timezone_combo.currentData()
+        if new_tz:
+            self.current_timezone = new_tz
+            # Refresh all calculated times
+            self._refresh_all_time_labels()
+
+    def _refresh_all_time_labels(self):
+        """Refresh all time labels with current timezone."""
+        for camera_name, labels in self.time_labels.items():
+            for label in labels:
+                clip = label.property("clip_data")
+                if clip:
+                    new_time = self._calculate_start_time(clip, camera_name)
+                    label.setText(f"<b>Start:</b> {new_time}")
+
     def _save_offsets(self):
-        """Save offsets to config."""
+        """Save offsets and timezone to config."""
         try:
             # Build overrides dict
-            overrides = {"KNOWN_OFFSETS": self.offsets}
+            overrides = {
+                "KNOWN_OFFSETS": self.offsets,
+                "CAMERA_TIMEZONE": self.current_timezone,
+            }
 
             # Save to project_config.json
             self._save_config_overrides(overrides)
@@ -562,25 +692,32 @@ class CameraOffsetWindow(QDialog):
             # Also update the live CFG so it takes effect immediately
             CFG.KNOWN_OFFSETS = dict(self.offsets)
 
+            # Update timezone in CFG
+            selected_tz = self._parse_timezone_string(self.current_timezone)
+            if selected_tz:
+                CFG.CAMERA_CREATION_TIME_TZ = selected_tz
+
             # Reset camera registry to pick up new values
             reset_registry()
 
             self.log(f"Saved camera offsets: {self.offsets}", "success")
+            self.log(f"Saved timezone: {self.current_timezone}", "success")
             self.offsets_changed.emit(self.offsets)
 
             QMessageBox.information(
                 self, "Saved",
-                f"Camera offsets saved:\n\n"
-                f"Fly12Sport: {self.offsets.get('Fly12Sport', 0.0):.1f}s\n"
-                f"Fly6Pro: {self.offsets.get('Fly6Pro', 0.0):.1f}s\n\n"
-                "Re-run Extract step to apply new offsets."
+                f"Camera calibration saved:\n\n"
+                f"Timezone: {self.current_timezone}\n"
+                f"Fly12Sport offset: {self.offsets.get('Fly12Sport', 0.0):.1f}s\n"
+                f"Fly6Pro offset: {self.offsets.get('Fly6Pro', 0.0):.1f}s\n\n"
+                "Re-run Extract step to apply changes."
             )
 
             self.accept()
 
         except Exception as e:
-            log.error(f"Failed to save offsets: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to save offsets: {e}")
+            log.error(f"Failed to save settings: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to save settings: {e}")
 
     def _save_config_overrides(self, overrides: Dict):
         """Save config overrides to project config file."""

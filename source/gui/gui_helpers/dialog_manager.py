@@ -10,18 +10,18 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 class DialogManager:
     """Manages all dialogs for main window."""
-    
+
     def __init__(self, parent):
         """
         Args:
             parent: Parent widget (main window)
         """
         self.parent = parent
-    
+
     def select_source_folder(self) -> Path | None:
         """
         Show folder selection dialog.
-        
+
         Returns:
             Selected folder path or None
         """
@@ -30,6 +30,19 @@ class DialogManager:
             "Select Source Folder with Video Files"
         )
         return Path(folder) if folder else None
+
+    def show_create_project(self) -> tuple[Path | None, str]:
+        """
+        Show create project dialog with timezone selection.
+
+        Returns:
+            Tuple of (source_folder, timezone) or (None, "") if cancelled
+        """
+        from ..create_project_dialog import CreateProjectDialog
+
+        dialog = CreateProjectDialog(self.parent)
+        dialog.exec()
+        return dialog.get_result()
     
     def show_import(self):
         """Show GPX import dialog."""
