@@ -123,6 +123,26 @@
   - `source/steps/select.py` - Relaxed `_group_rows_by_moment()` pairing logic ✓
   - Added `is_single_camera` flag to select.csv output ✓
 
+[x] **Zone limit enforcement** - Cap start/end zone clips in main selection
+  - Problem: Start zone clips dominated selection (29 of 38 clips from first 15 min)
+  - Solution: Added `_enforce_zone_limits()` after gap filter
+  - Caps clips per zone to `MAX_START_ZONE_CLIPS` / `MAX_END_ZONE_CLIPS`
+  - Excess zone clips replaced with next-best mid-ride candidates
+  - Zone bonus logic updated to respect existing zone clip counts
+  - `source/steps/select.py` - New `_enforce_zone_limits()` function ✓
+
+#### Visual Enhancements
+[x] **Thicker minimap route and marker** - Better visibility
+  - `MAP_ROUTE_WIDTH`: 8 → 12
+  - `MAP_MARKER_RADIUS`: 24 → 36
+  - `source/config.py` ✓
+
+[x] **Simplified scene-aware selection** - Removed redundant thresholds
+  - Removed `SCENE_PRIORITY_MODE`, `SCENE_MAJOR_THRESHOLD`, `SCENE_MAJOR_GAP_MULTIPLIER`
+  - Kept single threshold: `SCENE_HIGH_THRESHOLD` (0.50) with `SCENE_HIGH_GAP_MULTIPLIER` (0.5)
+  - High scene_boost clips can be placed 50% closer together (10s gap → 5s)
+  - `source/config.py`, `source/steps/select.py` ✓
+
 ---
 
 ### PENDING
@@ -131,9 +151,8 @@
 
 [ ] **Further selection algorithm tuning** - Additional improvements if needed
   - ~~Camera pairing too strict~~ ✓ FIXED - single-camera moments now allowed
+  - ~~Start zone dominating selection~~ ✓ FIXED - zone limits enforced
   - Sampling grid: 5-second intervals may miss peak action
-  - Candidate pool: Consider increasing `CANDIDATE_FRACTION` 2.5 → 5.0
-  - Gap filtering: Consider reducing `MIN_GAP_BETWEEN_CLIPS` 15s → 10s
   - Weight tuning: May need further adjustment based on results
 
 #### P2 - Workflow Improvements

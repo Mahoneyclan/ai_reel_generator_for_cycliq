@@ -76,23 +76,16 @@ class Config:
     )
 
     # --- Scene-aware selection ---
-    SCENE_PRIORITY_MODE: bool = field(
-        default_factory=lambda: _get_config_value('SCENE_PRIORITY_MODE', True)
-    )
+    # High scene_boost clips can be placed closer together (reduced gap)
     SCENE_HIGH_THRESHOLD: float = field(
         default_factory=lambda: _get_config_value('SCENE_HIGH_THRESHOLD', 0.50)
     )
-    SCENE_MAJOR_THRESHOLD: float = field(
-        default_factory=lambda: _get_config_value('SCENE_MAJOR_THRESHOLD', 0.70)
-    )
-    SCENE_MAJOR_GAP_MULTIPLIER: float = field(
-        default_factory=lambda: _get_config_value('SCENE_MAJOR_GAP_MULTIPLIER', 0.5)
-    )
     SCENE_HIGH_GAP_MULTIPLIER: float = field(
-        default_factory=lambda: _get_config_value('SCENE_HIGH_GAP_MULTIPLIER', 0.75)
+        default_factory=lambda: _get_config_value('SCENE_HIGH_GAP_MULTIPLIER', 0.5)
     )
+    # How far back (seconds) to compare frames for scene change detection
     SCENE_COMPARISON_WINDOW_S: float = field(
-        default_factory=lambda: _get_config_value('SCENE_COMPARISON_WINDOW_S', 10.0)
+        default_factory=lambda: _get_config_value('SCENE_COMPARISON_WINDOW_S', 15.0)
     )
 
     # --- YOLO settings ---
@@ -198,7 +191,7 @@ class Config:
     GPX_TIME_OFFSET_S: float = field(default_factory=lambda: _get_config_value('GPX_TIME_OFFSET_S', 0.0))
     GPX_TOLERANCE: float = field(default_factory=lambda: _get_config_value('GPX_TOLERANCE', 1.0))
     GPX_GRID_EXTENSION_M: float = field(
-        default_factory=lambda: _get_config_value('GPX_GRID_EXTENSION_M', 10.0)
+        default_factory=lambda: _get_config_value('GPX_GRID_EXTENSION_M', 5.0)
     )  # Minutes to extend sampling grid before/after GPX ride data
 
 

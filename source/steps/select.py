@@ -361,10 +361,7 @@ def _apply_gap_filter(moments: List[Dict], target_clips: int) -> List[Dict]:
 
         effective_gap = CFG.MIN_GAP_BETWEEN_CLIPS
         gap_reason = "normal"
-        if scene_boost >= CFG.SCENE_MAJOR_THRESHOLD:
-            effective_gap *= CFG.SCENE_MAJOR_GAP_MULTIPLIER
-            gap_reason = "major scene"
-        elif scene_boost >= CFG.SCENE_HIGH_THRESHOLD:
+        if scene_boost >= CFG.SCENE_HIGH_THRESHOLD:
             effective_gap *= CFG.SCENE_HIGH_GAP_MULTIPLIER
             gap_reason = "high scene"
 

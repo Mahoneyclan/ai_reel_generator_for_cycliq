@@ -243,10 +243,9 @@ CAMERA_WEIGHTS = {
     "Fly6Pro": 1.0,     # Rear camera
 }
 
-# Scene detection
-SCENE_PRIORITY_MODE = True
-SCENE_HIGH_THRESHOLD = 0.50   # High-activity threshold
-SCENE_MAJOR_THRESHOLD = 0.70  # Major event threshold
+# Scene detection (high-activity clips can be placed closer together)
+SCENE_HIGH_THRESHOLD = 0.50       # scene_boost >= 0.50 triggers reduced gap
+SCENE_HIGH_GAP_MULTIPLIER = 0.5   # Reduce gap to 50% for high-activity clips
 
 # Zone bonus clips (start/end of ride - additional to target)
 START_ZONE_DURATION_M = 20.0  # First 20 minutes
