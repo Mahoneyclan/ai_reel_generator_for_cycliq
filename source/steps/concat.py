@@ -10,13 +10,36 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import re
+import time
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import clips_dir
 from ..utils.log import setup_logger
 from ..utils.progress_reporter import report_progress
+from ..utils.ffmpeg import get_video_duration
 
 log = setup_logger("steps.concat")
+
+
+def _get_total_duration(parts: list[Path]) -> float:
+    """Get total duration of all video parts in seconds."""
+    total = 0.0
+    for part in parts:
+        try:
+            duration = get_video_duration(part)
+            if duration:
+                total += duration
+        except Exception:
+            pass
+    return total
+
+
+def _format_eta(seconds: float) -> str:
+    """Format seconds as human-readable ETA string."""
+    if seconds >= 60:
+        return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+    else:
+        return f"{int(seconds)}s"
 
 
 def run() -> Path:
@@ -66,10 +89,14 @@ def run() -> Path:
             f.write(f"file '{part.resolve()}'\n")
 
     # Step 2: Concatenate and re-encode for Facebook compatibility
-    report_progress(2, 3, f"Concatenating {len(final_parts)} parts...")
-    log.info(f"[concat] Concatenating {len(final_parts)} parts with Facebook-compliant encoding...")
-    subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+    total_duration = _get_total_duration(final_parts)
+    log.info(f"[concat] Concatenating {len(final_parts)} parts ({total_duration:.1f}s total) with Facebook-compliant encoding...")
+
+    start_time = time.time()
+
+    # Run FFmpeg with progress output
+    cmd = [
+        "ffmpeg", "-hide_banner", "-y",
         "-f", "concat", "-safe", "0", "-i", str(concat_list),
         # Re-encode to ensure Facebook compatibility
         "-c:v", "libx264",           # H.264 codec
@@ -82,8 +109,59 @@ def run() -> Path:
         "-c:a", "aac",               # AAC audio
         "-b:a", "128k",              # Audio bitrate
         "-ar", "48000",              # Audio sample rate
+        "-progress", "pipe:1",       # Output progress to stdout
+        "-loglevel", "error",
         str(out)
-    ], check=True)
+    ]
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    last_report_time = 0
+    current_time_s = 0.0
+
+    # Parse progress output
+    for line in process.stdout:
+        line = line.strip()
+        if line.startswith("out_time_ms="):
+            try:
+                out_time_ms = int(line.split("=")[1])
+                current_time_s = out_time_ms / 1_000_000.0
+            except (ValueError, IndexError):
+                pass
+        elif line == "progress=continue" or line == "progress=end":
+            # Update progress
+            if total_duration > 0 and current_time_s > 0:
+                progress_pct = min(current_time_s / total_duration, 1.0)
+                elapsed = time.time() - start_time
+
+                if elapsed > 0 and progress_pct > 0:
+                    eta_seconds = (elapsed / progress_pct) * (1.0 - progress_pct)
+                    eta_str = _format_eta(eta_seconds)
+                else:
+                    eta_str = "calculating..."
+
+                # Report every 2 seconds to avoid spam
+                now = time.time()
+                if now - last_report_time >= 2.0:
+                    report_progress(
+                        int(progress_pct * 100),
+                        100,
+                        f"Encoding: {int(progress_pct * 100)}% (ETA: {eta_str})"
+                    )
+                    last_report_time = now
+
+    # Wait for process to complete
+    process.wait()
+
+    if process.returncode != 0:
+        stderr = process.stderr.read()
+        log.error(f"[concat] FFmpeg failed: {stderr}")
+        raise subprocess.CalledProcessError(process.returncode, cmd)
 
     # Step 3: Finalize output
     report_progress(3, 3, "Finalizing output...")

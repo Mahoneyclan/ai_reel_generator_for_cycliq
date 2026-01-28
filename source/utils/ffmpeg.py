@@ -7,9 +7,32 @@ Thin wrappers for common ffmpeg ops: encode stills, mux audio.
 
 from __future__ import annotations
 import subprocess
+import json
 from pathlib import Path
 
 AUDIO_SAMPLE_RATE = "48000"
+
+
+def get_video_duration(video_path: Path) -> float:
+    """Get video duration in seconds using ffprobe."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-print_format", "json",
+                "-show_format",
+                str(video_path)
+            ],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            return float(data.get("format", {}).get("duration", 0))
+    except Exception:
+        pass
+    return 0.0
+
 
 def run_ffmpeg(cmd: list[str]):
     """Execute ffmpeg command."""
