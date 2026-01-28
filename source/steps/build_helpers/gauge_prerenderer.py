@@ -213,11 +213,11 @@ class GaugePrerenderer:
 
     def _render_dynamic_gauges(self, row: Dict, idx: int) -> Optional[Path]:
         """Render per-second gauge PNGs and compile to video."""
-        # Get clip start epoch
+        # Use gpx_epoch (matches flatten.csv index)
         try:
-            clip_epoch = float(row.get("abs_time_epoch") or 0.0)
+            clip_epoch = float(row.get("gpx_epoch") or 0.0)
         except (ValueError, TypeError):
-            log.warning(f"[gauge] Clip {idx}: Invalid abs_time_epoch, falling back to static")
+            log.warning(f"[gauge] Clip {idx}: Invalid gpx_epoch, falling back to static")
             return self._render_static_gauge(row, idx)
 
         # Calculate number of seconds to render (round up)
