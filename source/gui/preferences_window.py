@@ -43,6 +43,8 @@ class PreferencesWindow(QDialog):
                                 'Set to 0 to disable start zone clips.',
         'MAX_END_ZONE_CLIPS': 'Maximum number of bonus clips to include from the last N minutes of the ride. '
                               'Set to 0 to disable end zone clips.',
+        'CANDIDATE_FRACTION': 'Multiplier for candidate pool size shown in manual selection. '
+                              'E.g., 2.5 means show 2.5x target clips for user to choose from.',
     }
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -251,6 +253,7 @@ class PreferencesWindow(QDialog):
         self._add_spinbox(self.core_form, "Max Start Zone Clips (#)", "MAX_START_ZONE_CLIPS", CFG.MAX_START_ZONE_CLIPS, 0, 10)
         self._add_doublespinbox(self.core_form, "End Zone Duration (min)", "END_ZONE_DURATION_M", CFG.END_ZONE_DURATION_M, 0, 60, 5)
         self._add_spinbox(self.core_form, "Max End Zone Clips (#)", "MAX_END_ZONE_CLIPS", CFG.MAX_END_ZONE_CLIPS, 0, 10)
+        self._add_doublespinbox(self.core_form, "Candidate Fraction (×)", "CANDIDATE_FRACTION", CFG.CANDIDATE_FRACTION, 1.0, 5.0, 0.5)
 
     def _create_score_settings(self):
         description = QLabel("Adjust relative weights used in scoring clips.\nValues should sum to ~1.0 for balanced scoring.")
