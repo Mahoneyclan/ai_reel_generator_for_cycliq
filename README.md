@@ -278,6 +278,15 @@ Projects are stored in `PROJECTS_ROOT/{ride_name}/`:
 
 ## Camera-Specific Timing
 
+### Per-Camera Timezone Support
+
+Cycliq cameras sync their clocks to your phone, but if cameras are synced in different locations (e.g., one camera synced at home in Brisbane, another synced while travelling in Adelaide), they may have different timezone offsets baked into their timestamps.
+
+The **Camera Calibration** tool (Project Tools → Calibrate) supports:
+- **Per-camera timezone selection** - Each camera can have a different timezone
+- **Auto-detect** - Compares video recording window with GPX start time to find correct timezone
+- **Per-camera offsets** - Fine-tune timing alignment for each camera independently
+
 ### Video Codec Timing Offsets
 
 Cycliq cameras store `creation_time` in MP4 metadata at the end of recording, but different video codecs have different processing times that affect when this timestamp is written:
@@ -287,7 +296,7 @@ Cycliq cameras store `creation_time` in MP4 metadata at the end of recording, bu
 | **H.264** | ~0 seconds | Faster encoding, creation_time written immediately |
 | **H.265/HEVC** | ~2 seconds | Slower encoding, creation_time delayed by processing |
 
-**Important:** If your cameras use different codecs, their timestamps may be offset from each other. Use the **Camera Calibration** tool (Project Tools → Calibrate) to visually compare burnt-in timestamps with calculated times and adjust offsets per-project.
+**Important:** If your cameras use different codecs, their timestamps may be offset from each other. Use the calibration tool to visually compare burnt-in timestamps with calculated times and adjust offsets per-project.
 
 ### Why This Matters
 

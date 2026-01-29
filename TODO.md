@@ -114,6 +114,17 @@
   - `source/gui/create_project_dialog.py` - New project creation dialog ✓
   - `source/gui/controllers/project_controller.py` - Loads/saves timezone ✓
 
+[x] **Per-camera timezone support** - Different cameras can have different timezones
+  - Problem: Cameras synced to phone in different locations have different timezone offsets
+  - Solution: Per-camera timezone dropdown in Calibration window
+  - Auto-detect button compares video recording window with GPX start time
+  - `CAMERA_TIMEZONES` dict in config and project_config.json
+  - Legacy `CAMERA_TIMEZONE` format supported for backwards compatibility
+  - `source/config.py` - Added `CAMERA_TIMEZONES` dict ✓
+  - `source/gui/camera_offset_window.py` - Per-camera timezone UI with detect ✓
+  - `source/steps/extract.py` - `_get_camera_timezone()` per-camera lookup ✓
+  - `source/gui/controllers/project_controller.py` - Load/save per-camera timezones ✓
+
 #### Clip Selection
 [x] **Allow single-camera moments** - Relax strict camera pairing requirement
   - Single-camera moments now allowed in selection (previously dropped 20-50%)
