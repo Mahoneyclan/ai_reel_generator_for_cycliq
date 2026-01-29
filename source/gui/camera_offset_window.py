@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QWidget, QGridLayout, QMessageBox, QFrame,
-    QDoubleSpinBox, QGroupBox, QSplitter, QComboBox
+    QDoubleSpinBox, QGroupBox, QSplitter, QComboBox, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
@@ -110,13 +110,23 @@ class CameraOffsetWindow(QDialog):
         # Splitter for two camera columns
         splitter = QSplitter(Qt.Horizontal)
 
-        # Left column: Fly12Sport (front)
+        # Left column: Fly12Sport (front) - wrap in container to align top
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         self.front_scroll = self._create_camera_column("Fly12Sport", "Front Camera")
-        splitter.addWidget(self.front_scroll)
+        left_layout.addWidget(self.front_scroll)
+        left_layout.addStretch()
+        splitter.addWidget(left_container)
 
-        # Right column: Fly6Pro (rear)
+        # Right column: Fly6Pro (rear) - wrap in container to align top
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         self.rear_scroll = self._create_camera_column("Fly6Pro", "Rear Camera")
-        splitter.addWidget(self.rear_scroll)
+        right_layout.addWidget(self.rear_scroll)
+        right_layout.addStretch()
+        splitter.addWidget(right_container)
 
         splitter.setSizes([690, 690])
         layout.addWidget(splitter)
@@ -142,6 +152,8 @@ class CameraOffsetWindow(QDialog):
     def _create_camera_column(self, camera_name: str, display_name: str) -> QGroupBox:
         """Create a scrollable column for one camera type."""
         group = QGroupBox(display_name)
+        # Don't expand vertically beyond content
+        group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         group.setStyleSheet("""
             QGroupBox {
                 font-size: 13px;
@@ -240,6 +252,8 @@ class CameraOffsetWindow(QDialog):
         )
 
         grid_widget = QWidget()
+        # Ensure grid widget only takes minimum vertical space (content aligned to top)
+        grid_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         grid_layout = QVBoxLayout(grid_widget)
         grid_layout.setSpacing(8)
         grid_layout.setContentsMargins(2, 2, 2, 2)
