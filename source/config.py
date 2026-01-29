@@ -176,8 +176,18 @@ class Config:
     PREFERRED_CODEC: str = field(default_factory=lambda: _get_config_value('PREFERRED_CODEC', 'auto'))
 
     # --- Time alignment ---
+    # Default timezone (fallback if per-camera timezone not set)
     CAMERA_CREATION_TIME_TZ = timezone(timedelta(hours=10))
     CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z: bool = True
+
+    # Per-camera timezones (cameras may sync to different phones/locations)
+    # Format: {"Fly12Sport": "UTC+10", "Fly6Pro": "UTC+10:30"}
+    CAMERA_TIMEZONES: dict = field(default_factory=lambda: _get_config_value(
+        'CAMERA_TIMEZONES', {
+            "Fly12Sport": "UTC+10",
+            "Fly6Pro": "UTC+10",
+        }
+    ))
 
     # Known creation_time offsets per camera model (seconds to add to duration)
     # Different Cycliq cameras may record creation_time at different points relative to recording end

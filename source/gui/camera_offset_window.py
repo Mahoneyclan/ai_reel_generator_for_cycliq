@@ -56,8 +56,8 @@ class CameraOffsetWindow(QDialog):
         # Current offset values - load from project_config.json if exists, else from default config
         self.offsets: Dict[str, float] = self._load_saved_offsets()
 
-        # Current timezone - load from project_config.json if exists
-        self.current_timezone: str = self._load_saved_timezone()
+        # Per-camera timezones - load from project_config.json if exists
+        self.camera_timezones: Dict[str, str] = self._load_saved_timezones()
 
         # Clip data grouped by camera
         self.clips_by_camera: Dict[str, List[Dict]] = {}
@@ -65,7 +65,8 @@ class CameraOffsetWindow(QDialog):
         # UI references for updating
         self.time_labels: Dict[str, List[QLabel]] = {}  # camera -> [labels]
         self.spinboxes: Dict[str, QDoubleSpinBox] = {}
-        self.timezone_combo: QComboBox = None
+        self.timezone_combos: Dict[str, QComboBox] = {}  # per-camera timezone dropdowns
+        self.tz_status_labels: Dict[str, QLabel] = {}  # per-camera detection status
 
         self.setWindowTitle("Camera Offset Calibration")
         self.resize(1400, 900)
@@ -101,22 +102,10 @@ class CameraOffsetWindow(QDialog):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # Timezone selector at top (compact single row)
-        tz_layout = QHBoxLayout()
-        tz_layout.setSpacing(8)
-        tz_layout.setContentsMargins(0, 0, 0, 0)
-        tz_label = QLabel("Timezone:")
-        tz_label.setStyleSheet("font-weight: 600; font-size: 12px;")
-
-        self.timezone_combo = QComboBox()
-        self.timezone_combo.setFixedWidth(220)
-        self._populate_timezone_options()
-        self.timezone_combo.currentTextChanged.connect(self._on_timezone_changed)
-
-        tz_layout.addWidget(tz_label)
-        tz_layout.addWidget(self.timezone_combo)
-        tz_layout.addStretch()
-        layout.addLayout(tz_layout)
+        # Info label at top
+        info_label = QLabel("Each camera can have a different timezone (e.g., if synced to phone in different locations)")
+        info_label.setStyleSheet("font-size: 11px; color: #666; font-style: italic;")
+        layout.addWidget(info_label)
 
         # Splitter for two camera columns
         splitter = QSplitter(Qt.Horizontal)
@@ -171,12 +160,56 @@ class CameraOffsetWindow(QDialog):
 
         outer_layout = QVBoxLayout(group)
         outer_layout.setContentsMargins(4, 2, 4, 4)
-        outer_layout.setSpacing(2)
+        outer_layout.setSpacing(4)
+
+        # Timezone control for this camera
+        tz_layout = QHBoxLayout()
+        tz_layout.setSpacing(6)
+        tz_label = QLabel("Timezone:")
+        tz_label.setStyleSheet("font-weight: 600; font-size: 12px;")
+
+        tz_combo = QComboBox()
+        tz_combo.setFixedWidth(200)
+        self._populate_timezone_combo(tz_combo, camera_name)
+        tz_combo.currentTextChanged.connect(lambda _, c=camera_name: self._on_camera_timezone_changed(c))
+
+        self.timezone_combos[camera_name] = tz_combo
+
+        # Detect button for this camera
+        detect_btn = QPushButton("Detect")
+        detect_btn.setToolTip("Detect timezone from GPX comparison")
+        detect_btn.clicked.connect(lambda _, c=camera_name: self._detect_camera_timezone(c))
+        detect_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4A90D9;
+                color: white;
+                padding: 3px 8px;
+                font-size: 10px;
+                font-weight: 600;
+                border: 1px solid #4A90D9;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #357ABD;
+            }
+        """)
+
+        # Status label for detection
+        tz_status = QLabel("")
+        tz_status.setStyleSheet("font-size: 10px; color: #666;")
+        self.tz_status_labels[camera_name] = tz_status
+
+        tz_layout.addWidget(tz_label)
+        tz_layout.addWidget(tz_combo)
+        tz_layout.addWidget(detect_btn)
+        tz_layout.addWidget(tz_status)
+        tz_layout.addStretch()
+        outer_layout.addLayout(tz_layout)
 
         # Offset control for this camera (compact)
         offset_layout = QHBoxLayout()
         offset_layout.setSpacing(6)
-        offset_label = QLabel(f"Offset:")
+        offset_label = QLabel("Offset:")
         offset_label.setStyleSheet("font-weight: 600; font-size: 12px;")
 
         spinbox = QDoubleSpinBox()
@@ -472,7 +505,7 @@ class CameraOffsetWindow(QDialog):
             label.setText("[No thumbnail]")
 
     def _calculate_start_time(self, clip: Dict, camera_name: str) -> str:
-        """Calculate recording start time with current offset and timezone."""
+        """Calculate recording start time with current offset and per-camera timezone."""
         creation_time_str = clip.get("creation_time", "")
         duration_s = float(clip.get("duration_s", 0))
 
@@ -483,9 +516,10 @@ class CameraOffsetWindow(QDialog):
             # Parse creation time
             creation_dt = datetime.fromisoformat(creation_time_str.replace("Z", "+00:00"))
 
-            # Apply Cycliq UTC bug fix using the SELECTED timezone (not CFG default)
+            # Apply Cycliq UTC bug fix using the per-camera timezone
             if CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z:
-                selected_tz = self._parse_timezone_string(self.current_timezone)
+                camera_tz_str = self.camera_timezones.get(camera_name, "UTC+10")
+                selected_tz = self._parse_timezone_string(camera_tz_str)
                 if selected_tz:
                     creation_dt = fix_cycliq_utc_bug(
                         creation_dt,
@@ -604,8 +638,8 @@ class CameraOffsetWindow(QDialog):
         # Fall back to default config
         return dict(CFG.KNOWN_OFFSETS)
 
-    def _load_saved_timezone(self) -> str:
-        """Load timezone from project config if exists, else from default config."""
+    def _load_saved_timezones(self) -> Dict[str, str]:
+        """Load per-camera timezones from project config if exists, else from default config."""
         import json
 
         # Project-specific config
@@ -615,30 +649,24 @@ class CameraOffsetWindow(QDialog):
             try:
                 with config_path.open() as f:
                     data = json.load(f)
+                    # New format: per-camera timezones
+                    if "CAMERA_TIMEZONES" in data:
+                        timezones = dict(data["CAMERA_TIMEZONES"])
+                        log.info(f"Loaded per-camera timezones from {config_path}: {timezones}")
+                        return timezones
+                    # Legacy format: single timezone for all cameras
                     if "CAMERA_TIMEZONE" in data:
                         tz = data["CAMERA_TIMEZONE"]
-                        log.info(f"Loaded project timezone from {config_path}: {tz}")
-                        return tz
+                        log.info(f"Loaded legacy timezone from {config_path}: {tz}")
+                        return {"Fly12Sport": tz, "Fly6Pro": tz}
             except Exception as e:
-                log.warning(f"Failed to load timezone from project_config.json: {e}")
+                log.warning(f"Failed to load timezones from project_config.json: {e}")
 
-        # Fall back to default config timezone
-        # Convert the timezone object to a string representation
-        tz = CFG.CAMERA_CREATION_TIME_TZ
-        offset = tz.utcoffset(None)
-        if offset:
-            total_seconds = int(offset.total_seconds())
-            hours, remainder = divmod(abs(total_seconds), 3600)
-            minutes = remainder // 60
-            sign = '+' if total_seconds >= 0 else '-'
-            if minutes:
-                return f"UTC{sign}{hours}:{minutes:02d}"
-            else:
-                return f"UTC{sign}{hours}"
-        return "UTC+10"
+        # Fall back to default config
+        return dict(CFG.CAMERA_TIMEZONES)
 
-    def _populate_timezone_options(self):
-        """Populate timezone combo with common Australian timezones."""
+    def _populate_timezone_combo(self, combo: QComboBox, camera_name: str):
+        """Populate a timezone combo with common Australian timezones."""
         timezones = [
             ("UTC+10:30 - Adelaide (ACDT)", "UTC+10:30"),
             ("UTC+10 - Brisbane/Sydney (AEST)", "UTC+10"),
@@ -649,21 +677,233 @@ class CameraOffsetWindow(QDialog):
         ]
 
         for label, value in timezones:
-            self.timezone_combo.addItem(label, value)
+            combo.addItem(label, value)
 
-        # Select current timezone
-        for i in range(self.timezone_combo.count()):
-            if self.timezone_combo.itemData(i) == self.current_timezone:
-                self.timezone_combo.setCurrentIndex(i)
+        # Select current timezone for this camera
+        current_tz = self.camera_timezones.get(camera_name, "UTC+10")
+        for i in range(combo.count()):
+            if combo.itemData(i) == current_tz:
+                combo.setCurrentIndex(i)
                 break
 
-    def _on_timezone_changed(self, text: str):
-        """Handle timezone combo change."""
-        new_tz = self.timezone_combo.currentData()
-        if new_tz:
-            self.current_timezone = new_tz
-            # Refresh all calculated times
-            self._refresh_all_time_labels()
+    def _on_camera_timezone_changed(self, camera_name: str):
+        """Handle per-camera timezone combo change."""
+        combo = self.timezone_combos.get(camera_name)
+        if combo:
+            new_tz = combo.currentData()
+            if new_tz:
+                self.camera_timezones[camera_name] = new_tz
+                # Refresh time labels for this camera only
+                self._refresh_camera_time_labels(camera_name)
+
+    def _refresh_camera_time_labels(self, camera_name: str):
+        """Refresh time labels for a specific camera."""
+        for label in self.time_labels.get(camera_name, []):
+            clip = label.property("clip_data")
+            if clip:
+                new_time = self._calculate_start_time(clip, camera_name)
+                label.setText(f"<b>Start:</b> {new_time}")
+
+    def _detect_camera_timezone(self, camera_name: str):
+        """
+        Detect correct timezone for a specific camera by comparing GPX start time with video timestamps.
+
+        Logic: Find which timezone makes the first video clip from this camera span the GPX start time.
+        """
+        status_label = self.tz_status_labels.get(camera_name)
+
+        # Load GPX start time
+        gpx_start_epoch = self._get_gpx_start_epoch()
+        if gpx_start_epoch is None:
+            if status_label:
+                status_label.setText("No GPX")
+                status_label.setStyleSheet("font-size: 10px; color: #c75000;")
+            QMessageBox.warning(
+                self, "No GPX Data",
+                f"Could not find GPX data to compare for {camera_name}.\n\n"
+                "Please ensure flatten.csv or ride.gpx exists in the working directory."
+            )
+            return
+
+        gpx_start_dt = datetime.fromtimestamp(gpx_start_epoch, tz=timezone.utc)
+
+        # Get first video clip for THIS camera
+        clips = self.clips_by_camera.get(camera_name, [])
+        if not clips:
+            if status_label:
+                status_label.setText("No clips")
+                status_label.setStyleSheet("font-size: 10px; color: #c75000;")
+            return
+
+        # Sort by filename to get first clip
+        sorted_clips = sorted(clips, key=lambda c: c.get("source", ""))
+        first_clip = sorted_clips[0]
+
+        # Get video metadata
+        creation_time_str = first_clip.get("creation_time", "")
+        duration_s = float(first_clip.get("duration_s", 0))
+        offset = self.offsets.get(camera_name, 0.0)
+
+        if not creation_time_str:
+            if status_label:
+                status_label.setText("No time")
+                status_label.setStyleSheet("font-size: 10px; color: #c75000;")
+            return
+
+        try:
+            # Parse creation time (raw, as stored in video - local time with wrong Z)
+            creation_dt_raw = datetime.fromisoformat(creation_time_str.replace("Z", "+00:00"))
+            # Remove timezone info to get naive local time
+            creation_local_naive = creation_dt_raw.replace(tzinfo=None)
+        except Exception as e:
+            if status_label:
+                status_label.setText("Parse err")
+                status_label.setStyleSheet("font-size: 10px; color: #c75000;")
+            return
+
+        # Test each timezone
+        candidate_timezones = [
+            ("UTC+10:30", 10 * 60 + 30),
+            ("UTC+10", 10 * 60),
+            ("UTC+11", 11 * 60),
+            ("UTC+9:30", 9 * 60 + 30),
+            ("UTC+8", 8 * 60),
+        ]
+
+        results = []
+        for tz_name, offset_minutes in candidate_timezones:
+            tz_obj = timezone(timedelta(minutes=offset_minutes))
+
+            # Interpret creation_local_naive as this timezone
+            creation_local = creation_local_naive.replace(tzinfo=tz_obj)
+            creation_utc = creation_local.astimezone(timezone.utc)
+
+            # Calculate video start/end in UTC
+            video_end_utc = creation_utc - timedelta(seconds=offset)
+            video_start_utc = video_end_utc - timedelta(seconds=duration_s)
+
+            video_start_epoch = video_start_utc.timestamp()
+            video_end_epoch = video_end_utc.timestamp()
+
+            # Check if GPX start falls within video window
+            spans_gpx = video_start_epoch <= gpx_start_epoch <= video_end_epoch
+
+            # Calculate relationship
+            if gpx_start_epoch < video_start_epoch:
+                gap_seconds = video_start_epoch - gpx_start_epoch
+                relationship = f"video starts {gap_seconds:.0f}s AFTER GPX"
+            elif gpx_start_epoch > video_end_epoch:
+                gap_seconds = gpx_start_epoch - video_end_epoch
+                relationship = f"video ends {gap_seconds:.0f}s BEFORE GPX"
+            else:
+                into_clip = gpx_start_epoch - video_start_epoch
+                relationship = f"GPX starts {into_clip:.0f}s into clip"
+
+            results.append({
+                "tz_name": tz_name,
+                "spans_gpx": spans_gpx,
+                "relationship": relationship,
+                "video_start": video_start_utc.strftime("%H:%M:%S"),
+                "video_end": video_end_utc.strftime("%H:%M:%S"),
+            })
+
+        # Find matching timezone(s)
+        matching = [r for r in results if r["spans_gpx"]]
+
+        # Build report
+        gpx_time_str = gpx_start_dt.strftime("%H:%M:%S UTC")
+        video_info = f"{first_clip.get('source', 'Unknown')} ({duration_s:.0f}s)"
+
+        report_lines = [
+            f"Camera: {camera_name}",
+            f"GPX Start: {gpx_time_str}",
+            f"Video: {video_info}",
+            f"Camera local time: {creation_local_naive.strftime('%H:%M:%S')}",
+            "",
+            "Timezone Analysis:",
+        ]
+
+        for r in results:
+            marker = "✓" if r["spans_gpx"] else "✗"
+            report_lines.append(
+                f"  {marker} {r['tz_name']}: {r['video_start']}→{r['video_end']} UTC — {r['relationship']}"
+            )
+
+        if matching:
+            detected_tz = matching[0]["tz_name"]
+            report_lines.append("")
+            report_lines.append(f"Detected: {detected_tz}")
+
+            if status_label:
+                status_label.setText(f"→ {detected_tz}")
+                status_label.setStyleSheet("font-size: 10px; color: #2D7A4F; font-weight: 600;")
+
+            # Ask user if they want to apply
+            reply = QMessageBox.question(
+                self, f"Timezone Detected for {camera_name}",
+                "\n".join(report_lines) + "\n\nApply detected timezone?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+
+            if reply == QMessageBox.Yes:
+                # Select the detected timezone in this camera's combo
+                combo = self.timezone_combos.get(camera_name)
+                if combo:
+                    for i in range(combo.count()):
+                        if combo.itemData(i) == detected_tz:
+                            combo.setCurrentIndex(i)
+                            break
+        else:
+            if status_label:
+                status_label.setText("No match")
+                status_label.setStyleSheet("font-size: 10px; color: #c75000;")
+
+            QMessageBox.warning(
+                self, f"No Match Found for {camera_name}",
+                "\n".join(report_lines) + "\n\n"
+                "No timezone makes the video span the GPX start.\n"
+                "This may indicate:\n"
+                "• Camera was not recording when GPX started\n"
+                "• Camera clock has significant drift\n"
+                "• GPX data is from a different session"
+            )
+
+    def _get_gpx_start_epoch(self) -> Optional[float]:
+        """Get GPX start timestamp as epoch seconds."""
+        import csv
+
+        # Try flatten.csv first
+        flatten_csv = flatten_path()
+        if flatten_csv.exists():
+            try:
+                with flatten_csv.open() as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get("gpx_epoch"):
+                            return float(row["gpx_epoch"])
+            except Exception as e:
+                log.warning(f"Failed to read flatten.csv: {e}")
+
+        # Try ride.gpx
+        gpx_file = CFG.GPX_FILE
+        if not gpx_file.exists():
+            gpx_file = CFG.INPUT_GPX_FILE
+
+        if gpx_file.exists():
+            try:
+                import gpxpy
+                with gpx_file.open() as f:
+                    gpx = gpxpy.parse(f)
+                    for trk in gpx.tracks:
+                        for seg in trk.segments:
+                            for pt in seg.points:
+                                if pt.time:
+                                    return pt.time.timestamp()
+            except Exception as e:
+                log.warning(f"Failed to parse GPX: {e}")
+
+        return None
 
     def _refresh_all_time_labels(self):
         """Refresh all time labels with current timezone."""
@@ -675,12 +915,12 @@ class CameraOffsetWindow(QDialog):
                     label.setText(f"<b>Start:</b> {new_time}")
 
     def _save_offsets(self):
-        """Save offsets and timezone to config."""
+        """Save offsets and per-camera timezones to config."""
         try:
-            # Build overrides dict
+            # Build overrides dict with per-camera timezones
             overrides = {
                 "KNOWN_OFFSETS": self.offsets,
-                "CAMERA_TIMEZONE": self.current_timezone,
+                "CAMERA_TIMEZONES": self.camera_timezones,
             }
 
             # Save to project_config.json
@@ -688,25 +928,25 @@ class CameraOffsetWindow(QDialog):
 
             # Also update the live CFG so it takes effect immediately
             CFG.KNOWN_OFFSETS = dict(self.offsets)
-
-            # Update timezone in CFG
-            selected_tz = self._parse_timezone_string(self.current_timezone)
-            if selected_tz:
-                CFG.CAMERA_CREATION_TIME_TZ = selected_tz
+            CFG.CAMERA_TIMEZONES = dict(self.camera_timezones)
 
             # Reset camera registry to pick up new values
             reset_registry()
 
             self.log(f"Saved camera offsets: {self.offsets}", "success")
-            self.log(f"Saved timezone: {self.current_timezone}", "success")
+            self.log(f"Saved camera timezones: {self.camera_timezones}", "success")
             self.offsets_changed.emit(self.offsets)
+
+            # Build timezone display string
+            tz_display = "\n".join([f"  {cam}: {tz}" for cam, tz in self.camera_timezones.items()])
 
             QMessageBox.information(
                 self, "Saved",
                 f"Camera calibration saved:\n\n"
-                f"Timezone: {self.current_timezone}\n"
-                f"Fly12Sport offset: {self.offsets.get('Fly12Sport', 0.0):.1f}s\n"
-                f"Fly6Pro offset: {self.offsets.get('Fly6Pro', 0.0):.1f}s\n\n"
+                f"Timezones:\n{tz_display}\n\n"
+                f"Offsets:\n"
+                f"  Fly12Sport: {self.offsets.get('Fly12Sport', 0.0):.1f}s\n"
+                f"  Fly6Pro: {self.offsets.get('Fly6Pro', 0.0):.1f}s\n\n"
                 "Re-run Extract step to apply changes."
             )
 

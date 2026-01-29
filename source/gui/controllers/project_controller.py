@@ -100,7 +100,7 @@ class ProjectController:
         Load project-specific config overrides from project_config.json.
 
         This allows per-project settings like KNOWN_OFFSETS for camera calibration
-        and CAMERA_TIMEZONE for location-specific time alignment.
+        and CAMERA_TIMEZONES for per-camera time alignment.
 
         Args:
             project_path: Path to project folder
@@ -124,13 +124,23 @@ class ProjectController:
                 # Reset camera registry to pick up new offsets
                 reset_registry()
 
-            # Apply timezone override
-            if "CAMERA_TIMEZONE" in overrides:
+            # Apply per-camera timezones (new format)
+            if "CAMERA_TIMEZONES" in overrides:
+                CFG.CAMERA_TIMEZONES = dict(overrides["CAMERA_TIMEZONES"])
+                self.log(f"Loaded per-camera timezones: {CFG.CAMERA_TIMEZONES}", "info")
+            # Legacy: single timezone for all cameras
+            elif "CAMERA_TIMEZONE" in overrides:
                 tz_str = overrides["CAMERA_TIMEZONE"]
+                # Apply to both cameras for backwards compatibility
+                CFG.CAMERA_TIMEZONES = {
+                    "Fly12Sport": tz_str,
+                    "Fly6Pro": tz_str,
+                }
+                # Also set the default timezone object for any code still using it
                 tz_obj = self._parse_timezone_string(tz_str)
                 if tz_obj:
                     CFG.CAMERA_CREATION_TIME_TZ = tz_obj
-                    self.log(f"Loaded project timezone: {tz_str}", "info")
+                self.log(f"Loaded legacy timezone (applied to all cameras): {tz_str}", "info")
 
             controller_log.info(f"Loaded project config from {config_path}")
 

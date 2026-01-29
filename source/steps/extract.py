@@ -12,7 +12,8 @@ TIME MODEL:
 
 from __future__ import annotations
 import csv
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Tuple
 
@@ -28,6 +29,47 @@ from ..utils.video_utils import (
 )
 
 log = setup_logger("steps.extract")
+
+
+def _parse_timezone_string(tz_str: str):
+    """Parse timezone string like 'UTC+10:30' to timezone object."""
+    if not tz_str:
+        return None
+
+    # Parse UTC offset format: "UTC+10:30", "UTC+10", "UTC-5", etc.
+    pattern = r'^UTC([+-])(\d{1,2})(?::(\d{2}))?$'
+    match = re.match(pattern, tz_str.strip())
+
+    if match:
+        sign = match.group(1)
+        hours = int(match.group(2))
+        minutes = int(match.group(3) or 0)
+
+        total_minutes = hours * 60 + minutes
+        if sign == '-':
+            total_minutes = -total_minutes
+
+        return timezone(timedelta(minutes=total_minutes))
+
+    return None
+
+
+def _get_camera_timezone(camera_name: str):
+    """
+    Get timezone for a specific camera.
+
+    Uses per-camera CAMERA_TIMEZONES if available, otherwise falls back to
+    CAMERA_CREATION_TIME_TZ default.
+    """
+    # Look up per-camera timezone
+    tz_str = CFG.CAMERA_TIMEZONES.get(camera_name)
+    if tz_str:
+        tz_obj = _parse_timezone_string(tz_str)
+        if tz_obj:
+            return tz_obj
+
+    # Fall back to default
+    return CFG.CAMERA_CREATION_TIME_TZ
 
 
 def _get_gpx_time_range() -> Tuple[float, float]:
@@ -107,10 +149,13 @@ def _extract_video_metadata(
         log.error(f"[extract] Metadata probe failed: {video_path.name}: {e}")
         return []
 
+    # Get per-camera timezone (or fall back to default)
+    camera_tz = _get_camera_timezone(camera_name)
+
     # Fix Cycliq UTC bug and get real-world start time
     creation_local = fix_cycliq_utc_bug(
         raw_dt,
-        CFG.CAMERA_CREATION_TIME_TZ,
+        camera_tz,
         CFG.CAMERA_CREATION_TIME_IS_LOCAL_WRONG_Z
     )
     creation_utc = creation_local.astimezone(timezone.utc)
