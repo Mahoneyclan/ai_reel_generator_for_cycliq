@@ -1,264 +1,65 @@
 ## TODO
 
-### COMPLETED
-
-#### Performance Optimizations (Phase 1)
-[x] **Hardware codec detection** - Auto-select optimal FFmpeg encoder
-  - `source/utils/hardware.py` - New hardware detection module
-  - Apple Silicon: `h264_videotoolbox` (hardware accelerated)
-  - Intel Mac: Falls back to `libx264` (software)
-  - `source/config.py` - Added PREFERRED_CODEC setting ✓
-
-[x] **Dynamic worker scaling** - Task-specific parallelism
-  - Removed arbitrary 8-worker cap
-  - FFmpeg tasks: half of CPU cores
-  - I/O tasks (minimap, gauge, elevation): scales with CPU count
-  - `source/steps/build.py`, all pre-renderers ✓
-
-[x] **Adaptive YOLO batch size** - Based on system RAM
-  - 8GB → batch 8, 16GB → batch 16, 32GB → batch 32
-  - `source/utils/hardware.py:get_yolo_batch_size()` ✓
-
-[x] **Increase minimap zoom level** - Higher detail
-  - `source/config.py` - MAP_ZOOM_PIP: 14 → 15 ✓
-
-#### Video Processing
-[x] **FFmpeg hardware acceleration** - Use `h264_videotoolbox` instead of `libx264`
-  - `source/steps/build_helpers/clip_renderer.py` ✓
-  - `source/steps/splash_helpers/animation_renderer.py` ✓
-
-[x] **Smooth clip transitions** - Professional crossfade transitions
-  - 0.2s crossfade between all clips using FFmpeg xfade filter
-  - 0.3s fade in on first clip (after intro)
-  - 0.3s fade out on last clip (before outro)
-  - Audio crossfade with acrossfade filter
-  - `source/steps/build_helpers/segment_concatenator.py` ✓
-
-[x] **Audio normalization** - Consistent volume across clips and music
-  - Added loudnorm filter (-16 LUFS broadcast standard) to camera audio
-  - Added loudnorm to music mixing for consistent levels
-  - `source/utils/ffmpeg.py`, `source/steps/build_helpers/segment_concatenator.py` ✓
-
-#### Detection & Analysis
-[x] **Increase YOLO batch size** - Default 4 too small for modern GPUs
-  - `source/config.py` - Changed default from 4 to 8 ✓
-
-[x] **Expand YOLO detection classes** - More cycling-relevant objects
-  - Default now: person, bicycle, car, motorcycle, bus, truck, traffic light, stop sign
-  - Added bus (5) to class map and available classes ✓
-
-[x] **Fix score weights sum** - Weights must sum to 1.0
-  - `source/config.py` ✓
-
-#### Pre-rendering & Overlays
-[x] **Parallelize minimap pre-rendering** - Now uses ThreadPoolExecutor
-  - `source/steps/build_helpers/minimap_prerenderer.py` ✓
-
-[x] **Parallelize elevation pre-rendering** - Now uses ThreadPoolExecutor
-  - `source/steps/build_helpers/elevation_prerenderer.py` ✓
-
-[x] **Pre-composite gauge overlays** - Single PNG per clip instead of 5 overlays
-  - `source/steps/build_helpers/gauge_prerenderer.py` - Parallel composite rendering
-  - `source/steps/build_helpers/clip_renderer.py` - Single overlay filter
-  - `source/steps/build.py` - Integration with GaugePrerenderer ✓
-
-[x] **Hide gauges with null data** - Don't display gauges when data is unavailable
-  - Added `_is_value_available()` helper to detect null/empty/invalid values
-  - Gauges with missing data are now hidden (not rendered)
-  - Partial gauge panel shows only available data
-  - `source/steps/build_helpers/gauge_prerenderer.py` - `_extract_telemetry()` with null detection ✓
-
-[x] **Parallelize splash PNG saves** - Uses ThreadPoolExecutor
-  - `source/steps/splash_helpers/animation_renderer.py` - Parallel frame saving ✓
-
-[x] **Minimap sizing and positioning** - Fixed
-  - Renders at route's geographic aspect ratio
-  - Maximizes available space: width = PIP width, height = video - PIP - elevation - margins
-  - Dynamic elevation plot positioning based on actual minimap height
-  - `source/utils/map_overlay.py`, `source/steps/build_helpers/minimap_prerenderer.py` ✓
-
-[x] **Trophy overlays in separate folder** - Moved from clips/ to trophies/
-  - `source/config.py` - Added TROPHY_DIR property
-  - `source/io_paths.py` - Added trophy_dir() function
-  - `source/steps/build_helpers/clip_renderer.py` - Updated trophy path ✓
-
-#### Configuration & Logging
-[x] **Reduce log file count** - Filter to app modules only
-  - `source/utils/log.py` - Added APP_LOG_PREFIXES filter ✓
-
-[x] **Fix RIDE_FOLDER reset bug** - Preserve runtime values in reload_config()
-  - `source/config.py:reload_config()` ✓
-
-[x] **GPX file location** - Relocate from raw movies to working files
-  - Added `CFG.GPX_FILE` property pointing to `WORKING_DIR / "ride.gpx"`
-  - Updated Strava/Garmin import panels to save GPX to project folder
-  - Pipeline steps check project dir first, fallback to raw input ✓
-
-#### GUI & Tools
-[x] **Camera Offset Calibration Window** - Visual offset adjustment tool
-  - `source/gui/camera_offset_window.py` - New calibration window
-  - Shows thumbnails with burnt-in timestamps vs calculated times
-  - Per-camera spinbox controls for real-time adjustment
-  - Saves to project_config.json (per-project) and updates CameraRegistry
-  - Note: H.265 vs H.264 codec choice affects write timing ✓
-
-[x] **Auto-detect hardware capabilities** - Adjust settings for MacBook Air vs Mac Mini
-  - `source/utils/hardware.py` - Detects Apple Silicon, RAM, CPU cores
-  - Logs system info at build start for diagnostics ✓
-
-[x] **Per-project timezone setting** - Camera time correction for different locations
-  - Create Project dialog with timezone dropdown (defaults to Brisbane UTC+10)
-  - Timezone saved to `project_config.json` per project
-  - Camera Offset Calibration window allows editing timezone for existing projects
-  - Fixes 30-minute alignment error for Adelaide rides (UTC+10:30 vs UTC+10)
-  - `source/gui/create_project_dialog.py` - New project creation dialog ✓
-  - `source/gui/controllers/project_controller.py` - Loads/saves timezone ✓
-
-[x] **Per-camera timezone support** - Different cameras can have different timezones
-  - Problem: Cameras synced to phone in different locations have different timezone offsets
-  - Solution: Per-camera timezone dropdown in Calibration window
-  - Auto-detect button compares video recording window with GPX start time
-  - `CAMERA_TIMEZONES` dict in config and project_config.json
-  - Legacy `CAMERA_TIMEZONE` format supported for backwards compatibility
-  - `source/config.py` - Added `CAMERA_TIMEZONES` dict ✓
-  - `source/gui/camera_offset_window.py` - Per-camera timezone UI with detect ✓
-  - `source/steps/extract.py` - `_get_camera_timezone()` per-camera lookup ✓
-  - `source/gui/controllers/project_controller.py` - Load/save per-camera timezones ✓
-
-#### Clip Selection
-[x] **Allow single-camera moments** - Relax strict camera pairing requirement
-  - Single-camera moments now allowed in selection (previously dropped 20-50%)
-  - Added `dual_camera` weight (0.05) to prefer dual-perspective moments
-  - Reduced `scene_boost` weight from 0.35 → 0.30 to accommodate
-  - `source/config.py` - Added `dual_camera` to SCORE_WEIGHTS ✓
-  - `source/steps/select.py` - Relaxed `_group_rows_by_moment()` pairing logic ✓
-  - Added `is_single_camera` flag to select.csv output ✓
-
-[x] **Zone limit enforcement** - Cap start/end zone clips in main selection
-  - Problem: Start zone clips dominated selection (29 of 38 clips from first 15 min)
-  - Solution: Added `_enforce_zone_limits()` after gap filter
-  - Caps clips per zone to `MAX_START_ZONE_CLIPS` / `MAX_END_ZONE_CLIPS`
-  - Excess zone clips replaced with next-best mid-ride candidates
-  - Zone bonus logic updated to respect existing zone clip counts
-  - `source/steps/select.py` - New `_enforce_zone_limits()` function ✓
-
-#### Visual Enhancements
-[x] **Thicker minimap route and marker** - Better visibility
-  - `MAP_ROUTE_WIDTH`: 8 → 12
-  - `MAP_MARKER_RADIUS`: 24 → 36
-  - `source/config.py` ✓
-
-[x] **Simplified scene-aware selection** - Removed redundant thresholds
-  - Removed `SCENE_PRIORITY_MODE`, `SCENE_MAJOR_THRESHOLD`, `SCENE_MAJOR_GAP_MULTIPLIER`
-  - Kept single threshold: `SCENE_HIGH_THRESHOLD` (0.50) with `SCENE_HIGH_GAP_MULTIPLIER` (0.5)
-  - High scene_boost clips can be placed 50% closer together (10s gap → 5s)
-  - `source/config.py`, `source/steps/select.py` ✓
-
----
-
 ### PENDING
 
-#### P1 - High Impact / Core Quality
+#### P1 - High Priority
 
-[ ] **Further selection algorithm tuning** - Additional improvements if needed
-  - ~~Camera pairing too strict~~ ✓ FIXED - single-camera moments now allowed
-  - ~~Start zone dominating selection~~ ✓ FIXED - zone limits enforced
+[ ] **Selection algorithm tuning**
   - Sampling grid: 5-second intervals may miss peak action
-  - Weight tuning: May need further adjustment based on results
+  - Weight tuning: May need adjustment based on results
 
-#### P2 - Workflow Improvements
+[ ] **Improve manual_select UI** - Distinguish source video files
+  - Add visual separators or labels showing source file boundaries
+  - Color coding, section headers, or timeline markers
 
-[ ] **Improve raw file visualization in manual_select** - Distinguish source video files
-  - Problem: Hard to identify which raw video file each clip originates from
-  - Solution: Add visual separators or labels showing source file boundaries
-  - Could use: color coding, section headers, file name labels, or timeline markers
-  - `source/gui/manual_select.py` - Manual selection interface
+#### P2 - Medium Priority
 
-[x] **Single-camera clip rendering** - Display layout for single-perspective clips
-  - Selection allows single-camera moments ✓
-  - Rendering renders main camera full-width (no PiP) for single-camera clips ✓
-  - `source/steps/build.py` - `_load_recommended_moments()` allows pip=None ✓
-  - `source/steps/build_helpers/clip_renderer.py` - Handles `pip_row=None` ✓
-
-#### P3 - Visual Enhancements
-
-[x] **Distance-based elevation plot** - Switch x-axis from time to distance
-  - Problem: When ride is paused (stationary periods), time-based plot shows flat sections
-  - Solution: Use cumulative km travelled on x-axis instead of time
-  - Haversine formula for GPS distance calculation
-  - GPS noise filtering (>500m jumps ignored)
-  - Total distance label added to plot (e.g., "42.5km")
-  - `source/utils/elevation_plot.py` - Complete rewrite ✓
-
-[x] **Handle single-camera segments** - Continue processing when one camera battery dies
-  - Selection handles single-camera moments ✓
-  - Rendering handles single-camera clips (full-width, no PiP) ✓
-  - Real-world scenario: Front camera dies at 2hr mark, rear camera continues to 3hr mark
-  - Implemented: Option A - Show available camera full-width, no PIP inset ✓
-
-#### P4 - Performance / Infrastructure
+[ ] **Project archiving** - Move projects between storage locations
+  - Move selected project (both Project and Raw files) from one location to another
+  - ADrive: high-speed working environment (1 TB)
+  - GDrive: low-speed storage environment (4 TB)
+  - Create new utility
+  - Add to Action menu between "Create Ride Project" and "Add Music"
 
 [ ] **Asset caching** - Skip re-rendering unchanged minimaps/gauges/elevation
   - Cache with content hashes
   - Check hash before rendering, skip if unchanged
-  - Medium complexity, affects all pre-renderer classes
 
-[x] **Dynamic gauge rendering** - Per-second telemetry updates
-  - **Implemented:** Per-second PNG rendering compiled to ProRes video with alpha ✓
-  - Telemetry lookup from flatten.csv timeline at each second offset ✓
-  - Storage: ~25MB for 4-min reel (~265 per-second PNGs → videos)
-  - Enabled via `CFG.DYNAMIC_GAUGES` (default: True) ✓
-  - Fallback to static PNG if video compilation fails ✓
-  - `source/config.py` - Added `DYNAMIC_GAUGES` setting ✓
-  - `source/steps/build_helpers/gauge_prerenderer.py` - Complete rewrite with dual-mode support ✓
-  - `source/steps/build_helpers/clip_renderer.py` - Handles both PNG and video overlays ✓
-
-#### P5 - Future / Research
+#### P3 - Future / Research
 
 [ ] **iMovie-style timeline selection** - Manual clip selection when algorithm fails
-  - **Why needed:** Algorithm is missing high-value clips; need manual scrubbing to find them
-  - Problem: Current grid-based card UI not intuitive for finding moments in long footage
-  - Solution: Timeline-based selection like iMovie's scrubbing interface
-  - **Research findings:**
-    - **Recommended approach:** QGraphicsView-based timeline (used by Shotcut, Kdenlive)
-    - **Reference library:** [asnunes/QTimeLine](https://github.com/asnunes/QTimeLine) - PyQt5 timeline widget
-    - **Key features:**
-      - Filmstrip view: horizontal strip of frame thumbnails (50-100px each)
-      - Drag-to-select: click and drag to define in/out points
-      - Hover preview: show frame time/enlarged thumbnail on hover
-      - Zoom in/out: seconds vs minutes granularity (Ctrl+/- or slider)
-      - Waveform display: librosa for audio visualization
-    - **Architecture:**
-      ```
-      TimelineGraphicsView (QGraphicsView)
-      └── TimelineScene (QGraphicsScene)
-          ├── RulerTrack (time labels + grid)
-          ├── FilmstripTrack (ThumbnailItems[])
-          ├── SelectionOverlay (drag handles for in/out)
-          ├── PlayheadCursor (vertical line)
-          └── WaveformTrack (audio visualization)
-      ```
-    - **Thumbnail optimization:**
-      - FFmpeg seeking (`-ss` before `-i`) = 3.8x faster extraction
-      - QPixmapCache for runtime caching
-      - Pre-cache during enrichment phase
-      - Viewport culling (QGraphicsView renders only visible items)
-    - **Dependencies to add:** `librosa`, `soundfile`, `scipy`
-  - **Complexity:** High (~40-60 hours total)
-    | Feature | Effort |
-    |---------|--------|
-    | Basic filmstrip + scroll | 4-6h |
-    | Zoom in/out | 6-8h |
-    | Selection handles (drag) | 6-8h |
-    | Thumbnail caching | 4-6h |
-    | Waveform display | 6-8h |
-    | Full integration | 15-20h |
-  - **Phased approach:**
-    1. Foundation: TimelineGraphicsView + static filmstrip + time ruler
-    2. Interaction: zoom + selection overlay + drag handles
-    3. Polish: hover preview + metadata panel
-    4. Advanced: waveform + keyboard shortcuts
-  - **Files to modify/create:**
-    - `source/gui/timeline_window.py` - New timeline UI
-    - `source/gui/manual_selection_window.py` - May integrate or replace
-  - **Note:** Keep moment-based model; timeline selects moment groups, not individual frames
+  - Timeline-based scrubbing interface
+  - QGraphicsView-based implementation
+  - High complexity (~40-60 hours)
+
+---
+
+### COMPLETED (Summary)
+
+#### Core Pipeline
+- [x] Hardware codec detection (h264_videotoolbox on Apple Silicon)
+- [x] Dynamic worker scaling for parallelism
+- [x] Adaptive YOLO batch size based on RAM
+- [x] FFmpeg hardware acceleration
+- [x] Smooth clip transitions (crossfades)
+- [x] Audio normalization (-16 LUFS)
+
+#### Detection & Selection
+- [x] Expanded YOLO classes (person, bicycle, car, motorcycle, bus, truck, traffic light, stop sign)
+- [x] Single-camera moments allowed (relaxed pairing)
+- [x] Zone limit enforcement (start/end zone caps)
+- [x] Scene-aware gap reduction
+
+#### Overlays & Rendering
+- [x] Parallel minimap/elevation/gauge pre-rendering
+- [x] Dynamic gauge rendering (per-second telemetry)
+- [x] Distance-based elevation plot
+- [x] Single-camera clip rendering (full-width, no PiP)
+- [x] Minimap sizing and positioning fixes
+
+#### GUI & Configuration
+- [x] Camera Offset Calibration window
+- [x] Per-project timezone setting
+- [x] Per-camera timezone support with auto-detect
+- [x] Candidate fraction in preferences
+- [x] Hardware capability detection
