@@ -26,6 +26,7 @@ class ActionButtonPanel(QFrame):
     # Project-independent signals
     import_clicked = Signal()
     create_clicked = Signal()
+    archive_clicked = Signal()  # Archive project to storage
     music_clicked = Signal()
     settings_clicked = Signal()  # Global app settings
     
@@ -62,12 +63,20 @@ class ActionButtonPanel(QFrame):
         layout.addWidget(import_btn)
         
         create_btn = self._create_button(
-            "➕ Create Ride Project", 
+            "➕ Create Ride Project",
             "Create a new ride project from source folder"
         )
         create_btn.clicked.connect(self.create_clicked.emit)
         layout.addWidget(create_btn)
-        
+
+        self.archive_btn = self._create_button(
+            "📦 Archive Project",
+            "Move project to archive storage"
+        )
+        self.archive_btn.clicked.connect(self.archive_clicked.emit)
+        self.archive_btn.setEnabled(False)  # Requires project selection
+        layout.addWidget(self.archive_btn)
+
         music_btn = self._create_button(
             "🎵 Add Music",
             "Add background music tracks"
@@ -84,6 +93,10 @@ class ActionButtonPanel(QFrame):
         
         layout.addStretch()
     
+    def set_archive_enabled(self, enabled: bool):
+        """Enable/disable archive button based on project selection."""
+        self.archive_btn.setEnabled(enabled)
+
     def _create_button(self, text: str, tooltip: str) -> QPushButton:
         """Create styled action button."""
         btn = QPushButton(text)

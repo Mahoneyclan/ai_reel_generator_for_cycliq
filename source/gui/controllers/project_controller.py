@@ -29,21 +29,21 @@ class ProjectController:
     def get_all_projects(self) -> List[Tuple[str, Path]]:
         """
         Get list of all projects in PROJECTS_ROOT.
-        
+
         Returns:
             List of (project_name, project_path) tuples
         """
         projects = []
         projects_root = CFG.PROJECTS_ROOT
-        
+
         if not projects_root.exists():
             self.log("Projects folder not found", "error")
             return projects
-        
+
         for folder in projects_root.iterdir():
             if folder.is_dir():
                 projects.append((folder.name, folder))
-        
+
         return sorted(projects, key=lambda x: x[0])
     
     def select_project(self, project_path: Path) -> bool:

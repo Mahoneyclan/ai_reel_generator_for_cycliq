@@ -64,6 +64,7 @@ _PROGRESS_STYLE_ERROR = """
     }
 """
 from .gpx_import_window import GPXImportWindow
+from .archive_dialog import ArchiveDialog
 
 from ..config import DEFAULT_CONFIG as CFG
 from ..io_paths import flatten_path, extract_path, enrich_path, select_path
@@ -160,6 +161,7 @@ class MainWindow(QMainWindow):
         # Action panel (top bar - project-independent)
         self.action_panel.import_clicked.connect(self._show_import_raw_video)
         self.action_panel.create_clicked.connect(self._create_project)
+        self.action_panel.archive_clicked.connect(self._show_archive_dialog)
         self.action_panel.music_clicked.connect(self._open_music_folder)
         self.action_panel.settings_clicked.connect(self._show_general_settings)
 
@@ -196,6 +198,7 @@ class MainWindow(QMainWindow):
                 path=str(project_path)
             )
             self._update_pipeline_buttons()
+            self.action_panel.set_archive_enabled(True)
             self.log_panel.log(f"Selected project: {project_path.name}", "success")
 
             # Clear caches when switching projects
@@ -511,3 +514,23 @@ class MainWindow(QMainWindow):
             # Still show the path even if we can't open it
             music_dir = CFG.PROJECT_ROOT / "assets" / "music"
             self.log_panel.log(f"Music folder location: {music_dir}", "info")
+
+    def _show_archive_dialog(self):
+        """Show archive dialog to move project between storage locations."""
+        if not self.project_controller.current_project:
+            self.dialog_manager.show_no_project_warning()
+            return
+
+        project_path = self.project_controller.current_project
+        dialog = ArchiveDialog(project_path, parent=self)
+        dialog.archive_completed.connect(self._on_archive_completed)
+        dialog.exec()
+
+    def _on_archive_completed(self, new_path: str):
+        """Handle archive completion - refresh and select new location."""
+        self.log_panel.log(f"✓ Project archived to: {new_path}", "success")
+        self._refresh_projects()
+        # Try to select the project at its new location
+        new_project_path = Path(new_path)
+        if new_project_path.exists():
+            self.project_panel.select_project(new_project_path)

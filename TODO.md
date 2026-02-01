@@ -14,13 +14,6 @@
 
 #### P2 - Medium Priority
 
-[ ] **Project archiving** - Move projects between storage locations
-  - Move selected project (both Project and Raw files) from one location to another
-  - ADrive: high-speed working environment (1 TB)
-  - GDrive: low-speed storage environment (4 TB)
-  - Create new utility
-  - Add to Action menu between "Create Ride Project" and "Add Music"
-
 [ ] **Asset caching** - Skip re-rendering unchanged minimaps/gauges/elevation
   - Cache with content hashes
   - Check hash before rendering, skip if unchanged
@@ -63,3 +56,4 @@
 - [x] Per-camera timezone support with auto-detect
 - [x] Candidate fraction in preferences
 - [x] Hardware capability detection
+- [x] Project archiving (move between AData/GDrive storage)
